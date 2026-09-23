@@ -24,8 +24,7 @@ providers:
     kind: api
     enabled: false
     timeout_s: 180
-    fallback_models:
-    - deepseek/deepseek-v4-flash
+    fallback_models: []
   meta:
     model: ms-web/muse-spark
     kind: web

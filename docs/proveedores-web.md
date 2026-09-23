@@ -52,6 +52,11 @@ Leído en `GET /api/resilience` el 24-sep-2026:
 - Para los proveedores web, un 401 **no** congela la conexión en OmniRoute. Solo prueba la siguiente opción.
 - Tras un 429, OmniRoute solo congela unos segundos, como mucho 2 minutos.
 
+Solución adoptada, sin apagar el reintento para todos (24-sep-2026): a cada conexión web se le pone
+`providerSpecificData.disableCooling = true`. Así, tras un 429 la conexión queda excluida en esa
+petición y el error vuelve enseguida, sin esperar ni reintentar. El resto de proveedores conserva el
+reintento (`auth.ts:2690`, `auth.ts:3126`, `chat.ts:1625-1649`, `chat.ts:2325`).
+
 Por eso `webllm` tiene su propio guardián, con pausa de 6 h, tope diario y 1 envío a la vez.
 Además, en cuanto existan las conexiones web, se les aplica el límite nativo de OmniRoute
 (`scripts/apply_web_limits.py --apply`: 1 a la vez, 20 s entre peticiones, 3 por minuto).

@@ -28,7 +28,7 @@
 | Pieza | Estado | Prueba |
 |---|---|---|
 | OmniRoute 3.8.50 en 127.0.0.1:20128 | OK | `/v1/models` HTTP 200 (1218 modelos); arranca y para con los .cmd |
-| Ruta por defecto `webllm-default` (GLM-4.7-Flash → DeepSeek API → groq) | OK. Hoy contesta groq porque z.ai y DeepSeek API aún no tienen clave | Prueba de ida y vuelta 5/5 |
+| Ruta por defecto `webllm-default` (GLM-4.7-Flash → groq → Nemotron gratis) | OK. Hoy contesta groq porque z.ai aún no tiene clave | Prueba de ida y vuelta 5/5 + 2/2 tras el cambio |
 | groq `openai/gpt-oss-120b` | OK | Prueba de ida y vuelta 5/5 |
 | OpenRouter `nemotron-3-super-120b-a12b:free` | OK (tarda entre 7 y 18 s) | Prueba de ida y vuelta 5/5 |
 | OpenRouter `glm-5.2:free` | Inestable: 3 de 5, dos 429 por saturación | Desactivado en `data/config.yaml` |
@@ -42,42 +42,57 @@ La "prueba de ida y vuelta" pide a la IA que devuelva un bloque con trampas (tab
 
 | Pieza | Estado | Qué falta |
 |---|---|---|
-| Qwen web | BLOQUEADO POR IVÁN | Pegar la cookie en el panel (punto 3 de la lista) |
-| DeepSeek web | BLOQUEADO POR IVÁN | Pegar el userToken (punto 4) |
+| Qwen web | BLOQUEADO POR IVÁN | Pegar la cookie en el panel (punto 4 de la lista) |
+| DeepSeek web | BLOQUEADO POR IVÁN | Pegar el userToken (punto 3) |
 | Meta AI web | BLOQUEADO POR IVÁN | Pegar `ecto_1_sess` y el token `ecto1:` (punto 5) |
-| z.ai GLM-4.7-Flash (gratis) | BLOQUEADO POR IVÁN | Crear la API key (punto 2). No se sabe si el endpoint que usa OmniRoute da la versión gratis: [FALTA DATO] |
-| DeepSeek API (de pago) | Opcional | Solo si quieres poner saldo (punto 7) |
-| Límites nativos de OmniRoute para las webs | Preparado | Se aplican con `python scripts/apply_web_limits.py --apply` cuando existan las conexiones |
+| z.ai GLM-4.7-Flash (gratis) | BLOQUEADO POR IVÁN | Pegar tu clave en el panel (punto 2). No se sabe si el endpoint que usa OmniRoute da la versión gratis: [FALTA DATO] |
+| DeepSeek API (de pago) | DESCARTADO | Sin saldo (decidido el 24-sep-2026); fuera de la ruta por defecto |
+| Límites nativos de OmniRoute para las webs + interruptor anti-reintento | Preparado | Se aplican con `python scripts/apply_web_limits.py --apply` cuando existan las conexiones |
 | Plan B (extensión de Chrome) | No hace falta | Ninguna IA ha fallado por diseño. El diseño está en `docs/plan-b.md` |
 
-## Lo que tienes que hacer tú (una sola vez)
+## Lo que tienes que hacer tú
 
-1. **Entrar al panel de OmniRoute:** http://127.0.0.1:20128 con tu contraseña. Claude no puede escribir contraseñas. Si la has olvidado, usa "¿Olvidaste tu contraseña?" en esa misma pantalla.
+Las claves y las sesiones son como contraseñas: Claude no puede copiarlas ni pegarlas
+aunque se lo pidas. Lo que sí hace es dejártelo en "copiar y pegar" con enlaces directos.
+
+1. ~~Entrar al panel de OmniRoute~~ **HECHO** (24-sep-2026).
 2. **z.ai (gratis):**
-   - crea una API key en tu cuenta de z.ai;
-   - en el panel: Providers → **Z.AI** → **Add Connection** → pega la clave → comprobar → guardar.
-   - El panel dice que la clave sale de open.bigmodel.cn, pero OmniRoute llama a api.z.ai: usa la clave de z.ai.
-3. **Qwen:**
-   - en tu Chrome normal, entra en chat.qwen.ai con tu cuenta;
-   - F12 → pestaña **Network** → recarga → pulsa cualquier petición a chat.qwen.ai;
-   - en "Request Headers", copia el valor entero de **cookie** (tiene que llevar `cna`, `ssxmod_itna` y `token`);
-   - en el panel: Providers → **Qwen Web** → **Add Connection** → pégalo (sin la palabra "Cookie:") → **Check cookie** → guardar.
-4. **DeepSeek:**
-   - en chat.deepseek.com con tu cuenta: F12 → **Application** → Local Storage → `https://chat.deepseek.com` → copia el valor de **userToken**;
-   - en el panel: Providers → **DeepSeek Web** → **Add Connection** → pégalo → **Check token** → guardar.
-5. **Meta AI.** Si tu cuenta de Meta es la del negocio, usa otra para Meta AI.
-   - En www.meta.ai: F12 → Application → Cookies → copia **ecto_1_sess**.
-   - Después: F12 → Network → filtro **WS** → petición `clippy` → copia el valor `ecto1:...` del parámetro `Authorization`.
-   - En el panel: Providers → **Muse Spark Web (Meta AI)** → **Add Connection** → pega las dos cosas como pide el cuadro → comprobar → guardar.
-6. **Decisión (sí/no):** ¿apago el reintento automático de OmniRoute tras un 429 (`waitForCooldown`)?
-   - Hoy OmniRoute reintenta hasta 3 veces por su cuenta, también con las webs. Apagarlo protege más tus cuentas.
-   - El cambio afecta a todo OmniRoute, así que también a Hermes y Shinobi.
-7. **Opcional:** DeepSeek API de pago. Solo si quieres poner saldo: crea la clave en la web de DeepSeek → panel → Providers → **DeepSeek** → Add Connection.
-8. **Cuando termines 2–5, avísame.** Entonces:
-   - activo esas IAs en `data/config.yaml`;
-   - les pongo los límites nativos;
-   - paso la prueba de ida y vuelta 10 de 10 a cada web, con 20 s entre envíos;
-   - repito la prueba de aider con Qwen.
+   - Abre en tu escritorio `nuevo documento de texto.txt`.
+   - Selecciona la clave y cópiala con Ctrl+C.
+   - Abre http://127.0.0.1:20128/dashboard/providers/zai?action=add-api-key (se abre directo el cuadro para añadirla).
+   - Pégala con Ctrl+V, pulsa el botón de comprobar y guarda.
+3. **DeepSeek.** Es el más fácil:
+   1. En tu Chrome normal, entra en https://chat.deepseek.com con tu cuenta.
+   2. Pulsa **F12** y elige la pestaña **Console**.
+   3. Si Chrome te avisa de que no dejes pegar, escribe `allow pasting` y pulsa Enter.
+   4. Pega esta línea y pulsa Enter: `copy(localStorage.getItem("userToken"))`. No sale nada, pero la sesión ya está copiada.
+   5. Abre http://127.0.0.1:20128/dashboard/providers/deepseek-web?action=add-api-key, pega con Ctrl+V, pulsa **Check token** y guarda.
+4. **Qwen:**
+   1. En tu Chrome normal, entra en https://chat.qwen.ai con tu cuenta.
+   2. Pulsa **F12**, elige la pestaña **Network** y pulsa **F5** para recargar.
+   3. Haz clic en la **primera fila** de la lista (se llama como la página, `chat.qwen.ai` o `/`).
+   4. A la derecha, en **Headers**, baja hasta **Request Headers** y busca la línea **cookie:**.
+   5. Haz clic derecho sobre su valor → **Copy value**.
+   6. Abre http://127.0.0.1:20128/dashboard/providers/qwen-web?action=add-api-key, pega, pulsa **Check cookie** y guarda.
+5. **Meta AI.** Si tu cuenta de Meta es la del negocio, usa otra para Meta AI. Aquí se pegan dos cosas juntas.
+   1. Entra en https://www.meta.ai con tu cuenta y pulsa **F12**.
+   2. Pestaña **Application** → a la izquierda **Cookies** → `https://www.meta.ai` → fila **ecto_1_sess**. Copia su **Value**.
+   3. Pestaña **Network** → pulsa el filtro **WS** → pulsa **F5** → haz clic en la fila **clippy** → pestaña **Payload**. Copia el valor de **Authorization** (empieza por `ecto1:`).
+   4. Abre http://127.0.0.1:20128/dashboard/providers/muse-spark-web?action=add-api-key y escribe en el cuadro, en una sola línea: `ecto_1_sess=` + lo primero + `; ` + lo segundo. Queda así: `ecto_1_sess=AAAA...; ecto1:BBBB...`
+   5. Pulsa **Check cookie** y guarda.
+6. ~~¿Apagar el reintento tras un 429?~~ **RESUELTO SIN APAGARLO PARA TODOS.**
+   - OmniRoute tiene un interruptor por conexión (`disableCooling`). Con él, esa conexión deja de reintentar tras un 429 y devuelve el error enseguida.
+   - Se pondrá **solo en Qwen, DeepSeek y Meta**, con `scripts/apply_web_limits.py --apply`, en cuanto existan esas conexiones.
+   - El reintento general sigue encendido, así que Hermes, Shinobi y las IAs por API no pierden nada.
+7. ~~DeepSeek API de pago~~ **NO**: se ha quitado de la ruta por defecto.
+8. **Cuando termines alguno de los puntos 2 a 5, avísame.** Entonces:
+   - lo activo en `data/config.yaml`;
+   - aplico los límites nativos y el interruptor del punto 6;
+   - paso la prueba de ida y vuelta 10 de 10, con 20 s entre envíos.
+
+Nota: los enlaces `?action=add-api-key` salen del código del panel. Claude no ha podido verlos por
+dentro porque el panel pide contraseña. Si alguno no abre el cuadro, entra en **Providers**, busca el
+proveedor y pulsa **Add Connection**.
 
 ## Riesgos conocidos
 
@@ -85,7 +100,9 @@ La "prueba de ida y vuelta" pide a la IA que devuelva un bloque con trampas (tab
   - Los términos de DeepSeek y z.ai prohíben la automatización.
   - OmniRoute marca Qwen web y Meta AI web como **"avoid"** (evitar).
   - Lo aceptaste. El guardián lo limita: 1 envío a la vez, 20 s entre envíos, 150 al día y pausa de 6 h ante cualquier señal de bloqueo. Pero no lo elimina.
-- **OmniRoute reintenta él solo:** hasta 3 veces tras un 429, y DeepSeek web renueva el token y reintenta 2 veces tras un 401/403. El guardián de `webllm` no puede impedirlo (ver el punto 6).
+- **OmniRoute reintenta él solo:**
+  - Tras un 429 lo hace hasta 3 veces. Queda resuelto para las webs con `disableCooling` en cuanto existan las conexiones (punto 6).
+  - DeepSeek web, además, renueva el token y reintenta 2 veces tras un 401/403. Eso viene dentro de OmniRoute y no se puede desactivar por conexión.
 - **Las webs cambian sin avisar:** cualquier proveedor web de OmniRoute puede romperse con una actualización de su web.
 - **aider va lento en novedades:** la última versión es del 12-feb-2026. La alternativa para modelos por API es OpenCode.
 - **Los modelos gratis de OpenRouter** tienen tope (50 al día sin comprar créditos) y a veces están saturados (429).

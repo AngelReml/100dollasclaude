@@ -132,7 +132,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "kind": "api",
             "enabled": False,
             "timeout_s": 180,
-            "fallback_models": ["deepseek/deepseek-v4-flash"],
+            # No paid DeepSeek API (decided 2026-09-24): no fallback here; the
+            # OmniRoute combo 'webllm-default' falls back to free models instead.
+            "fallback_models": [],
         },
         "meta": {
             "model": "ms-web/muse-spark",
