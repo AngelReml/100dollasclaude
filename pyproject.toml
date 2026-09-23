@@ -5,18 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "webllm-agent"
 version = "0.1.0"
-description = "Local coding-agent runtime whose LLM transport is a web UI (Claude.ai, ChatGPT, Gemini, Grok) driven by Playwright."
+description = "Broadcast one prompt to several AI providers (web + API) through a local OmniRoute gateway."
 requires-python = ">=3.10"
 dependencies = [
-    "playwright>=1.40",
     "PyYAML>=6.0",
-    "pydantic>=2.0",
     "rich>=13.0",
 ]
 
 [project.scripts]
 webllm = "webllm_agent.cli.main:main"
-trend-scout = "trend_scout.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

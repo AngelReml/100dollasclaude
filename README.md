@@ -1,5 +1,10 @@
 # webllm-agent
 
+> **v2 in progress (2026-09-23).** The Playwright/Claude design below is
+> retired to `legacy/`. The v2 architecture (OmniRoute gateway + aider +
+> `webllm ask` broadcaster) is in `docs/spec.md`. This README is rewritten
+> at the end of v2 Phase 6.
+
 Local coding-agent runtime whose LLM transport is a web UI
 (Claude.ai, ChatGPT, Gemini, Grok) driven by Playwright.
 
