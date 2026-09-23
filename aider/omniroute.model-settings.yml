@@ -1,0 +1,10 @@
+# aider model settings used by aider-omniroute.cmd.
+# "aider/extra_params" applies to every model: these OmniRoute headers turn off
+# its response cache, memory injection and prompt compression, so the model
+# sees exactly what aider sends.
+- name: aider/extra_params
+  extra_params:
+    extra_headers:
+      x-omniroute-no-cache: "true"
+      x-omniroute-no-memory: "true"
+      x-omniroute-compression: "off"
