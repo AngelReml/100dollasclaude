@@ -1,5 +1,8 @@
 # Proveedores web en OmniRoute (Qwen, DeepSeek, Meta AI)
 
+> 🚧 **EN CONSTRUCCIÓN.** Ninguno de estos tres está dado de alta todavía. Esto es lo
+> que dice el código de OmniRoute; aún no se ha probado con una sesión real.
+
 Leído el 24-sep-2026 en el código de OmniRoute v3.8.50 instalado en tu PC
 (`omnirouter\node_modules\omniroute`). Cada dato lleva su fichero y línea en el
 informe de investigación; aquí va lo que necesitas saber.

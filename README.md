@@ -1,5 +1,10 @@
 # webllm-agent (v2)
 
+> 🚧 **UNDER CONSTRUCTION / EN CONSTRUCCIÓN.** Works today with API providers
+> (groq, OpenRouter free). The priority providers (Qwen, DeepSeek, Meta AI web
+> and z.ai API) are not connected yet: they are waiting for credentials to be
+> added in the OmniRoute dashboard. See [docs/ESTADO.md](docs/ESTADO.md).
+
 Type one prompt and send it to several AI providers at once — or to one —
 through a single local gateway, and let a coding agent apply changes to a
 folder on your PC.

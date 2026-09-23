@@ -1,5 +1,7 @@
 # Plan B: extensión propia en tu Chrome (NO activado)
 
+> 🚧 **EN CONSTRUCCIÓN / SOLO DISEÑO.** No hay código de este plan.
+
 **Estado (24-sep-2026): no se construye.** Solo se activa si Qwen o DeepSeek
 fallan *por diseño* a través de OmniRoute: por ejemplo, si la web cambia y el
 proveedor de OmniRoute deja de funcionar aunque la sesión sea buena. Hoy ninguno

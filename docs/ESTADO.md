@@ -1,5 +1,9 @@
 # ESTADO — webllm-agent v2 (24-sep-2026)
 
+> 🚧 **EN CONSTRUCCIÓN.** Hoy funciona con IAs por API (groq y OpenRouter gratis).
+> Qwen, DeepSeek, Meta AI y z.ai todavía **no están conectadas**: faltan los pasos
+> de la sección "Lo que tienes que hacer tú".
+
 ## Los mandamientos
 
 1. **Primero enciende OmniRoute.** Doble clic en `start-omniroute.cmd`. Se queda en una ventana minimizada llamada "OmniRoute". Para apagarlo: `stop-omniroute.cmd`.
