@@ -22,7 +22,7 @@ providers:
   zai:
     model: zai/glm-4.7-flash
     kind: api
-    enabled: false
+    enabled: true
     timeout_s: 180
     fallback_models: []
   meta:

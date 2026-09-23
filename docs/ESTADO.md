@@ -1,7 +1,7 @@
 # ESTADO — webllm-agent v2 (24-sep-2026)
 
-> 🚧 **EN CONSTRUCCIÓN.** Hoy funciona con IAs por API (groq y OpenRouter gratis).
-> Qwen, DeepSeek, Meta AI y z.ai todavía **no están conectadas**: faltan los pasos
+> 🚧 **EN CONSTRUCCIÓN.** Hoy funciona con IAs por API: z.ai (GLM-4.7-Flash), groq y OpenRouter gratis.
+> Qwen, DeepSeek y Meta AI todavía **no están conectadas**: faltan los pasos
 > de la sección "Lo que tienes que hacer tú".
 
 ## Los mandamientos
@@ -28,7 +28,8 @@
 | Pieza | Estado | Prueba |
 |---|---|---|
 | OmniRoute 3.8.50 en 127.0.0.1:20128 | OK | `/v1/models` HTTP 200 (1218 modelos); arranca y para con los .cmd |
-| Ruta por defecto `webllm-default` (GLM-4.7-Flash → groq → Nemotron gratis) | OK. Hoy contesta groq porque z.ai aún no tiene clave | Prueba de ida y vuelta 5/5 + 2/2 tras el cambio |
+| Ruta por defecto `webllm-default` (GLM-4.7-Flash → groq → Nemotron gratis) | OK. Contesta z.ai; si z.ai dice "demasiadas peticiones", salta sola a groq | Prueba de ida y vuelta 3/3 (2 las contestó z.ai y 1 groq, tras un 429 de z.ai) |
+| z.ai `glm-4.7-flash` | OK (entre 1,4 y 23 s) | Prueba de ida y vuelta 10/10 (24-sep-2026) |
 | groq `openai/gpt-oss-120b` | OK | Prueba de ida y vuelta 5/5 |
 | OpenRouter `nemotron-3-super-120b-a12b:free` | OK (tarda entre 7 y 18 s) | Prueba de ida y vuelta 5/5 |
 | OpenRouter `glm-5.2:free` | Inestable: 3 de 5, dos 429 por saturación | Desactivado en `data/config.yaml` |
@@ -45,7 +46,7 @@ La "prueba de ida y vuelta" pide a la IA que devuelva un bloque con trampas (tab
 | Qwen web | BLOQUEADO POR IVÁN | Pegar la cookie en el panel (punto 4 de la lista) |
 | DeepSeek web | BLOQUEADO POR IVÁN | Pegar el userToken (punto 3) |
 | Meta AI web | BLOQUEADO POR IVÁN | Pegar `ecto_1_sess` y el token `ecto1:` (punto 5) |
-| z.ai GLM-4.7-Flash (gratis) | BLOQUEADO POR IVÁN | Pegar tu clave en el panel (punto 2). No se sabe si el endpoint que usa OmniRoute da la versión gratis: [FALTA DATO] |
+| z.ai GLM-4.7-Flash | **CONECTADO** el 24-sep-2026 | Falta confirmar que no gasta saldo: mira el consumo en tu cuenta de z.ai. OmniRoute no lo muestra ("No quota information available"): [FALTA DATO] |
 | DeepSeek API (de pago) | DESCARTADO | Sin saldo (decidido el 24-sep-2026); fuera de la ruta por defecto |
 | Límites nativos de OmniRoute para las webs + interruptor anti-reintento | Preparado | Se aplican con `python scripts/apply_web_limits.py --apply` cuando existan las conexiones |
 | Plan B (extensión de Chrome) | No hace falta | Ninguna IA ha fallado por diseño. El diseño está en `docs/plan-b.md` |
@@ -56,11 +57,8 @@ Las claves y las sesiones son como contraseñas: Claude no puede copiarlas ni pe
 aunque se lo pidas. Lo que sí hace es dejártelo en "copiar y pegar" con enlaces directos.
 
 1. ~~Entrar al panel de OmniRoute~~ **HECHO** (24-sep-2026).
-2. **z.ai (gratis):**
-   - Abre en tu escritorio `nuevo documento de texto.txt`.
-   - Selecciona la clave y cópiala con Ctrl+C.
-   - Abre http://127.0.0.1:20128/dashboard/providers/zai?action=add-api-key (se abre directo el cuadro para añadirla).
-   - Pégala con Ctrl+V, pulsa el botón de comprobar y guarda.
+2. ~~z.ai~~ **HECHO** (24-sep-2026): conexión `zai` activa y prueba de ida y vuelta 10/10.
+   Solo te queda mirar en tu cuenta de z.ai que el consumo de GLM-4.7-Flash sale a 0.
 3. **DeepSeek.** Es el más fácil:
    1. En tu Chrome normal, entra en https://chat.deepseek.com con tu cuenta.
    2. Pulsa **F12** y elige la pestaña **Console**.
@@ -105,6 +103,12 @@ proveedor y pulsa **Add Connection**.
   - DeepSeek web, además, renueva el token y reintenta 2 veces tras un 401/403. Eso viene dentro de OmniRoute y no se puede desactivar por conexión.
 - **Las webs cambian sin avisar:** cualquier proveedor web de OmniRoute puede romperse con una actualización de su web.
 - **aider va lento en novedades:** la última versión es del 12-feb-2026. La alternativa para modelos por API es OpenCode.
+- **z.ai también tiene límite de velocidad:**
+  - Tras unas 15 peticiones seguidas en minuto y medio devolvió 429, código 1302 "Rate limit reached for requests".
+  - La ruta `webllm-default` salta sola a groq.
+  - Con `webllm ask --to zai`, OmniRoute espera unos segundos y reintenta (hasta 3 veces, su ajuste general para las IAs por API).
+  - Si sigue fallando, `webllm` muestra el FALLO.
+  - Límite exacto: [FALTA DATO] (z.ai no lo publica).
 - **Los modelos gratis de OpenRouter** tienen tope (50 al día sin comprar créditos) y a veces están saturados (429).
 - **OmniRoute trae de fábrica** la caché, la "memoria" y la compresión. `webllm` y aider las desactivan en cada petición; tus otros agentes no.
 
