@@ -1,0 +1,1 @@
+"""Backend package — WebLLMBackend + ProviderRouter."""

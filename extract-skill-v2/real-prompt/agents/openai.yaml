@@ -1,0 +1,4 @@
+interface:
+  display_name: "Real Prompt"
+  short_description: "Prompts industriales y encargos IA."
+  default_prompt: "Use $real-prompt to turn this rough idea into an industrial-grade prompt or AI delegation brief."

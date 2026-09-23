@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Runtime data (created by webllm-agent itself)
+data/browser_profiles/
+data/state/
+data/runs/
+data/logs/
+data/screenshots/
+data/dumps/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# v2: runtime data, secrets and browser sessions never go into git
+data/*
+!data/config.yaml
+browser_profiles/
+*.sqlite
+*.sqlite3
+*.db
+.env
+.env*
+# aider local files
+.aider*

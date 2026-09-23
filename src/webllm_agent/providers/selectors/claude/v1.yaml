@@ -1,0 +1,65 @@
+# Claude.ai selector bundle — version 1.
+#
+# IMPORTANT: these selectors target the public Claude.ai web UI as the
+# project author understood it. The UI changes without notice; when a slot
+# stops resolving, add a new candidate with a higher `value` and bump the
+# version, OR create v2.yaml.
+#
+# Hierarchy of preference: data-testid > aria/role > text > css.
+#
+# Candidate fields:
+#   kind:    "css" | "testid" | "aria" | "text" | "role"
+#   value:   selector / role string (see SelectorResolver._render)
+#   priority: lower wins. Ties: declaration order.
+
+version: 1
+home_url: https://claude.ai
+
+slots:
+
+  composer:
+    description: "Prompt input — contenteditable where the user types."
+    candidates:
+      - { kind: "testid", value: "chat-input",   priority: 1 }
+      - { kind: "css",    value: "div[contenteditable='true'][aria-label*='message' i]", priority: 2 }
+      - { kind: "css",    value: "div[contenteditable='true']",                          priority: 3 }
+
+  send_button:
+    description: "Submit the prompt."
+    candidates:
+      - { kind: "aria",   value: "Send message", priority: 1 }
+      - { kind: "testid", value: "send-button",  priority: 2 }
+      - { kind: "css",    value: "button[aria-label*='Send' i]:not([disabled])", priority: 3 }
+
+  stop_button:
+    description: "Visible only while generating."
+    candidates:
+      - { kind: "aria",   value: "Stop response", priority: 1 }
+      - { kind: "testid", value: "stop-button",   priority: 2 }
+      - { kind: "text",   value: "Stop",          priority: 3 }
+
+  new_chat_button:
+    description: "Sidebar / top-bar action to start a new conversation."
+    candidates:
+      - { kind: "aria",   value: "New chat",   priority: 1 }
+      - { kind: "text",   value: "New chat",   priority: 2 }
+
+  assistant_message:
+    description: "Container of the most recent assistant turn. Used for extraction."
+    candidates:
+      - { kind: "testid", value: "assistant-message",     priority: 1 }
+      - { kind: "css",    value: "[data-is-assistant-message='true']", priority: 2 }
+      - { kind: "css",    value: ".font-claude-message",  priority: 3 }
+
+  streaming_indicator:
+    description: "Element that exists only while the model is generating."
+    candidates:
+      - { kind: "testid", value: "streaming-indicator", priority: 1 }
+      - { kind: "testid", value: "stop-button",         priority: 2 }
+      - { kind: "aria",   value: "Stop response",       priority: 3 }
+
+  login_wall:
+    description: "Sign-in page marker — used by health_check."
+    candidates:
+      - { kind: "text",   value: "Sign in to Claude", priority: 1 }
+      - { kind: "text",   value: "Log in",            priority: 2 }

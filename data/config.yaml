@@ -1,0 +1,18 @@
+default_provider: claude
+headless: false
+debug: false
+generation_timeout_s: 120.0
+response_idle_settle_ms: 1500
+providers:
+  claude:
+    enabled: true
+    max_concurrency: 1
+  chatgpt:
+    enabled: false
+    max_concurrency: 1
+  gemini:
+    enabled: false
+    max_concurrency: 1
+  grok:
+    enabled: false
+    max_concurrency: 1
