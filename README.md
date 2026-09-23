@@ -1,70 +1,73 @@
-# webllm-agent
+# webllm-agent (v2)
 
-> **v2 in progress (2026-09-23).** The Playwright/Claude design below is
-> retired to `legacy/`. The v2 architecture (OmniRoute gateway + aider +
-> `webllm ask` broadcaster) is in `docs/spec.md`. This README is rewritten
-> at the end of v2 Phase 6.
+Type one prompt and send it to several AI providers at once — or to one —
+through a single local gateway, and let a coding agent apply changes to a
+folder on your PC.
 
-Local coding-agent runtime whose LLM transport is a web UI
-(Claude.ai, ChatGPT, Gemini, Grok) driven by Playwright.
+> Day-to-day instructions (in Spanish): **[docs/ESTADO.md](docs/ESTADO.md)**.
+> Architecture: [docs/spec.md](docs/spec.md).
 
-> The browser is a transport. The provider web app is an adapter.
-> The backend is an LLM abstraction. The Agent Engine doesn't
-> know Playwright exists.
+## Pieces
 
-## Status
+| Piece | What it is | Status |
+|---|---|---|
+| Gateway | [OmniRoute](https://github.com/diegosouzapw/OmniRoute) 3.8.50 on `http://127.0.0.1:20128/v1` (OpenAI-compatible), installed in `..\omnirouter` | running |
+| Coding agent | [aider](https://aider.chat) 0.86.2 (isolated via `uv tool`), launched with `aider-omniroute.cmd` | working |
+| Broadcaster | `webllm ask` (this package) | working |
+| Plan B | Own Chrome extension | not needed (design in `docs/plan-b.md`) |
 
-| Phase | Status | Notes |
-|-------|--------|-------|
-| 0 — Skeleton + BrowserManager | **in progress** | target: open Chromium, persist session, close cleanly |
-| 1 — Vertical slice (Claude → CLI) | pending | requires a Claude.ai session in the persistent profile |
-| 2 — Provider hardening | pending | |
-| 3 — Conversation manager + backend | pending | |
-| 4 — Read-only tool runtime | pending | |
-| 5 — Write-safe + agent loop | pending | |
-| 6 — Bash + permissions | pending | |
-| 7 — Multi-provider | pending | |
-| 8 — Advanced resilience | pending | |
+Providers are mapped in `data/config.yaml` (name → OmniRoute model id, in
+priority order). Web providers (Qwen, DeepSeek, Meta AI) need their session
+pasted once in the OmniRoute dashboard; see `docs/proveedores-web.md`.
+Claude and ChatGPT/Codex are excluded and always refused.
 
-See `docs/spec.md` for the full architecture specification.
+## Commands
 
-## Install (developer mode)
+```bat
+start-omniroute.cmd                       :: start the gateway (minimized window)
+stop-omniroute.cmd                        :: stop it
+preguntar.cmd                             :: double-click: type a prompt, pick todas / one
+webllm.cmd ask "prompt" --to todas        :: or --to qwen|deepseek|zai|meta|groq|nemotron|<model-id>
+webllm.cmd status                         :: providers, cooldowns, today's counts
+webllm.cmd journal verify --all           :: check every run's hash chain
+webllm.cmd guard clear <name>             :: lift a cooldown after fixing a session
+aider-omniroute.cmd                       :: run from the folder you want aider to edit
+```
 
-```powershell
+Every `ask` writes `data/runs/<run_id>/` with `prompt.txt`, one response file
+per provider, `journal.jsonl` (each line: ts, provider, model, prompt_sha256,
+response_sha256, status, latency, prev_hash, hash = sha256(prev_hash +
+canonical_json(line))) and `run.json` (line count + last hash, so truncation
+is detected too).
+
+## Account guard (web providers)
+
+One request in flight (cross-process lock), 20 s minimum spacing, 150/day cap,
+and a 6 h cooldown on HTTP 401/403/429 or a challenge / login-wall body —
+persisted in `data/state/guard.json`, never retried through. OmniRoute's
+native per-connection limits are applied with `scripts/apply_web_limits.py`.
+No anti-bot evasion of any kind.
+
+## Development
+
+```bat
 python -m pip install -e .
-python -m playwright install chromium
+python -m pytest -q                                            :: offline tests (mock server)
+python tests\golden\golden.py --model groq/openai/gpt-oss-120b --runs 5   :: live round-trip
+python tests\aider_sandbox.py --model combo/webllm-default                 :: live aider check
 ```
 
-## Quick start
-
-```powershell
-# Phase 0 sanity check: open a browser context, persist nothing, close.
-webllm doctor
-
-# Phase 1 will expose `webllm login <provider>` to seed the persistent profile.
-```
-
-## Layout
+Layout:
 
 ```
 src/webllm_agent/
-├── browser/         Playwright runtime (only module that imports Playwright)
-├── providers/       Provider adapters (Claude, ChatGPT, Gemini, Grok)
-├── backend/         WebLLMBackend + ProviderRouter
-├── conversations/   Conversation lifecycle & persistence
-├── tools/           Tool system (Read/Edit/Write/Bash/...)
-├── agent/           Agent Engine + ContextManager + ToolCallParser
-├── observability/   Logs, events, run journals
-└── cli/             Entry point
-```
-
-Runtime data lives under `data/` (created on first run):
-
-```
-data/
-├── browser_profiles/<provider>/     persistent Chromium user-data
-├── state/conversations.json         conversation registry
-├── runs/<run_id>/                   per-run journal
-├── logs/                            rotating logs
-└── config.yaml                      user-overridable config
+├── client.py        OmniRoute chat call (no cache / memory / compression)
+├── broadcaster.py   webllm ask: targets, concurrency, rendering, run files
+├── journal.py       hash-chained JSONL journal + verify
+├── guard.py         account guard for web providers
+├── config.py        data/config.yaml loading, excluded models
+├── omniroute.py     key from ~/.omniroute/.env at runtime (never stored)
+├── cli/main.py      the `webllm` command
+└── observability/   logging, debug capture
+legacy/              retired v1 Claude/Playwright code (not installed)
 ```
