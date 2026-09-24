@@ -17,6 +17,7 @@ through a single local gateway, and let a coding agent apply changes to a
 folder on your PC.
 
 > Day-to-day instructions (in Spanish): **[docs/ESTADO.md](docs/ESTADO.md)**.
+> Next build: **[docs/PLAN-v3.md](docs/PLAN-v3.md)**. Agents working on this repo: read **[CLAUDE.md](CLAUDE.md)** first.
 > Architecture: [docs/spec.md](docs/spec.md).
 
 ## Pieces

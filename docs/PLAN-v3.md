@@ -47,6 +47,54 @@ No hace falta nada nuevo del ecosistema Claude: todo vive dentro de webllm, en t
 
 **Antes de ejecutar una cadena**, la app te dice **cuántos mensajes gastará de cada cuenta**. Así un debate de 3 vueltas con 3 IAs no te funde el límite sin avisar.
 
+## Diseño: ultra intuitiva y estética (obligatorio, no opcional)
+
+La regla de oro es que **Iván la use sin ayuda y sin leer instrucciones**. Si una pantalla necesita un manual, está mal diseñada y se rehace.
+
+**Principios:**
+
+1. **Una acción principal por pantalla.** Un botón grande de color claramente destacado ("Preguntar", "Ejecutar cadena", "Programar"). Lo demás, discreto.
+2. **Cero jerga.** Nada de "token", "endpoint", "SSE", "HTTP 503" ni "provider". Se dice "IA", "cadena", "conectada", "saturada, prueba en un rato".
+3. **Los errores nunca se enseñan en crudo.** Siempre en formato **qué pasó + qué hacer + botón que lo arregla**. Por ejemplo: "Qwen no tiene sesión abierta · [Abrir Qwen para entrar]".
+4. **El estado se entiende de un vistazo.** Cada IA con su logo y su color, y un semáforo que usa color, icono y palabra a la vez (que no dependa solo del color).
+5. **Todo se ve avanzar.** Una línea de tiempo con cada paso de la cadena: esperando, escribiendo, respondida, fallo. Los mensajes son humanos ("DeepSeek está escribiendo…") y hay un cronómetro.
+6. **Nada da miedo.** "Deshacer" en todo lo que cambie archivos, confirmación solo en lo irreversible, y aviso de gasto de mensajes antes de ejecutar.
+7. **Pantallas vacías que enseñan.** Cuando no hay nada, se muestra un ejemplo y un botón "Probar este ejemplo", no un hueco en blanco.
+8. **Primera vez guiada.**
+   - Un asistente de 3 pasos al abrirla por primera vez:
+     1. instalar la extensión, con capturas;
+     2. comprobar sesiones, abriendo cada web con un botón;
+     3. hacer la primera pregunta a todas.
+   - Cada paso se pone en verde solo.
+9. **Estética cuidada y coherente.**
+   - Un sistema de diseño único: colores, tipografía, espaciado, esquinas redondeadas y sombras suaves.
+   - Modo claro y oscuro, animaciones sutiles de menos de 200 ms, iconos de un mismo estilo.
+   - Aspecto de aplicación moderna, no de página de pruebas.
+10. **Accesible.** Buen contraste (nivel AA), se maneja con teclado, textos de al menos 15 px y botones grandes.
+
+**Piezas del sistema de diseño**, reutilizables en todas las pantallas:
+- básicas: `Botón`, `Tarjeta`, `Semáforo`, `Chip de IA` (logo, nombre y estado);
+- de conversación: `Tarjeta de respuesta` (texto con formato, modelo usado, tiempo, y los botones Pásasela a / Critícala / Copiar), `Tarjeta de paso` (para la Mesa);
+- de ayuda y avisos: `Línea de tiempo`, `Aviso` (arriba a la derecha, que desaparece solo), `Ventana de confirmación`, `Pantalla vacía`, `Asistente de primera vez`.
+
+**Tecnología para la estética:**
+- React + Vite + TypeScript + Tailwind CSS;
+- componentes accesibles con Radix/shadcn-ui;
+- iconos Lucide y la tipografía Inter, incluida en el proyecto.
+
+El resultado compilado se guarda en el repo, así que tu PC nunca necesita instalar ni compilar nada.
+
+**Cómo se comprueba que es intuitiva y estética (criterio de "hecho" de cada pantalla):**
+- **Capturas** de cada pantalla en modo claro y oscuro, a 1280 y 1920 px de ancho, sin cortes ni textos solapados.
+- Revisión con esta lista: una acción principal, cero jerga, errores con botón de arreglo, pantalla vacía con ejemplo, se usa con teclado.
+- **Prueba final con Iván**, sin ayuda. Tiene que:
+  1. hacer una pregunta a todas;
+  2. ejecutar la plantilla "Consejo + juez";
+  3. pasar una respuesta a otra IA;
+  4. deshacer un cambio de código.
+
+  Si se atasca en algo, esa pantalla se rediseña.
+
 ## Arquitectura recomendada
 
 ```
@@ -77,7 +125,7 @@ extensión de Chrome (la de ahora) · OmniRoute (APIs) · aider (programar) · d
 |---|---|---|
 | **1. Motor de cadenas** | Motor, plantillas de mensaje, pasos en paralelo o en fila, reintentos, guardado, diario | Ejecuto de verdad "Reparto + integración" con 2 chats y 1 IA por API. Te enseño la cadena guardada y su candado verde |
 | **2. API de la app + eventos en directo** | Rutas para estado, preguntar, cadenas, historial y programar; avisos en directo | Tests automáticos en verde, y una cadena que se ve avanzar paso a paso |
-| **3. App: Inicio, Preguntar e Historial** | Las 3 pantallas básicas y el botón "Pásasela a…" | Captura de la app funcionando en mi navegador; luego tú la abres con el icono |
+| **3. App: Inicio, Preguntar e Historial** | Sistema de diseño (colores, piezas reutilizables, modo claro y oscuro) + las 3 pantallas básicas + el botón "Pásasela a…" + asistente de primera vez | Capturas de cada pantalla en claro y oscuro y la lista de diseño cumplida; luego tú la abres con el icono y haces una pregunta sin ayuda |
 | **4. App: Mesa de IAs** | Constructor de tarjetas, 5 plantillas, aviso de cuántos mensajes gastará | Ejecuto cada plantilla de verdad y lo ves en pantalla |
 | **5. App: Programar** | Elegir carpeta, pedir el cambio, ver colores y tests, deshacer, revisión por otra IA | Una IA de tu Chrome arregla el proyecto de prueba, otra lo revisa y ves el antes y el después |
 | **6. Icono único y limpieza** | WEBLLM.cmd con icono, Ajustes, guía, y los .cmd viejos a `herramientas\` | Tú haces doble clic en el icono y completas una cadena sin ayuda |
@@ -121,11 +169,31 @@ Nivel de riesgo (según la skill): esto es código local tuyo con acceso a tus a
 - Capturas de la app en cada fase.
 - La prueba final la haces tú: doble clic en el icono y una cadena completa.
 
-## Decisiones que necesito de ti (recomendación ya puesta)
+## Decisiones tomadas por Iván (24-sep-2026)
 
-1. **App dentro de Chrome en modo aplicación** (recomendado) o programa aparte tipo Electron: más pesado, sin ventaja real.
-2. **El juez, por defecto, una IA por API** (recomendado, no gasta cuentas de chat) o un chat web.
-3. **Empezar por la fase 1** (motor) **y la 3** (Preguntar con "Pásasela a…") **a la vez**. Es lo que antes te da inteligencia cruzada usable.
+1. **App dentro de Chrome, en modo aplicación** (`chrome --app=http://127.0.0.1:20130`), no Electron.
+2. **El juez, por defecto, es una IA por API** (z.ai GLM, groq o Nemotron vía OmniRoute), no un chat web.
+3. **Se empieza por la fase 1 (motor) y la 3 (Preguntar con "Pásasela a…")**.
+4. **Ultra intuitiva y estética**: la sección de diseño de arriba es obligatoria en cada pantalla.
+5. **Quien programa es Claude Code desde GitHub.** Lee la sección siguiente.
+
+## Para Claude Code (programando desde GitHub, sin acceso al PC de Iván)
+
+- **Lee primero `CLAUDE.md`** (reglas del proyecto) y `docs/ESTADO.md` (qué funciona hoy).
+- **Qué NO tienes en la nube:**
+  - el Chrome de Iván con la extensión;
+  - OmniRoute (`http://127.0.0.1:20128`), sus claves (`~/.omniroute/.env`) y `data/` (diario, token del puente);
+  - las sesiones de las webs.
+- **Qué SÍ puedes comprobar:** `python -m pytest -q`. Hay un servidor OpenAI de mentira (`tests/conftest.py`) y una extensión de mentira sobre un WebSocket real (`tests/test_bridge.py`). Todo lo nuevo se prueba igual: sin red y con estos dobles.
+- **Nunca declares "funciona en vivo"** sin evidencia del PC de Iván.
+  - En cada PR, separa "probado con tests (salida pegada)" de "pendiente de probar en el PC de Iván".
+  - La prueba en vivo la hace Iván: con el panel / "Probar todo", o con la nueva app.
+- **La app compilada se guarda en el repo** (`src/webllm_agent/static/app/`). El PC de Iván no debe necesitar `npm` para usarla; solo para quien programa.
+- **Forma de trabajar:**
+  - una rama y un PR por fase, con la lista de comprobación de diseño y los tests;
+  - no romper lo que ya funciona (puente, extensión, `webllm ask`, diario, guardián);
+  - si tocas `extension/`, sube `version` en `manifest.json`: Iván tendrá que pulsar la flecha ↻ en `chrome://extensions`.
+- **Después de cada PR fusionado**, Iván hace doble clic en `ACTUALIZAR.cmd` en su PC, que baja los cambios de GitHub.
 
 ## Fundamento
 

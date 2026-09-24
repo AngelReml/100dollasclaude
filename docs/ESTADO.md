@@ -43,6 +43,20 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 24-sep-2026 (tarde)
+
+- **El panel de pruebas está en http://127.0.0.1:20130.** `2 - PROBAR TODO` lo abre.
+- **Verificado por Iván en su Chrome:**
+  - z.ai y DeepSeek responden;
+  - **"Programar con el chat z.ai": BIEN.** Una IA de su Chrome arregló el código de prueba.
+- **Una sola ventanita** en una esquina, con una pestaña por IA, que se cierra sola al terminar.
+- **"Saturada"** ya no pausa la IA. Ventanas emergentes (como la de la edad en Qwen): te avisa y espera.
+- **Pendiente:**
+  - Qwen: CAPTCHAs y la ventana de la edad;
+  - Meta: repetir la prueba con la versión 0.3.0 de la extensión.
+- **Siguiente paso:** `docs/PLAN-v3.md` (Mesa de IAs y aplicación de verdad). Lo programará Claude Code desde GitHub.
+- **Para bajar lo que suba Claude Code:** doble clic en **`ACTUALIZAR`**.
+
 ## Qué está comprobado (24-sep-2026)
 
 | Pieza | Estado | Prueba |
