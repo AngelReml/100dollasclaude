@@ -116,7 +116,9 @@
 
   const CHALLENGE_RE = /verify you are human|are you a robot|captcha|slide to verify|drag the slider|arrastra el control|desliza|verificaci[oó]n de seguridad|security check|unusual activity|actividad inusual|请完成验证|滑块|人机验证/i;
   const CHALLENGE_FRAME_RE = /captcha|challenges\.cloudflare\.com|hcaptcha|recaptcha|turnstile|geetest|arkoselabs/i;
-  const RATE_RE = /too many (requests|messages)|rate limit|limit reached|reached (your|the) (daily |usage |message )?limit|try again later|demasiadas (solicitudes|peticiones)|has alcanzado (el|tu) l[ií]mite|server is busy|servidor (est[aá] )?ocupado|服务器繁忙|请求过于频繁|次数已达上限/i;
+  // Limits of YOUR account (pause the site) vs the site being overloaded (just retry later).
+  const RATE_RE = /too many (requests|messages)|rate limit|limit reached|reached (your|the) (daily |usage |message )?limit|demasiadas (solicitudes|peticiones)|has alcanzado (el|tu) l[ií]mite|请求过于频繁|次数已达上限/i;
+  const BUSY_RE = /at capacity|server is busy|servers? (are|is) (busy|overloaded)|overloaded|temporarily unavailable|servidor (est[aá] )?(ocupado|saturado)|服务器繁忙/i;
   const BAN_RE = /account (has been |is )?(suspended|banned|disabled|restricted)|cuenta (suspendida|bloqueada|inhabilitada)|账号(已)?被(封|禁)/i;
   const LOGIN_RE = /log in or sign up|sign in to (get started|continue)|please (log|sign) in|inicia sesi[oó]n para|请登录|登录后/i;
 
@@ -153,13 +155,16 @@
     const loginText = (site.loginText && new RegExp(site.loginText, "i").test(bodyText)) || (!input && LOGIN_RE.test(bodyText));
     let rate = null;
     let ban = null;
+    let busy = null;
     for (const o of overlays()) {
       const t = (o.innerText || "").slice(0, 600);
+      if (!busy && BUSY_RE.test(t)) busy = t.slice(0, 200);
       if (!rate && RATE_RE.test(t)) rate = t.slice(0, 200);
       if (!ban && BAN_RE.test(t)) ban = t.slice(0, 200);
     }
     const last = lastAnswerEl(site);
     const lastText = last ? (last.innerText || "") : "";
+    if (!busy && lastText.length < 300 && BUSY_RE.test(lastText)) busy = lastText.slice(0, 200);
     if (!rate && lastText.length < 300 && RATE_RE.test(lastText)) rate = lastText.slice(0, 200);
     if (!ban && !input && BAN_RE.test(bodyText)) ban = (bodyText.match(BAN_RE) || [""])[0];
     const pop = overlays().map((o) => (o.innerText || "").trim()).find((t) => t.length > 0);
@@ -178,7 +183,8 @@
       bodyLen: bodyText.length,
       challenge: detectChallenge(),
       loginWall: loginUrl || passwordBox || !!loginText,
-      rateLimited: rate,
+      rateLimited: busy ? null : rate,
+      siteBusy: busy,
       banned: ban,
     };
   };

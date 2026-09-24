@@ -68,7 +68,7 @@ def _chat_failure(site: str, status: int, message: str) -> str:
     if status == 504:
         return "Tardó demasiado en responder. -> Deja su ventana de Chrome a la vista y vuelve a probar."
     if status == 503:
-        return "Chrome no está conectado. -> Deja Chrome abierto y vuelve a probar."
+        return f"{message} -> Vuelve a probar en un rato."
     return f"No supe escribir o leer en la web de {name} ({message[:160]}). -> Dímelo y lo ajusto."
 
 
@@ -160,8 +160,16 @@ def _programming_run(base: str, key: str, model: str) -> dict[str, Any]:
     }
 
 
-async def run_checks(cfg: AppConfig, emit: Emit, *, start_services: bool = False) -> list[dict[str, Any]]:
-    """Run every check; emit events as they go; return the final event per check."""
+async def run_checks(cfg: AppConfig, emit: Emit, *, start_services: bool = False,
+                     program_with: str = "api") -> list[dict[str, Any]]:
+    """Run the checks; emit events as they go; return the final event per check.
+
+    program_with="api" (default): quick check of everything, and the programming
+    test through the API models so it spends no chat messages.
+    program_with=<site>: ONLY the programming test, through that Chrome chat.
+    """
+    if program_with in SITES:
+        return await _program_only(cfg, emit, program_with)
     final: dict[str, dict] = {}
 
     async def out(ev: dict) -> None:
@@ -211,21 +219,38 @@ async def run_checks(cfg: AppConfig, emit: Emit, *, start_services: bool = False
         await asyncio.gather(*(_check_api(client, cfg.base_url, omni_key, i, label, model, out)
                                for i, label, model in API_MODELS))
 
+    await _program(out, "Programar (con las IAs por API; para probarlo con un chat usa el otro botón)",
+                   cfg.base_url, omni_key, "combo/webllm-default")
+    return list(final.values())
+
+
+async def _program(out: Emit, title: str, base: str, key: str, model: str) -> None:
     if not AIDER.exists():
-        await out(_event("programar", "Programar", "fail", "aider no está instalado. -> Dímelo."))
-    else:
-        if good_chats:
-            site = good_chats[0]
-            title, base, key, model = (f"Programar con el chat {SITES[site]}", f"{bridge}/v1",
-                                       load_token(cfg.paths.state_dir), f"browser/{site}")
-        else:
-            title, base, key, model = ("Programar (con las IAs por API, porque ningún chat de Chrome funcionó)",
-                                       cfg.base_url, omni_key, "combo/webllm-default")
-        await out(_event("programar", title, "running", "La IA está arreglando un código roto (hasta 5 minutos)..."))
-        res = await asyncio.get_running_loop().run_in_executor(None, _programming_run, base, key, model)
-        await out(_event("programar", title, "ok" if res["ok"] else "fail",
-                         "Arregló el código: el test pasó de FALLAR a PASAR." if res["ok"]
-                         else "No lo arregló. -> Dímelo.", model=model, **{k: v for k, v in res.items() if k != "ok"}))
+        await out(_event("programar", title, "fail", "aider no está instalado. -> Dímelo."))
+        return
+    await out(_event("programar", title, "running", "La IA está arreglando un código roto (hasta 5 minutos)..."))
+    res = await asyncio.get_running_loop().run_in_executor(None, _programming_run, base, key, model)
+    await out(_event("programar", title, "ok" if res["ok"] else "fail",
+                     "Arregló el código: el test pasó de FALLAR a PASAR." if res["ok"]
+                     else "No lo arregló. -> Dímelo.", model=model, **{k: v for k, v in res.items() if k != "ok"}))
+
+
+async def _program_only(cfg: AppConfig, emit: Emit, site: str) -> list[dict[str, Any]]:
+    final: dict[str, dict] = {}
+
+    async def out(ev: dict) -> None:
+        if ev["state"] != "running":
+            final[ev["id"]] = ev
+        await emit(ev)
+
+    bridge = f"http://127.0.0.1:{cfg.bridge_port}"
+    async with httpx.AsyncClient() as client:
+        if not await _extension_connected(client, bridge):
+            await out(_event("chrome", "Extensión en tu Chrome", "fail",
+                             "NO conectada. -> Instálala (recuadro rojo de arriba) y vuelve a probar."))
+            return list(final.values())
+    await _program(out, f"Programar con el chat {SITES[site]} (gasta 2 mensajes de ese chat)",
+                   f"{bridge}/v1", load_token(cfg.paths.state_dir), f"browser/{site}")
     return list(final.values())
 
 

@@ -77,8 +77,15 @@ const busy = new Set();      // sites with a job running
 let closeTimer = null;
 let rotateIndex = 0;
 
-async function webllmWindow() {
-  const saved = (await chrome.storage.session.get("window"))["window"];
+let windowPromise = null;   // one creation at a time: parallel jobs share it
+
+function webllmWindow() {
+  if (!windowPromise) windowPromise = findOrCreateWindow().finally(() => { windowPromise = null; });
+  return windowPromise;
+}
+
+async function findOrCreateWindow() {
+  const saved = (await chrome.storage.local.get("window"))["window"];
   if (saved) {
     try { return await chrome.windows.get(saved); } catch (e) { /* closed */ }
   }
@@ -90,14 +97,14 @@ async function webllmWindow() {
   } catch (e) { /* default position */ }
   const win = await chrome.windows.create({ url: "about:blank", focused: false, state: "normal",
                                             width: 640, height: 720, left, top });
-  await chrome.storage.session.set({ window: win.id, blank: win.tabs[0].id });
+  await chrome.storage.local.set({ window: win.id, blank: win.tabs[0].id });
   return win;
 }
 
 async function siteTab(site) {
   const win = await webllmWindow();
   const key = "tab:" + site;
-  const saved = (await chrome.storage.session.get(key))[key];
+  const saved = (await chrome.storage.local.get(key))[key];
   if (saved) {
     try {
       const t = await chrome.tabs.get(saved);
@@ -105,9 +112,9 @@ async function siteTab(site) {
     } catch (e) { /* closed */ }
   }
   const tab = await chrome.tabs.create({ windowId: win.id, url: SITES[site].newChat, active: busy.size <= 1 });
-  await chrome.storage.session.set({ [key]: tab.id });
-  const blank = (await chrome.storage.session.get("blank"))["blank"];
-  if (blank) { chrome.tabs.remove(blank).catch(() => {}); await chrome.storage.session.remove("blank"); }
+  await chrome.storage.local.set({ [key]: tab.id });
+  const blank = (await chrome.storage.local.get("blank"))["blank"];
+  if (blank) { chrome.tabs.remove(blank).catch(() => {}); await chrome.storage.local.remove("blank"); }
   return tab.id;
 }
 
@@ -117,7 +124,7 @@ setInterval(async () => {
   const sites = [...busy];
   if (!sites.length) return;
   rotateIndex = (rotateIndex + 1) % sites.length;
-  const tabId = (await chrome.storage.session.get("tab:" + sites[rotateIndex]))["tab:" + sites[rotateIndex]];
+  const tabId = (await chrome.storage.local.get("tab:" + sites[rotateIndex]))["tab:" + sites[rotateIndex]];
   if (tabId) chrome.tabs.update(tabId, { active: true }).catch(() => {});
 }, 2000);
 
@@ -132,9 +139,9 @@ function jobFinished(site) {
   closeTimer = setTimeout(async () => {
     closeTimer = null;
     if (busy.size) return;
-    const saved = (await chrome.storage.session.get("window"))["window"];
+    const saved = (await chrome.storage.local.get("window"))["window"];
     if (saved) chrome.windows.remove(saved).catch(() => {});
-    await chrome.storage.session.clear();
+    await chrome.storage.local.clear();
   }, 60000);
 }
 
@@ -152,8 +159,8 @@ async function waitLoaded(tabId, timeoutMs) {
 // covered. We never force the window up; we only tell you once.
 async function keepVisible(tabId, st, site) {
   if (!st || !st.hidden) return;
-  const tab = await chrome.tabs.get(tabId);
-  const win = await chrome.windows.get(tab.windowId);
+  let win = null;
+  try { win = await chrome.windows.get((await chrome.tabs.get(tabId)).windowId); } catch (e) { return; }
   if (win.state === "minimized" || busy.size === 1) {
     notify(site, "hidden", "La ventanita de webllm está minimizada o tapada: las webs no terminan de escribir hasta que se vea. Déjala a la vista (puede estar pequeña en una esquina).");
   }
@@ -199,6 +206,7 @@ async function waitForHuman(site, tabId, what) {
 
 function checkBlocks(site, st) {
   if (st.banned) throw new JobError("banned", st.banned);
+  if (st.siteBusy) throw new JobError("site_busy", st.siteBusy);
   if (st.rateLimited) throw new JobError("rate_limited", st.rateLimited);
   if (st.loginWall) throw new JobError("login_required", st.url);
 }
@@ -299,6 +307,7 @@ async function handleJob(job) {
       if (code === "banned") notify(job.site, code, `${name}: la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y haz doble clic en REANUDAR.`);
       if (code === "rate_limited") notify(job.site, code, `${name}: límite de mensajes alcanzado. Lo pauso; doble clic en REANUDAR cuando quieras seguir.`);
       if (code === "challenge") notify(job.site, code, `${name}: la verificación no se resolvió. Lo pauso; resuélvela y haz doble clic en REANUDAR.`);
+      if (code === "site_busy") notify(job.site, code, `${name} está saturado ahora mismo (no es un límite de tu cuenta). Prueba en un rato o elige otro modelo en su web.`);
       if (code === "not_sent") notify(job.site, code, `${name}: el mensaje se quedó sin enviar (¿una ventana emergente?). Vuelve a pedirlo.`);
       sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
     } finally {

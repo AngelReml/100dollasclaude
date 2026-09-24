@@ -81,6 +81,11 @@
     <h2>2 · Probar todo</h2>
     <p class="muted">Pregunta de verdad a cada IA y pone a una a arreglar un código roto. Se abrirán ventanas de Chrome solas; no las cierres ni las minimices. Tarda unos minutos.</p>
     <button class="big" id="run">Probar todo</button>
+    <p class="muted" style="margin-top:14px">La prueba de programar de arriba usa las IAs por API (no gasta mensajes de tus chats).
+    Para ver a un chat de Chrome programando: elige cuál y pulsa el botón (gasta 2 mensajes de ese chat).</p>
+    <p><select id="progsite"><option value="zai">z.ai</option><option value="qwen">Qwen</option>
+       <option value="deepseek">DeepSeek</option><option value="meta">Meta AI</option></select>
+       <button class="big" id="runprog">Probar programar con ese chat</button></p>
     <div id="results"></div>
     <div class="summary" id="summary"></div>
   </section>
@@ -171,21 +176,23 @@ function upsertRow(ev) {
   }
 }
 
-$("#run").onclick = () => {
-  $("#run").disabled = true; $("#results").replaceChildren(); $("#summary").textContent = "";
-  const es = new EventSource(`/panel/run?token=${TOKEN}`);
+function startRun(program) {
+  $("#run").disabled = true; $("#runprog").disabled = true; $("#results").replaceChildren(); $("#summary").textContent = "";
+  const es = new EventSource(`/panel/run?token=${TOKEN}&program=${program}`);
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
     if (ev.kind === "done") {
-      es.close(); $("#run").disabled = false;
+      es.close(); $("#run").disabled = false; $("#runprog").disabled = false;
       $("#summary").textContent = `Resultado: ${ev.good} de ${ev.total} BIEN` + (ev.good === ev.total ? " — todo funciona." : " — mira las líneas en rojo: cada una dice qué hacer.");
       return;
     }
-    if (ev.kind === "busy") { es.close(); $("#run").disabled = false; $("#summary").textContent = "Ya hay una prueba en marcha."; return; }
+    if (ev.kind === "busy") { es.close(); $("#run").disabled = false; $("#runprog").disabled = false; $("#summary").textContent = "Ya hay una prueba en marcha."; return; }
     upsertRow(ev);
   };
-  es.onerror = () => { es.close(); $("#run").disabled = false; if (!$("#summary").textContent) $("#summary").textContent = "Se cortó la conexión con el puente."; };
-};
+  es.onerror = () => { es.close(); $("#run").disabled = false; $("#runprog").disabled = false; if (!$("#summary").textContent) $("#summary").textContent = "Se cortó la conexión con el puente."; };
+}
+$("#run").onclick = () => startRun("api");
+$("#runprog").onclick = () => startRun($("#progsite").value);
 
 $("#ask").onclick = async () => {
   const prompt = $("#q").value.trim(); if (!prompt) return;

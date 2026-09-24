@@ -42,6 +42,7 @@ ERRORS: dict[str, tuple[int, float | None, str]] = {
     "challenge": (403, -1, "pidió una verificación humana y nadie la resolvió"),
     "timeout": (504, None, "no terminó de responder a tiempo"),
     "extension_disconnected": (503, None, "Chrome se desconectó a mitad del envío"),
+    "site_busy": (503, None, "está saturado ahora mismo (no es un límite de tu cuenta). Prueba en un rato o elige otro modelo en su web"),
     "not_sent": (502, None, "el mensaje se quedó sin enviar (una ventana emergente lo tapó). Vuelve a pedirlo"),
 }
 
@@ -262,8 +263,9 @@ class Bridge:
                 await resp.write(b": ping\n\n")
 
         beat = asyncio.create_task(heartbeat())
+        program_with = request.query.get("program", "api")
         try:
-            final = await run_checks(self.cfg, send)
+            final = await run_checks(self.cfg, send, program_with=program_with)
             good = sum(ev["state"] == "ok" for ev in final)
             await send({"kind": "done", "good": good, "total": len(final)})
         except (ConnectionResetError, asyncio.CancelledError):

@@ -384,7 +384,7 @@ def test_panel_run_streams_real_checks_with_evidence(tmp_path, monkeypatch):
             assert final["chat:zai"]["state"] == "ok" and final["chat:zai"]["detail"]["answer"] == "pong"
             assert final["chat:meta"]["state"] == "fail" and "meta.ai" in final["chat:meta"]["message"]
             assert final["programar"]["state"] == "ok" and final["programar"]["detail"]["code_after"] == "b"
-            assert "chat z.ai" in final["programar"]["title"].lower()
+            assert "api" in final["programar"]["title"].lower()  # quick run spends no chat messages
             assert events[-1]["kind"] == "done"
         finally:
             await ext.close(); await server.close()
