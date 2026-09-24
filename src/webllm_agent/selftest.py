@@ -183,7 +183,12 @@ def run(cfg: AppConfig) -> int:
         omni_key = ""
     for label, model in API_MODELS:
         ok, detail = _api_ping(cfg.base_url, omni_key, model) if omni_key else (False, "sin clave de OmniRoute")
-        rep.add(ok, f"{label} respondió bien." if ok else f"{label} falló ({detail}).")
+        if ok:
+            rep.add(True, f"{label} respondió bien.")
+        elif detail in ("HTTP 429", "HTTP 503", "HTTP 529"):
+            rep.add(False, f"{label} está saturado ahora mismo ({detail}). -> No es tuyo: vuelve a probar en un rato.")
+        else:
+            rep.add(False, f"{label} falló ({detail}). -> Dímelo.")
 
     if AIDER.exists():
         if good_chats:
