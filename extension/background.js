@@ -27,6 +27,11 @@ async function connect() {
   connecting = true;
   try {
     const cfg = await loadConfig();
+    // Only open the socket when the bridge is up: a refused WebSocket shows up
+    // as a red "Errors" entry on chrome://extensions, a failed fetch does not.
+    const health = cfg.bridge.replace(/^ws/, "http").replace(/\/ext$/, "/health");
+    const up = await fetch(health, { cache: "no-store" }).then((r) => r.ok).catch(() => false);
+    if (!up) return;
     const sock = new WebSocket(`${cfg.bridge}?token=${encodeURIComponent(cfg.token)}`);
     sock.onopen = () => sock.send(JSON.stringify({ type: "hello", sites: Object.keys(SITES), version: chrome.runtime.getManifest().version }));
     sock.onmessage = (ev) => onMessage(JSON.parse(ev.data));
