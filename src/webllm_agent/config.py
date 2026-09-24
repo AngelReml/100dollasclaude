@@ -64,9 +64,13 @@ class Paths:
 class ProviderConfig:
     name: str
     model: str
-    # "web" = driven through a browser session cookie (account guard applies);
-    # "api" = an API key or keyless API.
+    # "browser" = a chat page in your Chrome, driven by the extension through
+    #             the local bridge (the bridge applies the account guard);
+    # "web"     = OmniRoute cookie provider (webllm's own guard applies);
+    # "api"     = an API key or keyless API.
     kind: str = "api"
+    # Which local endpoint serves it: "omniroute" (:20128) or "bridge" (:20130).
+    gateway: str = "omniroute"
     enabled: bool = True
     timeout_s: float = 180.0
     # Tried in order when the primary model fails (not after a guard trip).
@@ -90,6 +94,8 @@ class GuardConfig:
 class AppConfig:
     paths: Paths
     base_url: str
+    bridge_port: int = 20130
+    bridge_timeout_s: float = 300.0
     providers: dict[str, ProviderConfig] = field(default_factory=dict)  # priority order
     guard: GuardConfig = field(default_factory=GuardConfig)
     # Claude / ChatGPT / Codex are excluded from this tool: model ids starting
@@ -104,50 +110,29 @@ class AppConfig:
         return self.providers[name]
 
     @property
+    def bridge_url(self) -> str:
+        return f"http://127.0.0.1:{self.bridge_port}/v1"
+
+    @property
     def enabled_providers(self) -> list[ProviderConfig]:
         return [p for p in self.providers.values() if p.enabled]
 
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "omniroute": {"base_url": "http://127.0.0.1:20128/v1"},
-    # Order = priority (output order and "--to todas"). Web providers stay
-    # disabled until their session is pasted in the OmniRoute dashboard.
+    "bridge": {"port": 20130, "timeout_s": 300},
+    # Order = priority (output order and "--to todas").
+    # browser = the chat pages in your Chrome (extension + bridge);
+    # api = through OmniRoute.
     "providers": {
-        "qwen": {
-            "model": "qwen-web/qwen3.8-max",
-            "kind": "web",
-            "enabled": False,
-            "timeout_s": 240,
-            "relogin_hint": "Panel OmniRoute > Providers > Qwen Web: pega de nuevo la cabecera Cookie completa de chat.qwen.ai",
-        },
-        "deepseek": {
-            "model": "ds-web/deepseek-v4-pro",
-            "kind": "web",
-            "enabled": False,
-            "timeout_s": 240,
-            "relogin_hint": "Panel OmniRoute > Providers > DeepSeek Web: pega de nuevo el userToken de chat.deepseek.com",
-        },
-        "zai": {
-            "model": "zai/glm-4.7-flash",
-            "kind": "api",
-            "enabled": False,
-            "timeout_s": 180,
-            # No paid DeepSeek API (decided 2026-09-24): no fallback here; the
-            # OmniRoute combo 'webllm-default' falls back to free models instead.
-            "fallback_models": [],
-        },
-        "meta": {
-            "model": "ms-web/muse-spark",
-            "kind": "web",
-            "enabled": False,
-            "timeout_s": 240,
-            "relogin_hint": "Panel OmniRoute > Providers > Muse Spark Web: pega de nuevo ecto_1_sess y el token ecto1: de meta.ai",
-        },
+        "qwen": {"model": "browser/qwen", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
+        "deepseek": {"model": "browser/deepseek", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
+        "zai-chat": {"model": "browser/zai", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
+        "meta": {"model": "browser/meta", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
+        "zai": {"model": "zai/glm-4.7-flash", "kind": "api", "enabled": True, "timeout_s": 180},
         "groq": {"model": "groq/openai/gpt-oss-120b", "kind": "api", "enabled": True, "timeout_s": 120},
         "nemotron": {"model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free", "kind": "api",
                      "enabled": True, "timeout_s": 180},
-        # OpenRouter's free GLM pool answered 429 model_cooldown on 2026-09-24.
-        "glm-or": {"model": "openrouter/z-ai/glm-5.2:free", "kind": "api", "enabled": False, "timeout_s": 180},
     },
     "guard": {"min_spacing_s": 20, "daily_cap": 150, "cooldown_hours": 6},
     "blocked_model_prefixes": ["codex/", "cx/", "cxa/", "cc/", "cgpt", "gpt-"],
@@ -174,12 +159,16 @@ def _coerce_providers(raw: Any) -> dict[str, ProviderConfig]:
         if not isinstance(spec, dict) or not spec.get("model"):
             raise ConfigError(f"provider {name!r} needs at least a 'model'")
         kind = str(spec.get("kind", "api"))
-        if kind not in ("api", "web"):
-            raise ConfigError(f"provider {name!r}: kind must be 'api' or 'web'")
+        if kind not in ("api", "web", "browser"):
+            raise ConfigError(f"provider {name!r}: kind must be 'api', 'web' or 'browser'")
+        gateway = str(spec.get("gateway", "bridge" if kind == "browser" else "omniroute"))
+        if gateway not in ("omniroute", "bridge"):
+            raise ConfigError(f"provider {name!r}: gateway must be 'omniroute' or 'bridge'")
         out[str(name)] = ProviderConfig(
             name=str(name),
             model=str(spec["model"]),
             kind=kind,
+            gateway=gateway,
             enabled=bool(spec.get("enabled", True)),
             timeout_s=float(spec.get("timeout_s", 180.0)),
             fallback_models=_as_tuple(spec.get("fallback_models")),
@@ -220,9 +209,12 @@ def load_config(data_dir: Path | None = None) -> AppConfig:
 
     base_url = os.getenv("OMNIROUTE_BASE_URL") or (merged.get("omniroute") or {}).get("base_url")
     guard_raw = merged.get("guard") or {}
+    bridge_raw = merged.get("bridge") or {}
     return AppConfig(
         paths=paths,
         base_url=str(base_url).rstrip("/"),
+        bridge_port=int(bridge_raw.get("port", 20130)),
+        bridge_timeout_s=float(bridge_raw.get("timeout_s", 300)),
         providers=_coerce_providers(merged.get("providers")),
         guard=GuardConfig(
             min_spacing_s=float(guard_raw.get("min_spacing_s", 20)),

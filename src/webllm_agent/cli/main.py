@@ -22,6 +22,8 @@ from .. import __version__
 from ..broadcaster import (
     GatewayError, TargetError, broadcast, new_run_id, render, resolve_targets, verify_run, write_run,
 )
+from ..bridge import SITES, call_admin, load_token
+from ..bridge import serve as serve_bridge
 from ..config import AppConfig, ConfigError, load_config
 from ..guard import Guard
 from ..omniroute import OmniRouteKeyMissing, load_api_key
@@ -57,6 +59,11 @@ def _build_parser() -> argparse.ArgumentParser:
     gc.add_argument("name")
 
     sub.add_parser("config", help="Print the resolved configuration and exit")
+
+    pu = sub.add_parser("puente", help="Bridge to the AI chats open in your Chrome")
+    pu.add_argument("accion", nargs="?", default="arrancar",
+                    choices=["arrancar", "reanudar", "diagnosticar", "estado"])
+    pu.add_argument("sitio", nargs="?", help="qwen | deepseek | zai | meta")
     return p
 
 
@@ -85,9 +92,11 @@ def _cmd_ask(cfg: AppConfig, args: argparse.Namespace) -> int:
         return 2
     names = ", ".join(t.name for t in targets)
     print(f"Enviando a: {names}", flush=True)
+    bridge_key = load_token(cfg.paths.state_dir) if any(t.gateway == "bridge" for t in targets) else None
     try:
         outcomes = asyncio.run(broadcast(cfg, prompt, targets, api_key=api_key, guard=_guard(cfg),
-                                         timeout_s=args.timeout, notify=lambda m: print(m, flush=True)))
+                                         timeout_s=args.timeout, notify=lambda m: print(m, flush=True),
+                                         bridge_key=bridge_key))
     except GatewayError as exc:
         print(str(exc), file=sys.stderr)
         return 3
@@ -143,16 +152,47 @@ def _cmd_journal_verify(cfg: AppConfig, args: argparse.Namespace) -> int:
     return 1 if bad else 0
 
 
+def _cmd_puente(cfg: AppConfig, args: argparse.Namespace) -> int:
+    if args.accion == "arrancar":
+        serve_bridge(cfg, cfg.bridge_port, cfg.bridge_timeout_s)
+        return 0
+    token = load_token(cfg.paths.state_dir)
+    try:
+        if args.accion == "reanudar":
+            # Pauses live in a file, so this works even with the bridge stopped.
+            g = Guard(cfg.paths.state_dir / "bridge_guard.json", cfg.guard)
+            cleared = [s for s in ([args.sitio] if args.sitio else list(SITES)) if g.clear(s)]
+            print("Reanudado: " + (", ".join(cleared) if cleared else "no había nada en pausa."))
+            return 0
+        elif args.accion == "diagnosticar":
+            if args.sitio not in SITES:
+                print("Indica el sitio: " + ", ".join(SITES), file=sys.stderr)
+                return 2
+            code, body = asyncio.run(call_admin(cfg.bridge_port, token, "/admin/diagnose", {"site": args.sitio}))
+            print(body.get("text") if isinstance(body, dict) and body.get("ok") else body)
+        else:
+            import httpx
+            r = httpx.get(f"http://127.0.0.1:{cfg.bridge_port}/status",
+                          headers={"Authorization": f"Bearer {token}"}, timeout=10)
+            code, body = r.status_code, r.json()
+            print(json.dumps(body, indent=2, ensure_ascii=False))
+    except Exception as exc:  # bridge not running
+        print(f"El puente no responde ({type(exc).__name__}). Enciéndelo con iniciar.cmd", file=sys.stderr)
+        return 3
+    return 0 if code == 200 else 1
+
+
 def _cmd_status(cfg: AppConfig) -> int:
     state = _guard(cfg).status()
+    bridge_state = Guard(cfg.paths.state_dir / "bridge_guard.json", cfg.guard).status()
     now = datetime.now().timestamp()
     print("Proveedores (en orden de prioridad):")
     for p in cfg.providers.values():
-        st = state.get(p.name, {})
+        st = bridge_state.get(p.model.split("/", 1)[-1], {}) if p.gateway == "bridge" else state.get(p.name, {})
         flags = []
         if not p.enabled:
             flags.append("desactivado")
-        if p.guarded:
+        if p.guarded or p.gateway == "bridge":
             until = st.get("cooldown_until")
             if until and until > now:
                 flags.append(f"EN PAUSA hasta {datetime.fromtimestamp(until):%d/%m %H:%M} ({st.get('cooldown_reason', '')})")
@@ -205,6 +245,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "config":
         return _cmd_config(cfg)
+    if args.command == "puente":
+        return _cmd_puente(cfg, args)
     parser.print_help()
     return 0
 

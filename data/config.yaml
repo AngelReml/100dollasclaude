@@ -1,37 +1,38 @@
-# webllm-agent v2 configuration.
-# providers: order = priority. 'model' is the OmniRoute model id.
-# kind: web = session cookie (account guard applies) | api = API key / keyless.
-# Set enabled: true once the provider works in OmniRoute.
+# webllm-agent configuration.
+# providers: order = priority. 'model' is the model id at its gateway.
+# kind: browser = chat page in your Chrome (via the bridge) | api = via OmniRoute.
+# enabled: false hides a provider from '--to todas'.
 omniroute:
   base_url: http://127.0.0.1:20128/v1
+bridge:
+  port: 20130
+  timeout_s: 300
 providers:
   qwen:
-    model: qwen-web/qwen3.8-max
-    kind: web
-    enabled: false
-    timeout_s: 240
-    relogin_hint: 'Panel OmniRoute > Providers > Qwen Web: pega de nuevo la cabecera
-      Cookie completa de chat.qwen.ai'
+    model: browser/qwen
+    kind: browser
+    gateway: bridge
+    timeout_s: 420
   deepseek:
-    model: ds-web/deepseek-v4-pro
-    kind: web
-    enabled: false
-    timeout_s: 240
-    relogin_hint: 'Panel OmniRoute > Providers > DeepSeek Web: pega de nuevo el userToken
-      de chat.deepseek.com'
+    model: browser/deepseek
+    kind: browser
+    gateway: bridge
+    timeout_s: 420
+  zai-chat:
+    model: browser/zai
+    kind: browser
+    gateway: bridge
+    timeout_s: 420
+  meta:
+    model: browser/meta
+    kind: browser
+    gateway: bridge
+    timeout_s: 420
   zai:
     model: zai/glm-4.7-flash
     kind: api
     enabled: true
     timeout_s: 180
-    fallback_models: []
-  meta:
-    model: ms-web/muse-spark
-    kind: web
-    enabled: false
-    timeout_s: 240
-    relogin_hint: 'Panel OmniRoute > Providers > Muse Spark Web: pega de nuevo ecto_1_sess
-      y el token ecto1: de meta.ai'
   groq:
     model: groq/openai/gpt-oss-120b
     kind: api
@@ -41,11 +42,6 @@ providers:
     model: openrouter/nvidia/nemotron-3-super-120b-a12b:free
     kind: api
     enabled: true
-    timeout_s: 180
-  glm-or:
-    model: openrouter/z-ai/glm-5.2:free
-    kind: api
-    enabled: false
     timeout_s: 180
 guard:
   min_spacing_s: 20

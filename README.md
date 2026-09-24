@@ -1,9 +1,15 @@
 # webllm-agent (v2)
 
-> 🚧 **UNDER CONSTRUCTION / EN CONSTRUCCIÓN.** Works today with API providers
-> (z.ai GLM-4.7-Flash, groq, OpenRouter free). The web providers (Qwen,
-> DeepSeek, Meta AI) are not connected yet: they are waiting for sessions to be
-> added in the OmniRoute dashboard. See [docs/ESTADO.md](docs/ESTADO.md).
+> 🚧 **UNDER CONSTRUCTION / EN CONSTRUCCIÓN.** Your own Chrome drives the AI chat
+> pages (Qwen, DeepSeek, z.ai, Meta AI) through a local extension + bridge that
+> looks like an OpenAI API, so aider can program with them. Verified end to end
+> with a stand-in extension and on the live z.ai page; pending: the real
+> extension loaded in the user's Chrome. See [docs/ESTADO.md](docs/ESTADO.md).
+>
+> ```
+> aider / webllm ask ──► bridge 127.0.0.1:20130 ──► Chrome extension ──► chat page (type, wait, copy)
+> ```
+> Start: `iniciar.cmd` · ask: `preguntar.cmd` · code: `programar.cmd <qwen|deepseek|zai|meta>` · unpause: `reanudar.cmd`
 
 Type one prompt and send it to several AI providers at once — or to one —
 through a single local gateway, and let a coding agent apply changes to a

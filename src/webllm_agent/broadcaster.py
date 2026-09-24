@@ -66,8 +66,11 @@ def resolve_targets(cfg: AppConfig, to: str) -> list[ProviderConfig]:
         if not targets[0].enabled:
             raise TargetError(f"'{key}' está desactivado en data/config.yaml (enabled: false).")
     elif "/" in key:
-        kind = "web" if key.startswith(cfg.web_model_prefixes) else "api"
-        targets = [ProviderConfig(name=key, model=key, kind=kind)]
+        if key.startswith("browser/"):
+            targets = [ProviderConfig(name=key, model=key, kind="browser", gateway="bridge")]
+        else:
+            kind = "web" if key.startswith(cfg.web_model_prefixes) else "api"
+            targets = [ProviderConfig(name=key, model=key, kind=kind)]
     else:
         names = ", ".join(["todas", *cfg.providers])
         raise TargetError(f"No conozco '{key}'. Usa uno de: {names}, o un id de modelo 'proveedor/modelo'.")
@@ -111,7 +114,9 @@ async def _run_target(
     guard: Guard,
     timeout_s: float | None,
     notify: Callable[[str], None],
+    bridge_key: str | None = None,
 ) -> Outcome:
+    base_url, key = (cfg.bridge_url, bridge_key or "") if t.gateway == "bridge" else (cfg.base_url, api_key)
     permit = None
     if t.guarded:
         try:
@@ -122,7 +127,7 @@ async def _run_target(
     try:
         for model in (t.model, *t.fallback_models):
             outcome.tried_models.append(model)
-            res = await chat(client, base_url=cfg.base_url, api_key=api_key, model=model,
+            res = await chat(client, base_url=base_url, api_key=key, model=model,
                              prompt=prompt, timeout_s=timeout_s or t.timeout_s)
             outcome.result = res
             if t.guarded:
@@ -150,6 +155,7 @@ async def broadcast(
     timeout_s: float | None = None,
     notify: Callable[[str], None] = print,
     transport: httpx.AsyncBaseTransport | None = None,
+    bridge_key: str | None = None,
 ) -> list[Outcome]:
     """Send ``prompt`` to every target and return outcomes in target (priority) order."""
     groups: dict[str, list[int]] = {}
@@ -158,13 +164,14 @@ async def broadcast(
     outcomes: list[Outcome | None] = [None] * len(targets)
 
     async with httpx.AsyncClient(transport=transport) as client:
-        await check_gateway(client, cfg.base_url, api_key)
+        if any(t.gateway == "omniroute" for t in targets):
+            await check_gateway(client, cfg.base_url, api_key)
 
         async def run_group(indexes: list[int]) -> None:
             for i in indexes:  # sequential within one upstream
                 outcomes[i] = await _run_target(targets[i], prompt=prompt, client=client, cfg=cfg,
                                                 api_key=api_key, guard=guard, timeout_s=timeout_s,
-                                                notify=notify)
+                                                notify=notify, bridge_key=bridge_key)
 
         await asyncio.gather(*(run_group(ix) for ix in groups.values()))
     return [o for o in outcomes if o is not None]

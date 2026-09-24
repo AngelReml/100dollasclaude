@@ -227,6 +227,16 @@ class Guard:
             msg += f" Abre la web de {provider.name} en tu navegador normal y úsala a mano un rato antes de volver."
         return msg
 
+    def trip(self, provider: ProviderConfig, reason_es: str, hours: float | None = None) -> str:
+        """Pause a provider for ``hours`` (default: cooldown_hours) and return a Spanish notice."""
+        until = self.clock() + (self.cfg.cooldown_hours if hours is None else hours) * 3600
+        data = self._load()
+        st = data["providers"].setdefault(provider.name, {})
+        st["cooldown_until"] = until
+        st["cooldown_reason"] = reason_es
+        self._save(data)
+        return f"AVISO {provider.name}: {reason_es}. En pausa hasta el {self._fmt(until)}; reanudar.cmd lo reactiva."
+
     def clear(self, name: str) -> bool:
         data = self._load()
         st = data["providers"].get(name)
