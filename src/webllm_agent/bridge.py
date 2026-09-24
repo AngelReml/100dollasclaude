@@ -42,6 +42,7 @@ ERRORS: dict[str, tuple[int, float | None, str]] = {
     "challenge": (403, -1, "pidió una verificación humana y nadie la resolvió"),
     "timeout": (504, None, "no terminó de responder a tiempo"),
     "extension_disconnected": (503, None, "Chrome se desconectó a mitad del envío"),
+    "not_sent": (502, None, "el mensaje se quedó sin enviar (una ventana emergente lo tapó). Vuelve a pedirlo"),
 }
 
 
@@ -387,7 +388,11 @@ class Bridge:
             return self._error(status, message + (f" ({detail})" if detail and status == 502 else ""), code)
 
         text = res.get("text", "")
+        label = str(res.get("model_label") or "")
+        if label:
+            model = f"{model} · {label}"
         headers = {"x-webllm-site": site, "x-webllm-capture": str(res.get("via", "")),
+                   "x-webllm-model-label": label.encode("ascii", "replace").decode(),
                    "x-webllm-latency-ms": str(int(latency * 1000))}
         cid = "chatcmpl-" + uuid.uuid4().hex
         created = int(time.time())
@@ -414,7 +419,16 @@ class Bridge:
 def serve(cfg: AppConfig, port: int, timeout_s: float) -> None:
     token = load_token(cfg.paths.state_dir)
     cfg_path = write_extension_config(token, port)
-    bridge = Bridge(cfg, token, timeout_s=timeout_s)
+    log_file = cfg.paths.logs_dir / "bridge.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def log(message: str) -> None:
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}"
+        print(line, flush=True)
+        with log_file.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+
+    bridge = Bridge(cfg, token, timeout_s=timeout_s, log=log)
     print(f"Puente webllm en http://127.0.0.1:{port}/v1  (extensión: {cfg_path.parent})")
     print(f"Panel de pruebas: http://127.0.0.1:{port}/")
     print("Esperando a Chrome... Deja esta ventana abierta.")

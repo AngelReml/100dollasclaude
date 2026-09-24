@@ -70,24 +70,72 @@ function notify(site, kind, message) {
 
 // ---------------------------------------------------------------- tabs
 
+// All chats live as tabs of ONE small webllm window in the bottom-right corner.
+// It is created unfocused (it never steals your keyboard) and closes itself a
+// minute after the last job.
+const busy = new Set();      // sites with a job running
+let closeTimer = null;
+let rotateIndex = 0;
+
+async function webllmWindow() {
+  const saved = (await chrome.storage.session.get("window"))["window"];
+  if (saved) {
+    try { return await chrome.windows.get(saved); } catch (e) { /* closed */ }
+  }
+  let left = 0, top = 0;
+  try {
+    const [d] = await chrome.system.display.getInfo();
+    left = d.workArea.left + d.workArea.width - 640;
+    top = d.workArea.top + d.workArea.height - 720;
+  } catch (e) { /* default position */ }
+  const win = await chrome.windows.create({ url: "about:blank", focused: false, state: "normal",
+                                            width: 640, height: 720, left, top });
+  await chrome.storage.session.set({ window: win.id, blank: win.tabs[0].id });
+  return win;
+}
+
 async function siteTab(site) {
+  const win = await webllmWindow();
   const key = "tab:" + site;
   const saved = (await chrome.storage.session.get(key))[key];
   if (saved) {
     try {
       const t = await chrome.tabs.get(saved);
-      if (t) return t.id;
+      if (t && t.windowId === win.id) return t.id;
     } catch (e) { /* closed */ }
   }
-  // One small window per site, cascaded so they do not fully cover each other.
-  const i = Object.keys(SITES).indexOf(site);
-  const win = await chrome.windows.create({
-    url: SITES[site].newChat, focused: false, state: "normal",
-    width: 900, height: 760, left: 40 + i * 60, top: 40 + i * 50,
-  });
-  const tabId = win.tabs[0].id;
-  await chrome.storage.session.set({ [key]: tabId });
-  return tabId;
+  const tab = await chrome.tabs.create({ windowId: win.id, url: SITES[site].newChat, active: busy.size <= 1 });
+  await chrome.storage.session.set({ [key]: tab.id });
+  const blank = (await chrome.storage.session.get("blank"))["blank"];
+  if (blank) { chrome.tabs.remove(blank).catch(() => {}); await chrome.storage.session.remove("blank"); }
+  return tab.id;
+}
+
+// Chat pages only write the answer on screen in the visible tab, so while
+// several chats work at once, show each of their tabs in turn.
+setInterval(async () => {
+  const sites = [...busy];
+  if (!sites.length) return;
+  rotateIndex = (rotateIndex + 1) % sites.length;
+  const tabId = (await chrome.storage.session.get("tab:" + sites[rotateIndex]))["tab:" + sites[rotateIndex]];
+  if (tabId) chrome.tabs.update(tabId, { active: true }).catch(() => {});
+}, 2000);
+
+function jobStarted(site) {
+  busy.add(site);
+  if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
+}
+
+function jobFinished(site) {
+  busy.delete(site);
+  if (busy.size || closeTimer) return;
+  closeTimer = setTimeout(async () => {
+    closeTimer = null;
+    if (busy.size) return;
+    const saved = (await chrome.storage.session.get("window"))["window"];
+    if (saved) chrome.windows.remove(saved).catch(() => {});
+    await chrome.storage.session.clear();
+  }, 60000);
 }
 
 async function waitLoaded(tabId, timeoutMs) {
@@ -100,13 +148,15 @@ async function waitLoaded(tabId, timeoutMs) {
   return false;
 }
 
-// Chat pages stop writing the answer while hidden (minimized or fully
-// covered window), so bring the site's window forward when that happens.
-async function keepVisible(tabId, st) {
+// Chat pages stop writing the answer while their window is minimized or fully
+// covered. We never force the window up; we only tell you once.
+async function keepVisible(tabId, st, site) {
   if (!st || !st.hidden) return;
   const tab = await chrome.tabs.get(tabId);
-  await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
-  await chrome.tabs.update(tabId, { active: true });
+  const win = await chrome.windows.get(tab.windowId);
+  if (win.state === "minimized" || busy.size === 1) {
+    notify(site, "hidden", "La ventanita de webllm está minimizada o tapada: las webs no terminan de escribir hasta que se vea. Déjala a la vista (puede estar pequeña en una esquina).");
+  }
 }
 
 async function call(tabId, op, ...args) {
@@ -181,24 +231,40 @@ async function runJob(job) {
   const snd = await call(tabId, "send", site);
   if (!snd || !snd.ok) throw new JobError("send_failed", JSON.stringify(snd));
 
+  // 2b. make sure it really went out. A pop-up (age check, cookies, "new
+  // feature"...) can swallow the click and leave the text in the box: then ask
+  // the user to answer the pop-up and press send again once it is gone.
+  const sendDeadline = Date.now() + HUMAN_WAIT_MS;
+  let asked = false;
+  for (let tries = 0; ; tries++) {
+    await sleep(2500);
+    st = await call(tabId, "state", site);
+    if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
+    checkBlocks(job.site, st);
+    const stillThere = st.inputLen > 0 && st.inputLen >= before.inputLen * 0.5 && st.bodyLen <= before.bodyLen + 20;
+    if (!stillThere) break;
+    if (Date.now() > sendDeadline) throw new JobError("not_sent", "the text stayed in the chat box");
+    if (st.overlay && !asked) {
+      asked = true;
+      const tab = await chrome.tabs.get(tabId);
+      await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+      await chrome.tabs.update(tabId, { active: true });
+      notify(job.site, "popup", `${site.name} ha sacado una ventana ("${st.overlay}"). Respóndela en la ventanita de webllm y sigo yo solo.`);
+    }
+    if (!st.overlay || tries % 3 === 2) await call(tabId, "send", site);
+  }
+
   // 3. wait until the answer is complete
   const deadline = Date.now() + (job.timeout_ms || 300000);
   let lastSig = "";
   let stable = 0;
   let changed = false;
-  let sentChecked = false;
   while (Date.now() < deadline) {
     await sleep(1500);
     st = await call(tabId, "state", site);
-    await keepVisible(tabId, st);
+    await keepVisible(tabId, st, job.site);
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
     checkBlocks(job.site, st);
-    if (!sentChecked) {
-      sentChecked = true;
-      if (st.inputLen >= before.inputLen && before.inputLen > 0 && st.bodyLen === before.bodyLen) {
-        await call(tabId, "send", site);  // the first send did not take: press once more
-      }
-    }
     const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
     if (sig !== lastSig) { lastSig = sig; stable = 0; changed = true; } else { stable++; }
     const newCopy = st.copyCount > before.copyCount;
@@ -210,16 +276,21 @@ async function runJob(job) {
   await sleep(800);
   let out = await call(tabId, "capture", site);
   if (!out || !out.ok) out = await call(tabId, "fallback", site);
-  if (!out || !out.ok || !out.text.trim()) throw new JobError("empty_answer", JSON.stringify(out));
+  if (!out || !out.ok || !out.text.trim()) {
+    const d = await call(tabId, "diagnose", site).catch(() => null);
+    throw new JobError("empty_answer", JSON.stringify({ out, diagnose: d }).slice(0, 6000));
+  }
+  out.modelName = st.modelName || null;
   return out;
 }
 
 async function handleJob(job) {
   const prev = siteQueue[job.site] || Promise.resolve();
   const run = prev.catch(() => {}).then(async () => {
+    jobStarted(job.site);
     try {
       const out = await runJob(job);
-      sendToBridge({ type: "result", id: job.id, ok: true, text: out.text, via: out.via });
+      sendToBridge({ type: "result", id: job.id, ok: true, text: out.text, via: out.via, model_label: out.modelName });
     } catch (e) {
       const code = e instanceof JobError ? e.code : "extension_error";
       const detail = e instanceof JobError ? e.detail : String(e && e.message || e);
@@ -228,7 +299,10 @@ async function handleJob(job) {
       if (code === "banned") notify(job.site, code, `${name}: la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y haz doble clic en REANUDAR.`);
       if (code === "rate_limited") notify(job.site, code, `${name}: límite de mensajes alcanzado. Lo pauso; doble clic en REANUDAR cuando quieras seguir.`);
       if (code === "challenge") notify(job.site, code, `${name}: la verificación no se resolvió. Lo pauso; resuélvela y haz doble clic en REANUDAR.`);
+      if (code === "not_sent") notify(job.site, code, `${name}: el mensaje se quedó sin enviar (¿una ventana emergente?). Vuelve a pedirlo.`);
       sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
+    } finally {
+      jobFinished(job.site);
     }
   });
   siteQueue[job.site] = run;

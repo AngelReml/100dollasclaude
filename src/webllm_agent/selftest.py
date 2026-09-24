@@ -85,10 +85,13 @@ async def _check_chat(client: httpx.AsyncClient, bridge: str, token: str, site: 
         return False
     secs = round(time.perf_counter() - t0)
     if r.status_code == 200:
-        text = r.json()["choices"][0]["message"]["content"]
+        data = r.json()
+        text = data["choices"][0]["message"]["content"]
         ok = "pong" in text.lower()
+        used = data.get("model", "").split(" · ", 1)
+        model_note = f" (modelo: {used[1]})" if len(used) == 2 else ""
         await emit(_event(id_, title, "ok" if ok else "fail",
-                          (f"Respondió en {secs} s: «{text.strip()[:120]}»" if ok
+                          (f"Respondió en {secs} s{model_note}: «{text.strip()[:120]}»" if ok
                            else f"Respondió otra cosa: «{text.strip()[:120]}» -> Dímelo y lo ajusto."),
                           question=PING, answer=text, seconds=secs, capture=r.headers.get("x-webllm-capture", "")))
         return ok

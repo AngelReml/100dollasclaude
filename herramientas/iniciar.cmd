@@ -6,7 +6,7 @@ set "HOME_DIR=%~dp0"
 call "%HOME_DIR%start-omniroute.cmd" /nopause
 curl.exe -sf -o nul -m 3 http://127.0.0.1:20130/health && goto :bridge_up
 echo Encendiendo el puente con tu Chrome (ventana minimizada "webllm-puente")...
-start "webllm-puente" /min /d "%HOME_DIR%" python -m webllm_agent.cli.main puente
+start "webllm-puente" /min "%HOME_DIR%lanzar-puente.cmd"
 for /l %%i in (1,1,20) do (
   curl.exe -sf -o nul -m 2 http://127.0.0.1:20130/health && goto :bridge_up
   ping -n 2 127.0.0.1 >nul

@@ -11,6 +11,7 @@ self.WEBLLM_SITES = {
     stop: ["button.stop-button", "button[aria-label='Stop']"],
     copy: ["[class*='copy-response']", ".response-message-footer [class*='copy']"],
     answer: [".response-message-content", "[class*='response-message-content']"],
+    modelLabel: ["[class*='wms-trigger']"],
     loginUrl: "/auth|/login|/signin|/sign_in",
   },
   deepseek: {
@@ -32,6 +33,7 @@ self.WEBLLM_SITES = {
     stop: ["button.rounded-full:has(> span.rounded-xs)", "button#stop-response-button"],
     copy: ["button.copy-response-button"],
     answer: [".chat-assistant"],
+    modelLabel: ["button[aria-label='Select a model']", "button[id^='model-selector']"],
     loginUrl: "/auth|/login|/signin",
   },
   meta: {

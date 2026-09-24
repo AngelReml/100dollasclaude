@@ -162,9 +162,13 @@
     const lastText = last ? (last.innerText || "") : "";
     if (!rate && lastText.length < 300 && RATE_RE.test(lastText)) rate = lastText.slice(0, 200);
     if (!ban && !input && BAN_RE.test(bodyText)) ban = (bodyText.match(BAN_RE) || [""])[0];
+    const pop = overlays().map((o) => (o.innerText || "").trim()).find((t) => t.length > 0);
+    const modelEl = all(site.modelLabel)[0];
     return {
       url: location.href,
       hidden: document.hidden,
+      overlay: pop ? pop.slice(0, 80) : null,
+      modelName: modelEl ? (modelEl.innerText || "").trim().slice(0, 60) : null,
       input: !!input,
       inputLen: input ? ("value" in input ? input.value.length : (input.innerText || "").length) : 0,
       generating: isGenerating(site),
