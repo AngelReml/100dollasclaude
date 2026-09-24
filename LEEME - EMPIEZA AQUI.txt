@@ -1,0 +1,21 @@
+QUE ES ESTO
+  Tu Chrome escribe a las IAs gratis (z.ai, Qwen, DeepSeek, Meta AI) como si
+  fueran una API: les preguntas a todas a la vez, y pueden programar en tus
+  carpetas. Todo con doble clic.
+
+LA PRIMERA VEZ
+  1. Doble clic en  "1 - INSTALAR (solo una vez)"  y sigue los 3 clics que te dice.
+  2. Doble clic en  "2 - PROBAR TODO"  y espera a que ponga RESULTADO.
+     Cada linea dice BIEN o MAL, y si es MAL te dice que hacer.
+
+CADA DIA
+  PREGUNTAR   -> escribes una pregunta y responden todas tus IAs.
+  PROGRAMAR   -> arrastras la carpeta de tu proyecto y le pides cambios.
+  REANUDAR    -> despues de entrar con una cuenta nueva si una IA te bloqueo.
+
+IMPORTANTE
+  - Deja abiertas en Chrome tus sesiones de Qwen, DeepSeek y Meta AI.
+  - Veras ventanas de Chrome que se abren y escriben solas: es normal,
+    no las cierres ni las minimices mientras trabajan.
+  - Si una web pide verificacion (el "no soy un robot"), sale un aviso:
+    la resuelves tu en esa ventana y sigue sola.

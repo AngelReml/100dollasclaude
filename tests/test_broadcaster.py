@@ -96,7 +96,7 @@ def test_fallback_model_used_after_failure(tmp_path, mock_server):
 
 def test_gateway_down_fails_fast(tmp_path):
     cfg = make_config(tmp_path, "http://127.0.0.1:9/v1", [P("a", "a/ok")])
-    with pytest.raises(GatewayError, match="start-omniroute.cmd"):
+    with pytest.raises(GatewayError, match="PROBAR TODO"):
         run(cfg, "x", resolve_targets(cfg, "todas"))
 
 

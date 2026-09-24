@@ -64,6 +64,8 @@ def _build_parser() -> argparse.ArgumentParser:
     pu.add_argument("accion", nargs="?", default="arrancar",
                     choices=["arrancar", "reanudar", "diagnosticar", "estado"])
     pu.add_argument("sitio", nargs="?", help="qwen | deepseek | zai | meta")
+
+    sub.add_parser("probar", help="Check everything for real and say BIEN / MAL per item")
     return p
 
 
@@ -177,7 +179,7 @@ def _cmd_puente(cfg: AppConfig, args: argparse.Namespace) -> int:
             code, body = r.status_code, r.json()
             print(json.dumps(body, indent=2, ensure_ascii=False))
     except Exception as exc:  # bridge not running
-        print(f"El puente no responde ({type(exc).__name__}). Enciéndelo con iniciar.cmd", file=sys.stderr)
+        print(f"El puente no responde ({type(exc).__name__}). Haz doble clic en 2 - PROBAR TODO (lo enciende solo)", file=sys.stderr)
         return 3
     return 0 if code == 200 else 1
 
@@ -247,6 +249,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_config(cfg)
     if args.command == "puente":
         return _cmd_puente(cfg, args)
+    if args.command == "probar":
+        from ..selftest import run as run_selftest
+        return run_selftest(cfg)
     parser.print_help()
     return 0
 

@@ -96,7 +96,7 @@ async def check_gateway(client: httpx.AsyncClient, base_url: str, api_key: str) 
     except httpx.HTTPError as exc:
         raise GatewayError(
             f"OmniRoute no responde en {base_url} ({type(exc).__name__}). "
-            "Enciéndelo con doble clic en start-omniroute.cmd."
+            "Haz doble clic en PREGUNTAR o en 2 - PROBAR TODO (lo encienden solos)."
         ) from exc
     if r.status_code in (401, 403):
         raise GatewayError("OmniRoute rechaza la clave (OMNIROUTE_API_KEY en ~/.omniroute/.env).")

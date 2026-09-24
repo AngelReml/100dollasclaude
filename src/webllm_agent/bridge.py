@@ -36,7 +36,7 @@ EXTENSION_DIR = PROJECT_ROOT / "extension"
 # extension error code -> (HTTP status, pause hours or None, Spanish message)
 ERRORS: dict[str, tuple[int, float | None, str]] = {
     "login_required": (401, None, "no hay sesión abierta en Chrome. Entra en {site} con tu cuenta (o una nueva) y vuelve a pedirlo"),
-    "banned": (403, 24 * 30, "la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y pulsa reanudar.cmd"),
+    "banned": (403, 24 * 30, "la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y haz doble clic en REANUDAR"),
     "rate_limited": (403, -1, "límite de mensajes del chat alcanzado"),
     "challenge": (403, -1, "pidió una verificación humana y nadie la resolvió"),
     "timeout": (504, None, "no terminó de responder a tiempo"),

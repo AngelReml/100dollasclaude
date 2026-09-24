@@ -220,9 +220,9 @@ async function handleJob(job) {
       const detail = e instanceof JobError ? e.detail : String(e && e.message || e);
       const name = (SITES[job.site] && SITES[job.site].name) || job.site;
       if (code === "login_required") notify(job.site, code, `${name}: no hay sesión abierta. Entra con tu cuenta (o una nueva) en esa ventana y vuelve a pedirlo.`);
-      if (code === "banned") notify(job.site, code, `${name}: la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y pulsa reanudar.cmd.`);
-      if (code === "rate_limited") notify(job.site, code, `${name}: límite de mensajes alcanzado. Lo pauso; pulsa reanudar.cmd cuando quieras seguir.`);
-      if (code === "challenge") notify(job.site, code, `${name}: la verificación no se resolvió. Lo pauso; resuélvela y pulsa reanudar.cmd.`);
+      if (code === "banned") notify(job.site, code, `${name}: la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y haz doble clic en REANUDAR.`);
+      if (code === "rate_limited") notify(job.site, code, `${name}: límite de mensajes alcanzado. Lo pauso; doble clic en REANUDAR cuando quieras seguir.`);
+      if (code === "challenge") notify(job.site, code, `${name}: la verificación no se resolvió. Lo pauso; resuélvela y haz doble clic en REANUDAR.`);
       sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
     }
   });

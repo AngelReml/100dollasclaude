@@ -235,7 +235,7 @@ class Guard:
         st["cooldown_until"] = until
         st["cooldown_reason"] = reason_es
         self._save(data)
-        return f"AVISO {provider.name}: {reason_es}. En pausa hasta el {self._fmt(until)}; reanudar.cmd lo reactiva."
+        return f"AVISO {provider.name}: {reason_es}. En pausa hasta el {self._fmt(until)}; doble clic en REANUDAR lo reactiva."
 
     def clear(self, name: str) -> bool:
         data = self._load()

@@ -27,5 +27,5 @@ curl.exe -sf -o nul -m 3 http://127.0.0.1:20128/api/health || (
   echo OmniRoute esta apagado. Enciendelo con doble clic en start-omniroute.cmd
   exit /b 1
 )
-"%AIDER_EXE%" --model %DEFAULT_MODEL% --model-settings-file "%WEBLLM_HOME%aider\omniroute.model-settings.yml" --auto-commits --no-show-model-warnings --analytics-disable %*
+"%AIDER_EXE%" --model %DEFAULT_MODEL% --model-settings-file "%WEBLLM_HOME%..\aider\omniroute.model-settings.yml" --auto-commits --no-show-model-warnings --analytics-disable %*
 exit /b %ERRORLEVEL%

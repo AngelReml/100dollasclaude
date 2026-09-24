@@ -9,7 +9,8 @@
 > ```
 > aider / webllm ask ──► bridge 127.0.0.1:20130 ──► Chrome extension ──► chat page (type, wait, copy)
 > ```
-> Start: `iniciar.cmd` · ask: `preguntar.cmd` · code: `programar.cmd <qwen|deepseek|zai|meta>` · unpause: `reanudar.cmd`
+> Double-click files (Spanish UI): `1 - INSTALAR (solo una vez)` · `2 - PROBAR TODO` · `PREGUNTAR` ·
+> `PROGRAMAR` · `REANUDAR`. Start with `LEEME - EMPIEZA AQUI.txt`. Helper scripts live in `herramientas/`.
 
 Type one prompt and send it to several AI providers at once — or to one —
 through a single local gateway, and let a coding agent apply changes to a
@@ -27,22 +28,22 @@ folder on your PC.
 | Broadcaster | `webllm ask` (this package) | working |
 | Plan B | Own Chrome extension | not needed (design in `docs/plan-b.md`) |
 
-Providers are mapped in `data/config.yaml` (name → OmniRoute model id, in
-priority order). Web providers (Qwen, DeepSeek, Meta AI) need their session
-pasted once in the OmniRoute dashboard; see `docs/proveedores-web.md`.
-Claude and ChatGPT/Codex are excluded and always refused.
+Providers are mapped in `data/config.yaml` (name → model id, in priority
+order): `browser/*` models are the chat pages driven in the user's own Chrome
+by `extension/` through the bridge (no cookies are copied anywhere); the rest
+go through OmniRoute. Claude and ChatGPT/Codex are excluded and always refused.
 
 ## Commands
 
 ```bat
-start-omniroute.cmd                       :: start the gateway (minimized window)
-stop-omniroute.cmd                        :: stop it
-preguntar.cmd                             :: double-click: type a prompt, pick todas / one
-webllm.cmd ask "prompt" --to todas        :: or --to qwen|deepseek|zai|meta|groq|nemotron|<model-id>
-webllm.cmd status                         :: providers, cooldowns, today's counts
-webllm.cmd journal verify --all           :: check every run's hash chain
-webllm.cmd guard clear <name>             :: lift a cooldown after fixing a session
-aider-omniroute.cmd                       :: run from the folder you want aider to edit
+"1 - INSTALAR (solo una vez).cmd"         :: starts everything, opens chrome://extensions, copies the extension path
+"2 - PROBAR TODO.cmd"                     :: real end-to-end check, BIEN / MAL per item (webllm probar)
+PREGUNTAR.cmd                             :: ask all AIs (or one)
+PROGRAMAR.cmd                             :: drop a project folder on it; aider edits it through a Chrome chat
+REANUDAR.cmd                              :: lift pauses after fixing an account
+herramientas\webllm.cmd ask "prompt" --to todas|qwen|deepseek|zai-chat|meta|zai|groq|nemotron|<model-id>
+herramientas\webllm.cmd status | journal verify --all | puente diagnosticar <site>
+herramientas\start-omniroute.cmd / stop-omniroute.cmd / iniciar.cmd / aider-omniroute.cmd
 ```
 
 Every `ask` writes `data/runs/<run_id>/` with `prompt.txt`, one response file
