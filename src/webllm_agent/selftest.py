@@ -88,7 +88,8 @@ async def _check_chat(client: httpx.AsyncClient, bridge: str, token: str, site: 
         text = r.json()["choices"][0]["message"]["content"]
         ok = "pong" in text.lower()
         await emit(_event(id_, title, "ok" if ok else "fail",
-                          f"Respondió en {secs} s." if ok else "Respondió otra cosa. -> Dímelo y lo ajusto.",
+                          (f"Respondió en {secs} s: «{text.strip()[:120]}»" if ok
+                           else f"Respondió otra cosa: «{text.strip()[:120]}» -> Dímelo y lo ajusto."),
                           question=PING, answer=text, seconds=secs, capture=r.headers.get("x-webllm-capture", "")))
         return ok
     try:
@@ -114,7 +115,8 @@ async def _check_api(client: httpx.AsyncClient, base: str, key: str, id_: str, l
         text = r.json()["choices"][0]["message"]["content"] or ""
         ok = "pong" in text.lower()
         await emit(_event(f"api:{id_}", label, "ok" if ok else "fail",
-                          f"Respondió en {secs} s." if ok else "Respondió otra cosa.",
+                          (f"Respondió en {secs} s: «{text.strip()[:120]}»" if ok
+                           else f"Respondió otra cosa: «{text.strip()[:120]}»"),
                           question=PING, answer=text, seconds=secs, model=model))
     elif r.status_code in (429, 503, 529):
         await emit(_event(f"api:{id_}", label, "fail",

@@ -107,18 +107,26 @@ $("#copypath").onclick = () => navigator.clipboard.writeText($("#extpath").textC
 function setPill(id, ok) { const p = $(id); p.classList.toggle("ok", ok); p.classList.toggle("fail", !ok); }
 
 let providersLoaded = false;
+let extensionOk = false;
 async function refreshState() {
   try {
     const r = await fetch(`/panel/state?token=${TOKEN}`);
     const s = await r.json();
     setPill("#p-omni", s.omniroute); setPill("#p-bridge", true); setPill("#p-chrome", s.extension);
+    extensionOk = s.extension;
+    for (const o of $("#to").options) {
+      if (o.dataset.kind === "browser") o.text = o.dataset.label + (s.extension ? "" : " — falta la extensión");
+    }
     $("#install").hidden = s.extension;
     $("#extpath").textContent = s.extension_path;
     if (!providersLoaded) {
       providersLoaded = true;
       const sel = $("#to");
       sel.append(new Option("A todas", "todas"));
-      for (const p of s.providers) sel.append(new Option(`${p.name} (${p.kind === "browser" ? "chat en Chrome" : "API"})`, p.name));
+      for (const p of s.providers) {
+        const label = `${p.name} (${p.kind === "browser" ? "chat en Chrome" : "API"})`;
+        const o = new Option(label, p.name); o.dataset.kind = p.kind; o.dataset.label = label; sel.append(o);
+      }
     }
   } catch (e) { setPill("#p-bridge", false); }
 }
@@ -182,13 +190,20 @@ $("#run").onclick = () => {
 $("#ask").onclick = async () => {
   const prompt = $("#q").value.trim(); if (!prompt) return;
   $("#ask").disabled = true; $("#answers").replaceChildren();
-  $("#askstatus").textContent = "Enviando... (los chats de Chrome tardan un poco; no cierres sus ventanas)";
+  $("#askstatus").textContent = extensionOk ? "Enviando... (los chats de Chrome tardan un poco; no cierres sus ventanas)"
+                                              : "Enviando a las IAs por API (los chats de Chrome necesitan la extensión)...";
   try {
     const r = await fetch("/panel/ask", { method: "POST", headers: { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN },
                                           body: JSON.stringify({ prompt, to: $("#to").value }) });
     const data = await r.json();
     if (!r.ok) { $("#askstatus").textContent = data.error || "Error"; return; }
     $("#askstatus").textContent = `Respondieron ${data.outcomes.filter(o => o.ok).length} de ${data.outcomes.length}. Guardado en data/runs/${data.run_id}/`;
+    if (data.skipped && data.skipped.length) {
+      const card = el("div", "row fail");
+      card.append(el("div", "head", "Saltados: " + data.skipped.join(", ")));
+      card.append(el("p", "msg", "Son chats de tu Chrome y la extensión no está instalada. Haz los 3 pasos del recuadro rojo de arriba."));
+      $("#answers").append(card);
+    }
     for (const o of data.outcomes) {
       const card = el("div", "row " + (o.ok ? "ok" : "fail"));
       const head = el("div", "head"); head.append(el("span", "badge", o.ok ? "BIEN" : "MAL"), el("span", "", `${o.name} · ${o.seconds} s`));

@@ -112,7 +112,7 @@ class Bridge:
         self.connected = asyncio.Event()
         self.pending: dict[str, asyncio.Future] = {}
         self.locks: dict[str, asyncio.Lock] = {s: asyncio.Lock() for s in SITES}
-        self._last_launch = 0.0
+        self._last_launch = -1e9
         self._panel_running = False
 
     # ------------------------------------------------------------------ app
@@ -184,8 +184,12 @@ class Bridge:
     async def _ensure_extension(self) -> bool:
         if self.connected.is_set():
             return True
-        if self.launcher and time.monotonic() - self._last_launch > 60:
-            self._last_launch = time.monotonic()
+        # Open Chrome and wait for the extension at most once every 5 minutes;
+        # otherwise answer at once instead of making every request wait.
+        if time.monotonic() - self._last_launch < 300:
+            return False
+        self._last_launch = time.monotonic()
+        if self.launcher:
             self.log("Chrome no está conectado: lo abro.")
             try:
                 self.launcher()
@@ -281,6 +285,13 @@ class Bridge:
             targets = resolve_targets(self.cfg, str(body.get("to") or "todas"))
         except TargetError as exc:
             return web.json_response({"error": str(exc)}, status=400)
+        skipped = []
+        if not self.connected.is_set():
+            skipped = [t.name for t in targets if t.gateway == "bridge"]
+            targets = [t for t in targets if t.gateway != "bridge"]
+            if not targets:
+                return web.json_response({"error": "Esa IA es un chat de Chrome y la extensión no está instalada: "
+                                                   "haz los 3 pasos del recuadro rojo de arriba."}, status=400)
         try:
             api_key = load_api_key()
         except Exception:
@@ -293,7 +304,7 @@ class Bridge:
             return web.json_response({"error": str(exc)}, status=503)
         run_id = new_run_id()
         write_run(self.cfg.paths.runs_dir, run_id, prompt, outcomes)
-        return web.json_response({"run_id": run_id, "outcomes": [{
+        return web.json_response({"run_id": run_id, "skipped": skipped, "outcomes": [{
             "name": o.target.name, "model": o.result.model or o.target.model, "ok": o.result.ok,
             "text": o.result.text, "seconds": round(o.result.latency_s, 1),
             "error": (o.result.error or "") + (f" {o.result.body_excerpt[:300]}" if o.result.body_excerpt else ""),
