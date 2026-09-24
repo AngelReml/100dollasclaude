@@ -2,9 +2,9 @@
 
 > 🚧 **UNDER CONSTRUCTION / EN CONSTRUCCIÓN.** Your own Chrome drives the AI chat
 > pages (Qwen, DeepSeek, z.ai, Meta AI) through a local extension + bridge that
-> looks like an OpenAI API, so aider can program with them. Verified end to end
-> with a stand-in extension and on the live z.ai page; pending: the real
-> extension loaded in the user's Chrome. See [docs/ESTADO.md](docs/ESTADO.md).
+> looks like an OpenAI API, so aider can program with them. Verified in the
+> user's own Chrome on 2026-09-24 (z.ai and DeepSeek answered; aider fixed a test
+> through the z.ai chat); Qwen and Meta still being tuned. See [docs/ESTADO.md](docs/ESTADO.md).
 >
 > ```
 > aider / webllm ask ──► bridge 127.0.0.1:20130 ──► Chrome extension ──► chat page (type, wait, copy)
@@ -27,7 +27,8 @@ folder on your PC.
 | Gateway | [OmniRoute](https://github.com/diegosouzapw/OmniRoute) 3.8.50 on `http://127.0.0.1:20128/v1` (OpenAI-compatible), installed in `..\omnirouter` | running |
 | Coding agent | [aider](https://aider.chat) 0.86.2 (isolated via `uv tool`), launched with `aider-omniroute.cmd` | working |
 | Broadcaster | `webllm ask` (this package) | working |
-| Plan B | Own Chrome extension | not needed (design in `docs/plan-b.md`) |
+| Chrome extension + bridge | `extension/` (MV3) + `src/webllm_agent/bridge.py` on `127.0.0.1:20130`: the user's Chrome chats as `browser/<site>` models | working (z.ai, DeepSeek verified) |
+| Next | Cross-model chains + real app | planned: `docs/PLAN-v3.md` |
 
 Providers are mapped in `data/config.yaml` (name → model id, in priority
 order): `browser/*` models are the chat pages driven in the user's own Chrome
