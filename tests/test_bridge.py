@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from pathlib import Path
 
 import aiohttp
 from aiohttp.test_utils import TestServer
@@ -327,6 +328,86 @@ def test_webllm_ask_reaches_browser_sites_via_bridge(tmp_path, mock_server):
             assert by["qwen"].ok and by["qwen"].text == "answer from qwen"
             assert by["groq"].ok
             assert guard.status() == {}  # browser sites are guarded by the bridge, not twice
+        finally:
+            await ext.close(); await server.close()
+    run(go())
+
+
+# ------------------------------------------------------------------ panel page
+
+def test_panel_page_served_locally_with_token_and_refuses_other_hosts(tmp_path):
+    async def go():
+        cfg, bridge, server, ext, *_ = await start(tmp_path)
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.get(server.make_url("/")) as r:
+                    html = await r.text()
+                    assert r.status == 200 and TOKEN in html and "Probar todo" in html
+                async with s.get(server.make_url("/"), headers={"Host": "evil.example"}) as r:
+                    assert r.status == 403
+                async with s.get(server.make_url("/panel/state")) as r:
+                    assert r.status == 401
+                async with s.get(server.make_url(f"/panel/state?token={TOKEN}")) as r:
+                    st = await r.json()
+            assert st["extension"] is True and st["extension_path"].endswith("extension")
+        finally:
+            await ext.close(); await server.close()
+    run(go())
+
+
+def test_panel_run_streams_real_checks_with_evidence(tmp_path, monkeypatch):
+    import webllm_agent.selftest as selftest
+
+    monkeypatch.setattr(selftest, "API_MODELS", [])
+    monkeypatch.setattr(selftest, "_programming_run", lambda base, key, model: {
+        "ok": True, "folder": "x", "task": "t", "test_code": "tc", "code_before": "a", "code_after": "b",
+        "pytest_before": "1 failed", "pytest_after": "1 passed", "git_log": "abc fix"})
+
+    async def go():
+        behaviour = {s: {"ok": True, "text": "pong", "via": "copy-button"} for s in ("zai", "qwen", "deepseek")}
+        behaviour["meta"] = {"ok": False, "error": "login_required"}
+        cfg, bridge, server, ext, *_ = await start(tmp_path, behaviour)
+        object.__setattr__(cfg, "bridge_port", server.port)
+        load = selftest.load_token
+        monkeypatch.setattr(selftest, "load_token", lambda d: TOKEN)
+        monkeypatch.setattr(selftest, "AIDER", Path(__file__))  # "installed"
+        try:
+            events = []
+            async with aiohttp.ClientSession() as s:
+                async with s.get(server.make_url(f"/panel/run?token={TOKEN}"), timeout=aiohttp.ClientTimeout(total=60)) as r:
+                    async for raw in r.content:
+                        line = raw.decode().strip()
+                        if line.startswith("data: "):
+                            events.append(json.loads(line[6:]))
+            final = {e["id"]: e for e in events if e.get("state") in ("ok", "fail")}
+            assert final["bridge"]["state"] == "ok" and final["chrome"]["state"] == "ok"
+            assert final["chat:zai"]["state"] == "ok" and final["chat:zai"]["detail"]["answer"] == "pong"
+            assert final["chat:meta"]["state"] == "fail" and "meta.ai" in final["chat:meta"]["message"]
+            assert final["programar"]["state"] == "ok" and final["programar"]["detail"]["code_after"] == "b"
+            assert "chat z.ai" in final["programar"]["title"].lower()
+            assert events[-1]["kind"] == "done"
+        finally:
+            await ext.close(); await server.close()
+    run(go())
+
+
+def test_panel_ask_mixes_chrome_chats_and_api(tmp_path, mock_server):
+    async def go():
+        cfg, bridge, server, ext, *_ = await start(tmp_path)
+        cfg2 = make_config(tmp_path, mock_server.base_url, [
+            ProviderConfig(name="qwen", model="browser/qwen", kind="browser", gateway="bridge"),
+            ProviderConfig(name="groq", model="api/ok"),
+        ])
+        object.__setattr__(cfg2, "bridge_port", server.port)
+        bridge.cfg = cfg2
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(server.make_url("/panel/ask"), json={"prompt": "hola", "to": "todas"},
+                                  headers={"Authorization": f"Bearer {TOKEN}"}) as r:
+                    data = await r.json()
+            by = {o["name"]: o for o in data["outcomes"]}
+            assert by["qwen"]["ok"] and by["qwen"]["text"] == "answer from qwen"
+            assert by["groq"]["ok"] and data["run_id"]
         finally:
             await ext.close(); await server.close()
     run(go())

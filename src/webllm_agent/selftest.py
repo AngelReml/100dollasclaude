@@ -1,9 +1,11 @@
-"""`webllm probar`: one plain-language check of everything, for real.
+"""Real end-to-end checks, shared by `webllm probar` (console) and the panel page.
 
-Starts what is off, then checks, in order: OmniRoute, the bridge, the Chrome
-extension, each Chrome chat (one short real message each), the API models,
-and finally a real programming test (aider fixes a tiny broken project using a
-Chrome chat). Prints BIEN / MAL per item with what to do when something fails.
+Each check reports events {id, title, state: running|ok|fail, message, detail};
+detail carries the evidence the page shows (the AI's actual answer, the code
+before/after the programming test, pytest output). Checks, in order:
+OmniRoute, the bridge, the Chrome extension, each Chrome chat (one short real
+message), the API models, and a programming test (aider fixes a tiny broken
+project through a Chrome chat, or through the API combo if no chat works).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Awaitable, Callable
 
 import httpx
 
@@ -26,194 +29,222 @@ from .omniroute import load_api_key
 
 TOOLS = PROJECT_ROOT / "herramientas"
 AIDER = Path.home() / ".local" / "bin" / "aider.exe"
+SANDBOX = PROJECT_ROOT / "tests" / "sandbox-repo"
 SITE_URLS = {"qwen": "https://chat.qwen.ai", "deepseek": "https://chat.deepseek.com",
              "zai": "https://chat.z.ai", "meta": "https://www.meta.ai"}
 TEST_ORDER = ["zai", "qwen", "deepseek", "meta"]
-API_MODELS = [("z.ai (API)", "zai/glm-4.7-flash"), ("groq (API)", "groq/openai/gpt-oss-120b"),
-              ("Nemotron (API)", "openrouter/nvidia/nemotron-3-super-120b-a12b:free")]
+API_MODELS = [("zai-api", "z.ai (API)", "zai/glm-4.7-flash"),
+              ("groq", "groq (API)", "groq/openai/gpt-oss-120b"),
+              ("nemotron", "Nemotron (API)", "openrouter/nvidia/nemotron-3-super-120b-a12b:free")]
 PING = "Responde solo con la palabra: pong"
 
-
-class Report:
-    def __init__(self) -> None:
-        self.rows: list[tuple[bool, str]] = []
-
-    def add(self, ok: bool, text: str) -> None:
-        self.rows.append((ok, text))
-        print(f"  [{'BIEN' if ok else 'MAL '}] {text}", flush=True)
+Emit = Callable[[dict[str, Any]], Awaitable[None]]
 
 
-def _up(url: str) -> bool:
+def _event(id_: str, title: str, state: str, message: str = "", **detail: Any) -> dict[str, Any]:
+    return {"id": id_, "title": title, "state": state, "message": message, "detail": detail}
+
+
+async def _up(client: httpx.AsyncClient, url: str) -> bool:
     try:
-        return httpx.get(url, timeout=3).status_code == 200
+        return (await client.get(url, timeout=3)).status_code == 200
     except httpx.HTTPError:
         return False
 
 
-def _start_everything() -> None:
-    # No pipes: the bridge keeps running and would hold a captured pipe open forever.
-    subprocess.run(["cmd", "/c", str(TOOLS / "iniciar.cmd"), "/nopause"],
-                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240)
-
-
-def _extension_connected(bridge: str) -> bool:
+async def _extension_connected(client: httpx.AsyncClient, bridge: str) -> bool:
     try:
-        return bool(httpx.get(f"{bridge}/health", timeout=3).json().get("extension"))
+        return bool((await client.get(f"{bridge}/health", timeout=3)).json().get("extension"))
     except (httpx.HTTPError, ValueError):
         return False
 
 
-def _explain_chat_failure(site: str, status: int, message: str) -> str:
+def _chat_failure(site: str, status: int, message: str) -> str:
     name = SITES[site]
     if status == 401:
-        return f"Chat {name}: no hay sesión abierta. -> Entra en {SITE_URLS[site]} con tu cuenta en Chrome y vuelve a probar."
+        return f"No hay sesión abierta. -> Entra en {SITE_URLS[site]} con tu cuenta en Chrome y vuelve a probar."
     if status == 403:
-        return f"Chat {name}: {message} -> Cuando lo arregles, doble clic en REANUDAR."
+        return f"{message} -> Cuando lo arregles, doble clic en REANUDAR."
     if status == 504:
-        return f"Chat {name}: tardó demasiado en responder. -> Deja su ventana de Chrome a la vista y vuelve a probar."
+        return "Tardó demasiado en responder. -> Deja su ventana de Chrome a la vista y vuelve a probar."
     if status == 503:
-        return f"Chat {name}: Chrome se desconectó. -> Deja Chrome abierto y vuelve a probar."
-    return f"Chat {name}: no supe escribir o leer en su web ({message[:120]}). -> Dímelo y lo ajusto."
+        return "Chrome no está conectado. -> Deja Chrome abierto y vuelve a probar."
+    return f"No supe escribir o leer en la web de {name} ({message[:160]}). -> Dímelo y lo ajusto."
 
 
-async def _ask_chat(client: httpx.AsyncClient, bridge: str, token: str, site: str) -> tuple[str, bool, str]:
+async def _check_chat(client: httpx.AsyncClient, bridge: str, token: str, site: str, emit: Emit) -> bool:
+    id_, title = f"chat:{site}", f"Chat {SITES[site]} (en tu Chrome)"
+    await emit(_event(id_, title, "running", "Escribiendo en la web y esperando la respuesta..."))
     t0 = time.perf_counter()
     try:
         r = await client.post(f"{bridge}/v1/chat/completions", timeout=480,
                               headers={"Authorization": f"Bearer {token}"},
                               json={"model": f"browser/{site}", "messages": [{"role": "user", "content": PING}]})
     except httpx.HTTPError as exc:
-        return site, False, f"Chat {SITES[site]}: el puente no respondió ({type(exc).__name__})."
+        await emit(_event(id_, title, "fail", f"El puente no respondió ({type(exc).__name__})."))
+        return False
     secs = round(time.perf_counter() - t0)
     if r.status_code == 200:
         text = r.json()["choices"][0]["message"]["content"]
-        if "pong" in text.lower():
-            return site, True, f"Chat {SITES[site]} respondió bien ({secs} s)."
-        return site, False, f"Chat {SITES[site]} respondió otra cosa: {text[:80]!r}. -> Dímelo y lo ajusto."
+        ok = "pong" in text.lower()
+        await emit(_event(id_, title, "ok" if ok else "fail",
+                          f"Respondió en {secs} s." if ok else "Respondió otra cosa. -> Dímelo y lo ajusto.",
+                          question=PING, answer=text, seconds=secs, capture=r.headers.get("x-webllm-capture", "")))
+        return ok
     try:
         message = r.json()["error"]["message"]
     except (ValueError, KeyError, TypeError):
         message = r.text[:200]
-    return site, False, _explain_chat_failure(site, r.status_code, message)
+    await emit(_event(id_, title, "fail", _chat_failure(site, r.status_code, message), http_status=r.status_code))
+    return False
 
 
-def _api_ping(base: str, key: str, model: str) -> tuple[bool, str]:
+async def _check_api(client: httpx.AsyncClient, base: str, key: str, id_: str, label: str, model: str, emit: Emit) -> None:
+    await emit(_event(f"api:{id_}", label, "running", "Preguntando..."))
+    t0 = time.perf_counter()
     try:
-        r = httpx.post(f"{base}/chat/completions", timeout=180,
-                       headers={"Authorization": f"Bearer {key}", **TRANSPARENT_HEADERS},
-                       json={"model": model, "messages": [{"role": "user", "content": PING}]})
+        r = await client.post(f"{base}/chat/completions", timeout=180,
+                              headers={"Authorization": f"Bearer {key}", **TRANSPARENT_HEADERS},
+                              json={"model": model, "messages": [{"role": "user", "content": PING}]})
     except httpx.HTTPError as exc:
-        return False, type(exc).__name__
-    if r.status_code != 200:
-        return False, f"HTTP {r.status_code}"
-    text = r.json()["choices"][0]["message"]["content"] or ""
-    return "pong" in text.lower(), text[:60]
+        await emit(_event(f"api:{id_}", label, "fail", f"No respondió ({type(exc).__name__})."))
+        return
+    secs = round(time.perf_counter() - t0, 1)
+    if r.status_code == 200:
+        text = r.json()["choices"][0]["message"]["content"] or ""
+        ok = "pong" in text.lower()
+        await emit(_event(f"api:{id_}", label, "ok" if ok else "fail",
+                          f"Respondió en {secs} s." if ok else "Respondió otra cosa.",
+                          question=PING, answer=text, seconds=secs, model=model))
+    elif r.status_code in (429, 503, 529):
+        await emit(_event(f"api:{id_}", label, "fail",
+                          f"Está saturado ahora mismo (HTTP {r.status_code}). -> No es tuyo: vuelve a probar en un rato."))
+    else:
+        await emit(_event(f"api:{id_}", label, "fail", f"Falló (HTTP {r.status_code}). -> Dímelo."))
 
 
-def _programming_test(base: str, key: str, model: str) -> tuple[bool, str]:
+def _programming_run(base: str, key: str, model: str) -> dict[str, Any]:
     """aider fixes tests/sandbox-repo (one failing test) in a throwaway copy."""
     def sh(cmd, cwd, env=None):
         return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=900)
     work = PROJECT_ROOT / "data" / "sandbox-runs" / f"{datetime.now():%Y%m%d-%H%M%S}-probar"
-    shutil.copytree(PROJECT_ROOT / "tests" / "sandbox-repo", work)
+    shutil.copytree(SANDBOX, work)
     for cmd in (["git", "init", "-q", "-b", "main"], ["git", "add", "-A"], ["git", "commit", "-q", "-m", "sandbox"]):
         sh(cmd, work)
-    before = sh([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], work).returncode
+    code_before = (work / "textstats.py").read_text(encoding="utf-8")
+    before = sh([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], work)
     env = {**os.environ, "OPENAI_API_BASE": base, "OPENAI_API_KEY": key}
     sh([str(AIDER), "--model", f"openai/{model}", "--no-stream", "--timeout", "600", "--auto-commits",
         "--no-show-model-warnings", "--analytics-disable", "--no-check-update", "--no-pretty",
         "--map-tokens", "0", "--yes-always", "--read", "test_textstats.py", "textstats.py",
         "--message", "The test in test_textstats.py fails. Fix textstats.py so that "
                      "`python -m pytest -q` passes. Do not modify test_textstats.py."], work, env)
-    after = sh([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], work).returncode
-    return before != 0 and after == 0, str(work)
+    after = sh([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"], work)
+    tail = lambda cp: "\n".join((cp.stdout or "").strip().splitlines()[-6:])  # noqa: E731
+    return {
+        "ok": before.returncode != 0 and after.returncode == 0,
+        "folder": str(work),
+        "task": "El test de test_textstats.py falla. Arregla textstats.py para que pase.",
+        "test_code": (work / "test_textstats.py").read_text(encoding="utf-8"),
+        "code_before": code_before,
+        "code_after": (work / "textstats.py").read_text(encoding="utf-8"),
+        "pytest_before": tail(before),
+        "pytest_after": tail(after),
+        "git_log": sh(["git", "log", "--oneline"], work).stdout.strip(),
+    }
+
+
+async def run_checks(cfg: AppConfig, emit: Emit, *, start_services: bool = False) -> list[dict[str, Any]]:
+    """Run every check; emit events as they go; return the final event per check."""
+    final: dict[str, dict] = {}
+
+    async def out(ev: dict) -> None:
+        if ev["state"] != "running":
+            final[ev["id"]] = ev
+        await emit(ev)
+
+    bridge = f"http://127.0.0.1:{cfg.bridge_port}"
+    omni_health = cfg.base_url.rsplit("/v1", 1)[0] + "/api/health"
+    async with httpx.AsyncClient() as client:
+        if start_services and not (await _up(client, omni_health) and await _up(client, f"{bridge}/health")):
+            await asyncio.get_running_loop().run_in_executor(None, lambda: subprocess.run(
+                ["cmd", "/c", str(TOOLS / "iniciar.cmd"), "/nopause"], stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=240))
+
+        ok = await _up(client, omni_health)
+        await out(_event("omniroute", "OmniRoute (IAs por API)", "ok" if ok else "fail",
+                         "Encendido." if ok else "Apagado. -> Doble clic en PREGUNTAR o PROBAR TODO lo enciende."))
+        bridge_ok = await _up(client, f"{bridge}/health")
+        await out(_event("bridge", "Puente con tu Chrome", "ok" if bridge_ok else "fail",
+                         "Encendido." if bridge_ok else "Apagado. -> Doble clic en 2 - PROBAR TODO."))
+
+        chrome_ok = False
+        if bridge_ok:
+            await out(_event("chrome", "Extensión en tu Chrome", "running", "Comprobando..."))
+            if not await _extension_connected(client, bridge):
+                subprocess.Popen(["cmd", "/c", "start", "", "chrome"])
+                for _ in range(20):
+                    if await _extension_connected(client, bridge):
+                        break
+                    await asyncio.sleep(1)
+            chrome_ok = await _extension_connected(client, bridge)
+            await out(_event("chrome", "Extensión en tu Chrome", "ok" if chrome_ok else "fail",
+                             "Conectada." if chrome_ok else
+                             "NO conectada. -> Haz la instalación (doble clic en '1 - INSTALAR') y vuelve a probar."))
+
+        good_chats: list[str] = []
+        if chrome_ok:
+            token = load_token(cfg.paths.state_dir)
+            results = await asyncio.gather(*(_check_chat(client, bridge, token, s, out) for s in TEST_ORDER))
+            good_chats = [s for s, ok in zip(TEST_ORDER, results) if ok]
+
+        try:
+            omni_key = load_api_key()
+        except Exception:
+            omni_key = ""
+        await asyncio.gather(*(_check_api(client, cfg.base_url, omni_key, i, label, model, out)
+                               for i, label, model in API_MODELS))
+
+    if not AIDER.exists():
+        await out(_event("programar", "Programar", "fail", "aider no está instalado. -> Dímelo."))
+    else:
+        if good_chats:
+            site = good_chats[0]
+            title, base, key, model = (f"Programar con el chat {SITES[site]}", f"{bridge}/v1",
+                                       load_token(cfg.paths.state_dir), f"browser/{site}")
+        else:
+            title, base, key, model = ("Programar (con las IAs por API, porque ningún chat de Chrome funcionó)",
+                                       cfg.base_url, omni_key, "combo/webllm-default")
+        await out(_event("programar", title, "running", "La IA está arreglando un código roto (hasta 5 minutos)..."))
+        res = await asyncio.get_running_loop().run_in_executor(None, _programming_run, base, key, model)
+        await out(_event("programar", title, "ok" if res["ok"] else "fail",
+                         "Arregló el código: el test pasó de FALLAR a PASAR." if res["ok"]
+                         else "No lo arregló. -> Dímelo.", model=model, **{k: v for k, v in res.items() if k != "ok"}))
+    return list(final.values())
 
 
 def run(cfg: AppConfig) -> int:
+    """Console version (`webllm probar`)."""
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, ValueError):
             pass
-    rep = Report()
-    omni_health = cfg.base_url.rsplit("/v1", 1)[0] + "/api/health"
-    bridge = f"http://127.0.0.1:{cfg.bridge_port}"
     print("\n=================== PROBAR TODO ===================")
     print("  Se abrirán ventanas de Chrome solas: es normal, no las cierres.")
     print("  Tarda unos minutos. No toques nada hasta que ponga RESULTADO.\n", flush=True)
 
-    if not (_up(omni_health) and _up(f"{bridge}/health")):
-        print("  Encendiendo lo que estaba apagado...", flush=True)
-        _start_everything()
-    rep.add(_up(omni_health), "OmniRoute (las IAs por API) encendido.")
-    bridge_up = _up(f"{bridge}/health")
-    rep.add(bridge_up, "Puente con tu Chrome encendido.")
+    async def emit(ev: dict) -> None:
+        if ev["state"] != "running":
+            print(f"  [{'BIEN' if ev['state'] == 'ok' else 'MAL '}] {ev['title']}: {ev['message']}", flush=True)
 
-    chrome_ok = False
-    if bridge_up:
-        if not _extension_connected(bridge):
-            subprocess.Popen(["cmd", "/c", "start", "", "chrome"])
-            for _ in range(30):
-                if _extension_connected(bridge):
-                    break
-                time.sleep(1)
-        chrome_ok = _extension_connected(bridge)
-    rep.add(chrome_ok, "Tu Chrome está conectado." if chrome_ok else
-            "Tu Chrome NO está conectado. -> Haz el paso 1 (doble clic en '1 - INSTALAR') y vuelve a probar.")
-
-    good_chats: list[str] = []
-    if chrome_ok:
-        token = load_token(cfg.paths.state_dir)
-        print("\n  Probando cada chat con un mensaje corto (hasta 2-3 minutos)...", flush=True)
-
-        async def all_chats():
-            async with httpx.AsyncClient() as client:
-                return await asyncio.gather(*(_ask_chat(client, bridge, token, s) for s in TEST_ORDER))
-
-        for site, ok, text in asyncio.run(all_chats()):
-            rep.add(ok, text)
-            if ok:
-                good_chats.append(site)
-
-    print("\n  Probando las IAs por API...", flush=True)
-    try:
-        omni_key = load_api_key()
-    except Exception:
-        omni_key = ""
-    for label, model in API_MODELS:
-        ok, detail = _api_ping(cfg.base_url, omni_key, model) if omni_key else (False, "sin clave de OmniRoute")
-        if ok:
-            rep.add(True, f"{label} respondió bien.")
-        elif detail in ("HTTP 429", "HTTP 503", "HTTP 529"):
-            rep.add(False, f"{label} está saturado ahora mismo ({detail}). -> No es tuyo: vuelve a probar en un rato.")
-        else:
-            rep.add(False, f"{label} falló ({detail}). -> Dímelo.")
-
-    if AIDER.exists():
-        if good_chats:
-            site = good_chats[0]
-            print(f"\n  Probando PROGRAMAR con el chat {SITES[site]} (arreglar un código roto, hasta 5 min)...", flush=True)
-            ok, where = _programming_test(f"{bridge}/v1", load_token(cfg.paths.state_dir), f"browser/{site}")
-            rep.add(ok, f"Programar con el chat {SITES[site]}: " +
-                    ("arregló el código de prueba." if ok else f"no lo arregló. -> Dímelo (carpeta {where})."))
-        else:
-            print("\n  Ningún chat funcionó; pruebo PROGRAMAR con las IAs por API...", flush=True)
-            ok, where = _programming_test(cfg.base_url, omni_key, "combo/webllm-default")
-            rep.add(ok, "Programar con las IAs por API: " +
-                    ("arregló el código de prueba." if ok else f"no lo arregló. -> Dímelo (carpeta {where})."))
-    else:
-        rep.add(False, "aider no está instalado. -> Dímelo.")
-
-    good = sum(ok for ok, _ in rep.rows)
+    final = asyncio.run(run_checks(cfg, emit, start_services=True))
+    good = sum(ev["state"] == "ok" for ev in final)
     print("\n===================== RESULTADO =====================")
-    print(f"  {good} de {len(rep.rows)} bien.")
-    bad = [t for ok, t in rep.rows if not ok]
-    if bad:
-        print("  Lo que falta:")
-        for t in bad:
-            print(f"   - {t}")
-    else:
-        print("  Todo funciona. Ya puedes usar PREGUNTAR y PROGRAMAR.")
+    print(f"  {good} de {len(final)} bien.")
+    for ev in final:
+        if ev["state"] != "ok":
+            print(f"   - {ev['title']}: {ev['message']}")
     print("=====================================================\n")
-    return 0 if not bad else 1
+    return 0 if good == len(final) else 1

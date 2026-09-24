@@ -30,6 +30,7 @@ from .config import PROJECT_ROOT, AppConfig, ProviderConfig
 from .guard import Guard, GuardBlocked
 
 MODEL_PREFIX = "browser/"
+PANEL_HTML = Path(__file__).with_name("panel.html")
 SITES = {"qwen": "Qwen", "deepseek": "DeepSeek", "zai": "z.ai", "meta": "Meta AI"}
 EXTENSION_DIR = PROJECT_ROOT / "extension"
 
@@ -112,11 +113,24 @@ class Bridge:
         self.pending: dict[str, asyncio.Future] = {}
         self.locks: dict[str, asyncio.Lock] = {s: asyncio.Lock() for s in SITES}
         self._last_launch = 0.0
+        self._panel_running = False
 
     # ------------------------------------------------------------------ app
 
+    @web.middleware
+    async def _local_only(self, request: web.Request, handler):
+        # Only answer requests addressed to this PC (blocks DNS-rebinding tricks).
+        host = request.host.split(":")[0].lower()
+        if host not in ("127.0.0.1", "localhost"):
+            return web.Response(status=403, text="local only")
+        return await handler(request)
+
     def app(self) -> web.Application:
-        app = web.Application(client_max_size=64 * 1024 * 1024)
+        app = web.Application(client_max_size=64 * 1024 * 1024, middlewares=[self._local_only])
+        app.router.add_get("/", self.panel)
+        app.router.add_get("/panel/state", self.panel_state)
+        app.router.add_get("/panel/run", self.panel_run)
+        app.router.add_post("/panel/ask", self.panel_ask)
         app.router.add_get("/health", self.health)
         app.router.add_get("/ext", self.ext_socket)
         app.router.add_get("/v1/models", self.models)
@@ -194,6 +208,96 @@ class Bridge:
             return {"ok": False, "error": "timeout"}
         finally:
             self.pending.pop(job_id, None)
+
+    # --------------------------------------------------------------- panel
+
+    async def panel(self, request: web.Request) -> web.Response:
+        html = PANEL_HTML.read_text(encoding="utf-8").replace("__WEBLLM_TOKEN__", self.token)
+        return web.Response(text=html, content_type="text/html",
+                            headers={"Cache-Control": "no-store", "X-Frame-Options": "DENY"})
+
+    async def panel_state(self, request: web.Request) -> web.Response:
+        if request.query.get("token") != self.token:
+            return self._error(401, "token del puente incorrecto", "unauthorized")
+        import httpx
+        omni = False
+        try:
+            async with httpx.AsyncClient() as client:
+                r = await client.get(self.cfg.base_url.rsplit("/v1", 1)[0] + "/api/health", timeout=3)
+                omni = r.status_code == 200
+        except httpx.HTTPError:
+            omni = False
+        return web.json_response({
+            "omniroute": omni,
+            "extension": self.connected.is_set(),
+            "extension_path": str(EXTENSION_DIR),
+            "providers": [{"name": p.name, "kind": p.kind} for p in self.cfg.enabled_providers],
+            "paused": {k: v.get("cooldown_reason") for k, v in self.guard.status().items()
+                       if (v.get("cooldown_until") or 0) > time.time()},
+        })
+
+    async def panel_run(self, request: web.Request) -> web.StreamResponse:
+        if request.query.get("token") != self.token:
+            return self._error(401, "token del puente incorrecto", "unauthorized")
+        resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"})
+        await resp.prepare(request)
+
+        async def send(obj: dict) -> None:
+            await resp.write(f"data: {json.dumps(obj, ensure_ascii=False)}\n\n".encode("utf-8"))
+
+        if self._panel_running:
+            await send({"kind": "busy"})
+            return resp
+        self._panel_running = True
+        from .selftest import run_checks  # late import: selftest imports this module
+
+        async def heartbeat() -> None:
+            while True:
+                await asyncio.sleep(15)
+                await resp.write(b": ping\n\n")
+
+        beat = asyncio.create_task(heartbeat())
+        try:
+            final = await run_checks(self.cfg, send)
+            good = sum(ev["state"] == "ok" for ev in final)
+            await send({"kind": "done", "good": good, "total": len(final)})
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        finally:
+            beat.cancel()
+            self._panel_running = False
+        return resp
+
+    async def panel_ask(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return web.json_response({"error": "token del puente incorrecto"}, status=401)
+        from .broadcaster import TargetError, GatewayError, broadcast, new_run_id, resolve_targets, write_run
+        from .omniroute import load_api_key
+        body = await request.json()
+        prompt = str(body.get("prompt", "")).strip()
+        if not prompt:
+            return web.json_response({"error": "Escribe una pregunta."}, status=400)
+        try:
+            targets = resolve_targets(self.cfg, str(body.get("to") or "todas"))
+        except TargetError as exc:
+            return web.json_response({"error": str(exc)}, status=400)
+        try:
+            api_key = load_api_key()
+        except Exception:
+            api_key = ""
+        guard = Guard(self.cfg.paths.state_dir / "guard.json", self.cfg.guard)
+        try:
+            outcomes = await broadcast(self.cfg, prompt, targets, api_key=api_key, guard=guard,
+                                       notify=self.log, bridge_key=self.token)
+        except GatewayError as exc:
+            return web.json_response({"error": str(exc)}, status=503)
+        run_id = new_run_id()
+        write_run(self.cfg.paths.runs_dir, run_id, prompt, outcomes)
+        return web.json_response({"run_id": run_id, "outcomes": [{
+            "name": o.target.name, "model": o.result.model or o.target.model, "ok": o.result.ok,
+            "text": o.result.text, "seconds": round(o.result.latency_s, 1),
+            "error": (o.result.error or "") + (f" {o.result.body_excerpt[:300]}" if o.result.body_excerpt else ""),
+            "notices": o.notices} for o in outcomes]})
 
     # -------------------------------------------------------------- routes
 
@@ -301,6 +405,7 @@ def serve(cfg: AppConfig, port: int, timeout_s: float) -> None:
     cfg_path = write_extension_config(token, port)
     bridge = Bridge(cfg, token, timeout_s=timeout_s)
     print(f"Puente webllm en http://127.0.0.1:{port}/v1  (extensión: {cfg_path.parent})")
+    print(f"Panel de pruebas: http://127.0.0.1:{port}/")
     print("Esperando a Chrome... Deja esta ventana abierta.")
     web.run_app(bridge.app(), host="127.0.0.1", port=port, print=None, access_log=None)
 

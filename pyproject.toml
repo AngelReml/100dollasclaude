@@ -19,6 +19,9 @@ webllm = "webllm_agent.cli.main:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+webllm_agent = ["*.html"]
+
 [tool.setuptools.package-dir]
 "" = "src"
 
