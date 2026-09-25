@@ -6,11 +6,13 @@ API models, see the answers side by side, chain them (cross-model "intelligence"
 program in his folders through those chats.
 
 - Current state and how Iván uses it: `docs/ESTADO.md` (Spanish).
-- **What to build next: `docs/PLAN-v3.md`** (Spanish): cross-model chains ("Mesa de IAs") and a
-  real app with an ultra-intuitive, polished UI. Follow its phases, design rules and evidence rules.
-- **Next, in this order (Iván's feedback of 2026-09-25):** PLAN-v3 section "Lo que pidió Iván tras
-  probar la app" → ~~3b~~, ~~7a~~, ~~7b~~ and the lost-answer fix (done 2026-09-25, pending Iván's
-  live test), then phases 4, 5, 6, then 7c (pick the model inside Qwen/z.ai).
+- **What to build next: `docs/PLAN-v4.md`** (Spanish, 2026-09-25): the router. One chat box in
+  front; behind it a preloaded catalog of ~17 web AIs, committees (strong proposers, an odd,
+  anonymized, mixed-family jury mostly via API, a fusion that states disagreements), code with a
+  jury (aider + tests + Iván's Aceptar, never an automatic push), and learned scores. Phases
+  0 (Iván's live test of PR #3) → A → B → C → D → E → F → G → H → I.
+- `docs/PLAN-v3.md` still holds the design rules, contract and evidence rules (and what 3b, 7a, 7b
+  and the lost-answer fix did, all done 2026-09-25, pending Iván's live test).
 
 ## Architecture (what exists and works, verified 2026-09-24)
 
