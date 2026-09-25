@@ -30,6 +30,11 @@ TRANSPARENT_HEADERS = {
 }
 
 
+def auth_headers(api_key: str) -> dict[str, str]:
+    """Bearer header for ``api_key``; none when it is empty ("Bearer " is an illegal header value)."""
+    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
+
+
 @dataclass
 class ChatResult:
     status: str
@@ -103,7 +108,7 @@ async def chat(
         resp = await client.post(
             f"{base_url.rstrip('/')}/chat/completions",
             json=payload,
-            headers={"Authorization": f"Bearer {api_key}", **TRANSPARENT_HEADERS},
+            headers={**auth_headers(api_key), **TRANSPARENT_HEADERS},
             timeout=timeout_s,
         )
     except httpx.TimeoutException as exc:

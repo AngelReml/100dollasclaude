@@ -55,7 +55,7 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ```bash
 python -m pip install -e .
-python -m pytest -q          # 79 passing on 2026-09-24
+python -m pytest -q          # 80 passing on 2026-09-25 (clean venv, no OmniRoute key)
 ```
 
 - `tests/conftest.py`: mock OpenAI-compatible HTTP server (behaviour chosen by model id suffix).

@@ -107,6 +107,15 @@ def test_bad_gateway_key_fails_before_any_chat(tmp_path, mock_server):
     assert mock_server.requests == []
 
 
+def test_missing_key_sends_no_auth_header(tmp_path, mock_server):
+    # "Bearer " is an illegal header value: with no key, httpx used to fail locally and the
+    # user was told "OmniRoute no responde". Now the request goes out and OmniRoute answers.
+    cfg = make_config(tmp_path, mock_server.base_url, [P("a", "a/ok")])
+    [out] = run(cfg, "x", resolve_targets(cfg, "todas"), key="")
+    assert out.result.ok
+    assert "authorization" not in {k.lower() for k in mock_server.requests[0]["headers"]}
+
+
 # ------------------------------------------------------------------ name mapping
 
 def test_name_mapping(tmp_path, mock_server):
