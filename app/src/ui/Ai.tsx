@@ -1,5 +1,6 @@
 import { Cpu, Globe, Server } from "lucide-react";
-import type { AiState } from "../api";
+import { api, type AiState } from "../api";
+import { useStore } from "../state";
 
 // Each AI gets its own color and monogram (white letters: >= 4.9:1 on every color).
 const COLORS: Record<string, [string, string]> = {
@@ -33,7 +34,16 @@ function monogram(label: string) {
 }
 
 export function AiAvatar({ name, label, size = 36 }: { name: string; label: string; size?: number }) {
+  const { estado } = useStore();
   const [bg, ink] = colorsFor(name);
+  if (estado?.ais.some((a) => a.name === name && a.icon)) {
+    // The site's own icon (sites added from the app), on white so dark icons stay visible in dark mode.
+    return (
+      <span aria-hidden className="inline-flex shrink-0 items-center justify-center rounded-xl bg-white ring-1 ring-line" style={{ width: size, height: size }}>
+        <img src={api.iconUrl(name)} alt="" width={Math.round(size * 0.62)} height={Math.round(size * 0.62)} className="object-contain" />
+      </span>
+    );
+  }
   return (
     <span
       aria-hidden

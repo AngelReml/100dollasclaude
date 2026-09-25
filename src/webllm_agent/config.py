@@ -14,6 +14,7 @@ run). Environment variables override file values where noted.
 from __future__ import annotations
 
 import copy
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -89,6 +90,9 @@ class ProviderConfig:
     # gateway "local" only: the server's own address and the model id it knows.
     base_url: str = ""
     remote_model: str = ""
+    # A chat site Iván added from the app ("+ Añadir otra IA"): its address.
+    url: str = ""
+    custom: bool = False
 
     @property
     def guarded(self) -> bool:
@@ -232,6 +236,51 @@ def _coerce_local_servers(raw: Any) -> tuple[LocalServer, ...]:
     return tuple(servers.values())
 
 
+CUSTOM_AIS_FILE = "custom_ais.json"
+
+
+def _with_custom(configured: dict[str, ProviderConfig], paths: Paths) -> dict[str, ProviderConfig]:
+    """Configured providers first (priority order), then the sites added from the app."""
+    extra = {k: v for k, v in load_custom_ais(paths).items() if k not in configured}
+    return {**configured, **extra}
+
+
+def load_custom_ais(paths: Paths) -> dict[str, ProviderConfig]:
+    """Chat sites added from the app. They live in data/state/ (not in git) so ACTUALIZAR never conflicts."""
+    path = paths.state_dir / CUSTOM_AIS_FILE
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, ProviderConfig] = {}
+    for key, spec in (raw.items() if isinstance(raw, dict) else []):
+        if isinstance(spec, dict) and spec.get("url"):
+            out[str(key)] = custom_provider(str(key), str(spec.get("name") or key), str(spec["url"]))
+    return out
+
+
+def custom_provider(key: str, name: str, url: str) -> ProviderConfig:
+    return ProviderConfig(name=key, model=f"browser/{key}", kind="browser", gateway="bridge", timeout_s=420.0,
+                          label=name, url=url, custom=True)
+
+
+def save_custom_ai(paths: Paths, key: str, name: str, url: str) -> None:
+    path = paths.state_dir / CUSTOM_AIS_FILE
+    data = {k: {"name": p.label, "url": p.url} for k, p in load_custom_ais(paths).items()}
+    data[key] = {"name": name, "url": url}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def remove_custom_ai(paths: Paths, key: str) -> bool:
+    current = load_custom_ais(paths)
+    if key not in current:
+        return False
+    data = {k: {"name": p.label, "url": p.url} for k, p in current.items() if k != key}
+    (paths.state_dir / CUSTOM_AIS_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return True
+
+
 def is_blocked_model(cfg: AppConfig, model: str) -> bool:
     """True when the model id is excluded (see AppConfig.blocked_model_*)."""
     m = model.strip().lower()
@@ -270,7 +319,7 @@ def load_config(data_dir: Path | None = None) -> AppConfig:
         base_url=str(base_url).rstrip("/"),
         bridge_port=int(bridge_raw.get("port", 20130)),
         bridge_timeout_s=float(bridge_raw.get("timeout_s", 300)),
-        providers=_coerce_providers(merged.get("providers")),
+        providers=_with_custom(_coerce_providers(merged.get("providers")), paths),
         guard=GuardConfig(
             min_spacing_s=float(guard_raw.get("min_spacing_s", 20)),
             daily_cap=int(guard_raw.get("daily_cap", 150)),

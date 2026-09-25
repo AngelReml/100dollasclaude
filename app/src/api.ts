@@ -20,6 +20,28 @@ export interface Ai {
   /** Local AIs only: the program on this PC that runs it. */
   server: string | null;
   server_name: string | null;
+  /** Added by Iván with "+ Añadir otra IA" (can be removed). */
+  custom: boolean;
+  /** The site's own icon is available at iconUrl(name). */
+  icon: boolean;
+}
+
+export interface AddStep {
+  step: string;
+  ok: boolean | null;
+  text: string;
+}
+
+export interface AddState {
+  add_id: string;
+  key: string;
+  name: string;
+  url: string;
+  status: "running" | "ok" | "failed";
+  steps: AddStep[];
+  error: string;
+  message: string;
+  detail: string;
 }
 
 export interface LocalServer {
@@ -146,6 +168,10 @@ export const api = {
   conectar: (ia: string) => post<{ session: Session; shown: boolean }>("/api/conectar", { ia }),
   encenderOmniroute: () => post<{ ok: boolean; already: boolean }>("/api/encender-omniroute", {}),
   encenderLocal: (server: string) => post<{ ok: boolean; already: boolean }>("/api/encender-local", { server }),
+  anadir: (url: string) => post<AddState>("/api/anadir", { url }),
+  anadirEstado: (id: string) => call<AddState>(`/api/anadir/${encodeURIComponent(id)}`),
+  quitar: (ia: string) => post<{ ok: boolean }>("/api/quitar", { ia }),
+  iconUrl: (key: string) => `/api/icono/${encodeURIComponent(key)}?token=${encodeURIComponent(TOKEN)}`,
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),
   exportUrl: (id: string) => `/api/historial/${encodeURIComponent(id)}/exportar?token=${encodeURIComponent(TOKEN)}`,

@@ -1,9 +1,10 @@
-import { AppWindow, Cpu, LifeBuoy, Power, Server, MessageSquarePlus, MonitorCheck, TestTube2, Unplug } from "lucide-react";
+import { AppWindow, Cpu, LifeBuoy, Plus, Power, Server, MessageSquarePlus, MonitorCheck, TestTube2, Unplug } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api, ApiError, type Ai } from "../api";
-import { go, useOpenGuide } from "../nav";
+import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
+import { RemoveAiButton } from "../ui/AddAi";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
@@ -49,7 +50,7 @@ function aiLine(ai: Ai): { text: string; actions: FixAction[] } {
 function AiCard({ ai }: { ai: Ai }) {
   const line = aiLine(ai);
   return (
-    <Card className="flex flex-col gap-3 p-5">
+    <Card className="flex flex-col gap-3 p-5" data-card={ai.name}>
       <div className="flex items-center gap-3">
         <AiAvatar name={ai.name} label={ai.label} size={44} />
         <div className="min-w-0 flex-1">
@@ -62,6 +63,12 @@ function AiCard({ ai }: { ai: Ai }) {
       </div>
       <p className="text-[15px] text-ink-2">{line.text}</p>
       {line.actions.length > 0 && <FixButtons actions={line.actions} ai={ai.name} />}
+      {ai.custom && (
+        <div className="-mb-1 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <span className="min-w-0 truncate text-[15px] text-muted">Añadida por ti · {ai.url?.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>
+          <RemoveAiButton name={ai.name} label={ai.label} />
+        </div>
+      )}
     </Card>
   );
 }
@@ -140,6 +147,7 @@ function PieceCard({
 export function Inicio() {
   const { estado, offline } = useStore();
   const openGuide = useOpenGuide();
+  const openAdd = useOpenAddAi();
   const ready = estado ? estado.ais.filter((a) => a.state === "lista").length : 0;
   return (
     <Page
@@ -185,7 +193,12 @@ export function Inicio() {
             </div>
           </section>
           <section className="mb-10">
-            <SectionTitle>Tus IAs</SectionTitle>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <SectionTitle className="">Tus IAs</SectionTitle>
+              <Button variant="soft" icon={<Plus size={19} aria-hidden />} onClick={openAdd}>
+                Añadir otra IA
+              </Button>
+            </div>
             {GROUPS.map((g) => {
               const members = estado.ais.filter((a) => a.kind === g.kind);
               if (!members.length) return null;

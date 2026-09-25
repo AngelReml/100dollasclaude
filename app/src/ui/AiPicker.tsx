@@ -1,6 +1,7 @@
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Plus } from "lucide-react";
 import type { Ai, AiState } from "../api";
+import { useOpenAddAi } from "../nav";
 import { AiAvatar, DOT, KIND_TEXT } from "./Ai";
 
 const GROUPS: { kind: Ai["kind"]; title: string }[] = [
@@ -32,6 +33,7 @@ export function AiPicker({ ais, selected, onChange }: { ais: Ai[]; selected: str
     chosen.length === 0 ? "Elige a qué IAs" : chosen.length === ais.length ? `IAs: todas (${ais.length})` : `IAs: ${chosen.length} elegida${chosen.length > 1 ? "s" : ""}`;
   const toggle = (name: string) => onChange(selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]);
   const keepOpen = (e: Event) => e.preventDefault();
+  const openAdd = useOpenAddAi();
   const shortcuts: { text: string; pick: () => string[] }[] = [
     { text: "Todas las listas", pick: () => ais.filter((a) => a.state === "lista").map((a) => a.name) },
     { text: "Solo las que no gastan cuenta", pick: () => ais.filter((a) => a.kind !== "chat" && a.state === "lista").map((a) => a.name) },
@@ -119,6 +121,15 @@ export function AiPicker({ ais, selected, onChange }: { ais: Ai[]; selected: str
               </Menu.Group>
             );
           })}
+          {/* Always in sight, even when the list scrolls. */}
+          <div className="sticky -bottom-1.5 -mx-1.5 -mb-1.5 mt-1 border-t border-line bg-surface p-1.5">
+            <Menu.Item onSelect={openAdd} className={`${itemClass} text-accent-soft-ink`}>
+              <span aria-hidden className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-soft">
+                <Plus size={18} strokeWidth={2.5} />
+              </span>
+              Añadir otra IA
+            </Menu.Item>
+          </div>
         </Menu.Content>
       </Menu.Portal>
     </Menu.Root>

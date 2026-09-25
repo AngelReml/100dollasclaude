@@ -8,7 +8,9 @@ Everything the app talks to is real (bridge, app API, chain engine, journal, gua
   "logs in" 6 s later, so the light turns green by itself);
 - a fake OmniRoute that answers the API models;
 - a fake LM Studio with one chat model and one embedding model (left out by the app);
-- an "installed" Ollama that is off (nothing listens on its port).
+- an "installed" Ollama that is off (nothing listens on its port);
+- "Añadir otra IA": the fake extension "gets" the permission 2.5 s later and walks through
+  the test steps; an address with "nochat" in it fails at "no text box" (to see the error).
 Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
 where Iván's Chrome and OmniRoute are not reachable. Open http://127.0.0.1:<port>/app/
 """
@@ -17,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import sys
 import tempfile
@@ -46,6 +49,16 @@ ANSWERS = {
             "| Año | Precio del pan |\n|---|---|\n| 2024 | 1,00 € |\n| 2025 | 1,03 € |\n| 2026 | 1,06 € |\n\n"
             "Por eso tus ahorros \"encogen\" si están quietos en una hucha."),
 }
+ANSWERS["mistral"] = ("La inflación es la **subida general de los precios**. Con el mismo dinero compras menos que antes.\n\n"
+                      "Ejemplo: si una barra de pan pasa de 1 € a 1,05 €, la inflación del pan ha sido del 5 %.")
+# The site's own icon, as the real extension sends it (a data URL).
+DEMO_ICON = "data:image/svg+xml;base64," + base64.b64encode(
+    b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#111"/>'
+    b'<rect x="5" y="6" width="5" height="20" fill="#f7d046"/><rect x="22" y="6" width="5" height="20" fill="#f7d046"/>'
+    b'<rect x="10" y="6" width="4" height="7" fill="#f2a73b"/><rect x="18" y="6" width="4" height="7" fill="#f2a73b"/>'
+    b'<rect x="14" y="13" width="4" height="7" fill="#ee792f"/><rect x="10" y="13" width="12" height="4" fill="#eb5829"/></svg>'
+).decode()
+
 API_ANSWERS = {
     "zai": "**Respuesta corta:** la inflación es la subida general de los precios. Si sube un 3 %, "
            "lo que costaba 100 € pasa a costar 103 €.",
@@ -117,7 +130,28 @@ async def fake_extension(port: int) -> None:
             await asyncio.sleep(6)
             logged_in[site] = True
 
+        async def progress(add_id, step, ok, text):
+            await ws.send_json({"type": "add_progress", "add_id": add_id, "step": step, "ok": ok, "text": text})
+
+        async def add_site(job):
+            await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "add"})
+            add_id = job["add_id"]
+            await asyncio.sleep(2.5)  # Iván clicks "Permitir y probar" and "Permitir"
+            await progress(add_id, "permission", True, "Permiso concedido")
+            await progress(add_id, "open", None, "Abriendo la web…")
+            await asyncio.sleep(1.5)
+            await progress(add_id, "open", True, "Web abierta")
+            if "nochat" in job["url"]:
+                await ws.send_json({"type": "add_done", "add_id": add_id, "ok": False, "error": "no_input",
+                                    "detail": json.dumps({"url": job["url"], "inputs": 0, "buttons": 3})})
+                return
+            await progress(add_id, "input", True, "Caja de texto: encontrada")
+            # the bridge then sends the test message ("pong") as a normal, guarded job
+            await ws.send_json({"type": "add_ready", "add_id": add_id, "icon": DEMO_ICON})
+
         async def answer(job):
+            if job.get("type") == "add_site":
+                return await add_site(job)
             site = job["site"]
             if job.get("type") == "show":
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "show"})
@@ -131,6 +165,9 @@ async def fake_extension(port: int) -> None:
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": json.dumps({"state": state})})
             elif not ok:
                 await ws.send_json({"type": "result", "id": job["id"], "ok": False, "error": "login_required"})
+            elif "pong" in job["prompt"]:  # the test message of "Añadir otra IA"
+                await asyncio.sleep(2.5)
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "pong", "via": "copy-button"})
             else:
                 text = ANSWERS.get(site, "Respuesta de prueba.")
                 if "Otra IA" in job["prompt"] or "ojo crítico" in job["prompt"]:
@@ -140,7 +177,7 @@ async def fake_extension(port: int) -> None:
 
         async for msg in ws:
             job = json.loads(msg.data)
-            if job.get("type") in ("job", "diagnose", "show"):
+            if job.get("type") in ("job", "diagnose", "show", "add_site"):
                 asyncio.create_task(answer(job))
 
 

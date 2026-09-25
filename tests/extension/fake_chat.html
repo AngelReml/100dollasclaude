@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Fake chat</title>
+<style>
+  body { font: 16px system-ui; margin: 0; padding: 20px; }
+  #log .msg { margin: 8px 0; padding: 8px; border: 1px solid #ccc; }
+  textarea, [contenteditable] { width: 400px; min-height: 40px; border: 1px solid #888; display: block; }
+</style></head>
+<body>
+<!-- A chat page nobody wrote selectors for. ?copy=0 removes the copy button,
+     ?editable=1 uses a contenteditable box and Enter instead of a send button,
+     ?login=1 shows a login wall instead of the chat, ?nobox=1 has no text box at all.
+     The same modes work as a path (/login/, /nobox/): "+ Añadir otra IA" keeps only the path. -->
+<div id="app"></div>
+<script>
+const q = new URLSearchParams(location.search);
+for (const m of ["login", "nobox", "editable"]) if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
+const app = document.getElementById("app");
+if (q.get("login") === "1") {
+  app.innerHTML = '<h1>Log in to continue</h1><input type="email"><input type="password"><button>Sign in</button>';
+} else if (q.get("nobox") === "1") {
+  app.innerHTML = '<h1>Welcome</h1><p>Download our app to chat.</p><button>Get the app</button>';
+} else {
+  app.innerHTML = '<div id="log"></div>' + (q.get("editable") === "1"
+    ? '<div id="box" contenteditable="true" aria-label="Message"></div>'
+    : '<textarea id="box" placeholder="Message"></textarea><button id="send" aria-label="Send message">➤</button>');
+  const box = document.getElementById("box");
+  const read = () => (box.value !== undefined ? box.value : box.innerText).trim();
+  const clear = () => { if (box.value !== undefined) box.value = ""; else box.innerText = ""; };
+  const ask = () => {
+    const text = read();
+    if (!text) return;
+    clear();
+    const log = document.getElementById("log");
+    log.insertAdjacentHTML("beforeend", `<div class="msg user">${text.replace(/</g, "&lt;")}</div>`);
+    const stop = document.createElement("button");
+    stop.setAttribute("aria-label", "Stop generating");
+    stop.textContent = "■";
+    document.body.appendChild(stop);
+    const answer = document.createElement("div");
+    answer.className = "msg assistant";
+    log.appendChild(answer);
+    const words = /pong/i.test(text) ? ["**pong**"] : ["hola", "qué", "tal"];
+    let i = 0;
+    const tick = setInterval(() => {
+      answer.innerHTML = words.slice(0, ++i).join(" ").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+      if (i >= words.length) {
+        clearInterval(tick);
+        stop.remove();
+        if (q.get("copy") !== "0") {
+          const copy = document.createElement("button");
+          copy.setAttribute("aria-label", "Copy response");
+          copy.textContent = "⧉";
+          copy.onclick = () => navigator.clipboard.writeText(words.join(" "));
+          answer.after(copy);
+        }
+      }
+    }, 400);
+  };
+  const send = document.getElementById("send");
+  if (send) send.onclick = ask;
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } });
+}
+</script>
+</body>
+</html>

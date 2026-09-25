@@ -1,11 +1,12 @@
 import { History, House, Laptop, MessageSquare, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { GuideContext, useRoute } from "./nav";
+import { AddAiContext, GuideContext, useRoute } from "./nav";
 import { Bienvenida, GUIDE_DONE_KEY } from "./screens/Bienvenida";
 import { Historial } from "./screens/Historial";
 import { Inicio } from "./screens/Inicio";
 import { Preguntar } from "./screens/Preguntar";
 import { StoreProvider, useStore } from "./state";
+import { AddAiDialog } from "./ui/AddAi";
 import { ToastProvider } from "./ui/Toast";
 
 type Theme = "sistema" | "claro" | "oscuro";
@@ -96,6 +97,7 @@ function Shell() {
   const route = useRoute();
   const { estado } = useStore();
   const [guide, setGuide] = useState(false);
+  const [adding, setAdding] = useState(false);
   const decided = useRef(false);
   const openedAt = useRef(Date.now());
   // The guide only opens by itself when something is missing: Chrome not connected or no chat ready.
@@ -112,43 +114,46 @@ function Shell() {
   const current = NAV.find((n) => n.path === screen) ? screen : "";
   return (
     <GuideContext.Provider value={() => setGuide(true)}>
-      <div className="flex h-full flex-col md:flex-row">
-        <nav aria-label="Pantallas" className="flex shrink-0 flex-col gap-4 border-b border-line bg-surface px-3 py-3 md:w-60 md:border-b-0 md:border-r md:px-4 md:py-6">
-          <div className="flex items-center justify-between md:block">
-            <Logo />
-          </div>
-          <ul className="flex gap-1 md:mt-4 md:flex-col">
-            {NAV.map(({ path, label, icon: Icon }) => (
-              <li key={label} className="flex-1 md:flex-none">
-                <a
-                  href={`#/${path}`}
-                  aria-current={current === path ? "page" : undefined}
-                  className={
-                    "flex min-h-12 items-center justify-center gap-3 rounded-xl px-3 text-[16px] font-semibold transition-colors duration-150 md:justify-start " +
-                    (current === path ? "bg-accent-soft text-accent-soft-ink" : "text-ink-2 hover:bg-surface-2 hover:text-ink")
-                  }
-                >
-                  <Icon size={20} aria-hidden />
-                  {label}
-                </a>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-auto hidden flex-col gap-3 md:flex">
-            <ThemeSwitch />
-            <p className="px-1 text-[15px] leading-snug text-muted">Todo se guarda en tu PC. Nada pasa por la nube salvo los propios chats.</p>
-          </div>
-        </nav>
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          {screen === "preguntar" && <Preguntar />}
-          {screen === "historial" && <Historial id={route[1]} />}
-          {screen !== "preguntar" && screen !== "historial" && <Inicio />}
-          <div className="px-5 pb-6 md:hidden">
-            <ThemeSwitch />
-          </div>
-        </main>
-      </div>
-      <Bienvenida open={guide} onClose={() => setGuide(false)} />
+      <AddAiContext.Provider value={() => setAdding(true)}>
+        <div className="flex h-full flex-col md:flex-row">
+          <nav aria-label="Pantallas" className="flex shrink-0 flex-col gap-4 border-b border-line bg-surface px-3 py-3 md:w-60 md:border-b-0 md:border-r md:px-4 md:py-6">
+            <div className="flex items-center justify-between md:block">
+              <Logo />
+            </div>
+            <ul className="flex gap-1 md:mt-4 md:flex-col">
+              {NAV.map(({ path, label, icon: Icon }) => (
+                <li key={label} className="flex-1 md:flex-none">
+                  <a
+                    href={`#/${path}`}
+                    aria-current={current === path ? "page" : undefined}
+                    className={
+                      "flex min-h-12 items-center justify-center gap-3 rounded-xl px-3 text-[16px] font-semibold transition-colors duration-150 md:justify-start " +
+                      (current === path ? "bg-accent-soft text-accent-soft-ink" : "text-ink-2 hover:bg-surface-2 hover:text-ink")
+                    }
+                  >
+                    <Icon size={20} aria-hidden />
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-auto hidden flex-col gap-3 md:flex">
+              <ThemeSwitch />
+              <p className="px-1 text-[15px] leading-snug text-muted">Todo se guarda en tu PC. Nada pasa por la nube salvo los propios chats.</p>
+            </div>
+          </nav>
+          <main className="min-w-0 flex-1 overflow-y-auto">
+            {screen === "preguntar" && <Preguntar />}
+            {screen === "historial" && <Historial id={route[1]} />}
+            {screen !== "preguntar" && screen !== "historial" && <Inicio />}
+            <div className="px-5 pb-6 md:hidden">
+              <ThemeSwitch />
+            </div>
+          </main>
+        </div>
+        <Bienvenida open={guide} onClose={() => setGuide(false)} />
+        <AddAiDialog open={adding} onOpenChange={setAdding} />
+      </AddAiContext.Provider>
     </GuideContext.Provider>
   );
 }

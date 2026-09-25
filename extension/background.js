@@ -3,9 +3,10 @@
 // jobs {site, prompt}, drives that site's chat page in a dedicated window, and
 // sends back the answer. It stops and tells you when a site shows a login page,
 // a verification (CAPTCHA) or a limit; it never tries to get around them.
-importScripts("sites.js");
+importScripts("common.js", "sites.js");
 
 const SITES = self.WEBLLM_SITES;
+const { genericSite, parseChatUrl } = self.WEBLLM_COMMON;
 const HUMAN_WAIT_MS = 180000;
 let ws = null;
 let config = null;
@@ -329,6 +330,99 @@ async function handleDiagnose(msg) {
   }
 }
 
+// Sites you added from the app are not in sites.js: the bridge sends their
+// name and address with every message, and driver.js detects them generically.
+function ensureSite(msg) {
+  if (msg.site && !SITES[msg.site] && msg.site_config && parseChatUrl(msg.site_config.url).ok) {
+    SITES[msg.site] = genericSite(msg.site_config.name, parseChatUrl(msg.site_config.url).url);
+  }
+}
+
+// ------------------------------------------------------- add a site from the app
+
+// 1) The app asks: open our own page, where you click "Permitir y probar".
+async function handleAddSite(msg) {
+  const p = parseChatUrl(msg.url);
+  if (!p.ok) {
+    sendToBridge({ type: "result", id: msg.id, ok: false, error: p.error });
+    return;
+  }
+  const q = new URLSearchParams({ add_id: msg.add_id, key: msg.key, name: msg.name, url: p.url });
+  const tab = await chrome.tabs.create({ url: chrome.runtime.getURL("add.html?" + q), active: true });
+  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "add" });
+}
+
+function addProgress(addId, step, ok, text) {
+  sendToBridge({ type: "add_progress", add_id: addId, step, ok, text });
+}
+
+async function favicon(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId);
+    if (!t.favIconUrl || !/^https:/.test(t.favIconUrl)) return null;
+    const r = await fetch(t.favIconUrl);
+    const type = r.headers.get("content-type") || "";
+    if (!r.ok || !/^image\//.test(type)) return null;
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.length > 60000) return null;
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode(...buf.subarray(i, i + 8192));
+    return `data:${type.split(";")[0]};base64,${btoa(bin)}`;
+  } catch (e) {
+    return null; // the icon lives on another domain, or there is none: the app draws a letter
+  }
+}
+
+// 2) Permission granted: open the site and find its text box, reporting every step.
+//    Then the bridge sends the test message like any other one (through its account guard).
+async function testSite(m) {
+  const done = (ok, extra) => sendToBridge({ type: "add_done", add_id: m.add_id, ok, ...extra });
+  SITES[m.key] = genericSite(m.name, m.url);
+  addProgress(m.add_id, "permission", true, "Permiso concedido");
+  addProgress(m.add_id, "open", null, "Abriendo la web…");
+  let tabId = null;
+  jobStarted(m.key);
+  try {
+    tabId = await siteTab(m.key);
+    await chrome.tabs.update(tabId, { url: m.url });
+    await sleep(800);
+    await waitLoaded(tabId, 45000);
+    let st;
+    const t0 = Date.now();
+    for (;;) {
+      st = await call(tabId, "state", SITES[m.key]);
+      if (st.challenge || st.loginWall || st.input || Date.now() - t0 > 20000) break;
+      await sleep(1000);
+    }
+    addProgress(m.add_id, "open", true, "Web abierta");
+    if (st.challenge || st.loginWall) {
+      const tab = await chrome.tabs.get(tabId);
+      await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+      await chrome.tabs.update(tabId, { active: true });
+      return done(false, { error: st.challenge ? "challenge" : "login_required", detail: String(st.challenge || st.url) });
+    }
+    if (!st.input) {
+      const d = await call(tabId, "diagnose", SITES[m.key]).catch(() => null);
+      return done(false, { error: "no_input", detail: JSON.stringify(d).slice(0, 6000) });
+    }
+    addProgress(m.add_id, "input", true, "Caja de texto: encontrada");
+    sendToBridge({ type: "add_ready", add_id: m.add_id, icon: await favicon(tabId) });
+  } catch (e) {
+    const code = e instanceof JobError ? e.code : "extension_error";
+    done(false, { error: code, detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
+  } finally {
+    jobFinished(m.key);
+  }
+}
+
+chrome.runtime.onMessage.addListener((m) => {
+  if (!m || !m.add_id) return;
+  if (m.type === "add_test") testSite(m);
+  else if (m.type === "add_denied") sendToBridge({ type: "add_done", add_id: m.add_id, ok: false, error: "permission_denied" });
+  else if (m.type === "add_cancel") sendToBridge({ type: "add_done", add_id: m.add_id, ok: false, error: "cancelled" });
+});
+
 // "Conectar" in the app: bring the chat's tab forward so you can log in there.
 // Only used when the page has no session (you must type in it), never for jobs.
 async function handleShow(msg) {
@@ -344,7 +438,9 @@ async function handleShow(msg) {
 }
 
 function onMessage(msg) {
-  if (msg.type === "job") handleJob(msg);
+  ensureSite(msg);
+  if (msg.type === "add_site") handleAddSite(msg);
+  else if (msg.type === "job") handleJob(msg);
   else if (msg.type === "diagnose") handleDiagnose(msg);
   else if (msg.type === "show") handleShow(msg);
 }

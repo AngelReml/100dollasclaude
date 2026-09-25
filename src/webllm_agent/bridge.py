@@ -114,7 +114,7 @@ class Bridge:
         self.ws: web.WebSocketResponse | None = None
         self.connected = asyncio.Event()
         self.pending: dict[str, asyncio.Future] = {}
-        self.locks: dict[str, asyncio.Lock] = {s: asyncio.Lock() for s in SITES}
+        self.locks: dict[str, asyncio.Lock] = {}  # one message at a time per site
         self._last_launch = -1e9
         self._panel_running = False
         self.app_api = AppApi(self)
@@ -145,6 +145,21 @@ class Bridge:
         self.app_api.register(app)
         return app
 
+    def site_names(self) -> dict[str, str]:
+        """Chat sites the bridge serves: the built-in ones plus the ones added from the app."""
+        out = dict(SITES)
+        for p in self.cfg.providers.values():
+            if p.custom and p.model.startswith(MODEL_PREFIX):
+                out[p.model[len(MODEL_PREFIX):]] = p.display
+        return out
+
+    def site_payload(self, site: str) -> dict[str, Any]:
+        """What the extension needs about a site; an added one travels with its name and address."""
+        for p in self.cfg.providers.values():
+            if p.custom and p.model == MODEL_PREFIX + site:
+                return {"site": site, "site_config": {"name": p.display, "url": p.url}}
+        return {"site": site}
+
     def _authorized(self, request: web.Request) -> bool:
         return request.headers.get("Authorization", "") == f"Bearer {self.token}"
 
@@ -173,6 +188,8 @@ class Bridge:
                     fut = self.pending.pop(data.get("id"), None)
                     if fut is not None and not fut.done():
                         fut.set_result(data)
+                elif data.get("type") in ("add_progress", "add_ready", "add_done"):
+                    self.app_api.on_add_event(data)
                 elif data.get("type") == "notice":
                     self.log(f"AVISO {data.get('site')}: {data.get('message')}")
         finally:
@@ -217,6 +234,42 @@ class Bridge:
             return {"ok": False, "error": "timeout"}
         finally:
             self.pending.pop(job_id, None)
+
+    async def send_job(self, site: str, name: str, prompt: str, *, site_config: dict[str, str] | None = None,
+                       timeout_s: float | None = None) -> dict[str, Any]:
+        """One message to a chat site, always through the account guard (one at a time per site,
+        spacing, daily cap, pause on account limits). ``site_config`` is for a site being added
+        that is not saved yet. On failure: {"ok": False, "status", "error", "message", "detail"}."""
+        provider = ProviderConfig(name=site, model=MODEL_PREFIX + site, kind="browser")
+        timeout_s = timeout_s or self.timeout_s
+        payload = {"site": site, "site_config": site_config} if site_config else self.site_payload(site)
+        async with self.locks.setdefault(site, asyncio.Lock()):  # one message at a time per site
+            try:
+                permit = await self.guard.acquire(provider, notify=self.log)
+            except GuardBlocked as blocked:
+                return {"ok": False, "status": 403, "error": "paused", "message": blocked.message_es, "detail": ""}
+            try:
+                if not await self._ensure_extension():
+                    return {"ok": False, "status": 503, "error": "bridge_unavailable", "detail": "",
+                            "message": "Chrome no está conectado: abre Chrome con la extensión webllm cargada"}
+                t0 = time.perf_counter()
+                res = await self._send_to_extension(
+                    {"type": "job", **payload, "prompt": prompt, "timeout_ms": int(timeout_s * 1000)},
+                    timeout_s + self.human_wait_s,  # room for a human to solve a verification
+                )
+                res["latency"] = time.perf_counter() - t0
+            finally:
+                self.guard.release(permit)
+        if res.get("ok"):
+            return res
+        code = res.get("error", "extension_error")
+        status, hours, text = ERRORS.get(code, (502, None, "falló en la página del chat"))
+        message = f"{name}: {text.format(site=name)}"
+        if hours is not None:
+            message = self.guard.trip(provider, text.format(site=name), None if hours < 0 else hours)
+        detail = res.get("detail")
+        self.log(f"{message}" + (f" [{detail}]" if detail else ""))
+        return {"ok": False, "status": status, "error": code, "message": message, "detail": str(detail or "")}
 
     # --------------------------------------------------------------- panel
 
@@ -325,7 +378,7 @@ class Bridge:
         if not self._authorized(request):
             return self._error(401, "token del puente incorrecto", "unauthorized")
         return web.json_response({"object": "list", "data": [
-            {"id": MODEL_PREFIX + s, "object": "model", "owned_by": "webllm-bridge"} for s in SITES]})
+            {"id": MODEL_PREFIX + s, "object": "model", "owned_by": "webllm-bridge"} for s in self.site_names()]})
 
     async def status(self, request: web.Request) -> web.Response:
         if not self._authorized(request):
@@ -336,7 +389,7 @@ class Bridge:
         if not self._authorized(request):
             return self._error(401, "token del puente incorrecto", "unauthorized")
         body = await request.json() if request.can_read_body else {}
-        sites = [body["site"]] if body.get("site") else list(SITES)
+        sites = [body["site"]] if body.get("site") else list(self.site_names())
         cleared = [s for s in sites if self.guard.clear(s)]
         return web.json_response({"cleared": cleared})
 
@@ -344,11 +397,11 @@ class Bridge:
         if not self._authorized(request):
             return self._error(401, "token del puente incorrecto", "unauthorized")
         site = (await request.json()).get("site", "")
-        if site not in SITES:
+        if site not in self.site_names():
             return self._error(404, f"sitio desconocido: {site}", "unknown_site")
         if not await self._ensure_extension():
             return self._error(503, "Chrome no está conectado", "bridge_unavailable")
-        res = await self._send_to_extension({"type": "diagnose", "site": site}, 90)
+        res = await self._send_to_extension({"type": "diagnose", **self.site_payload(site)}, 90)
         return web.json_response(res)
 
     async def chat_completions(self, request: web.Request) -> web.StreamResponse:
@@ -357,41 +410,19 @@ class Bridge:
         body = await request.json()
         model = str(body.get("model", ""))
         site = model[len(MODEL_PREFIX):] if model.startswith(MODEL_PREFIX) else model
-        if site not in SITES:
-            return self._error(404, f"modelo desconocido: {model} (usa {', '.join(MODEL_PREFIX + s for s in SITES)})", "model_not_found")
+        names = self.site_names()
+        if site not in names:
+            return self._error(404, f"modelo desconocido: {model} (usa {', '.join(MODEL_PREFIX + s for s in names)})", "model_not_found")
         prompt = flatten_messages(body.get("messages") or [])
         if not prompt.strip():
             return self._error(400, "el prompt está vacío", "empty_prompt")
-        provider = ProviderConfig(name=site, model=model, kind="browser")
-        name = SITES[site]
-
-        async with self.locks[site]:  # one message at a time per site
-            try:
-                permit = await self.guard.acquire(provider, notify=self.log)
-            except GuardBlocked as blocked:
-                return self._error(403, blocked.message_es, "paused")
-            try:
-                if not await self._ensure_extension():
-                    return self._error(503, "Chrome no está conectado: abre Chrome con la extensión webllm cargada", "bridge_unavailable")
-                t0 = time.perf_counter()
-                res = await self._send_to_extension(
-                    {"type": "job", "site": site, "prompt": prompt, "timeout_ms": int(self.timeout_s * 1000)},
-                    self.timeout_s + self.human_wait_s,  # room for a human to solve a verification
-                )
-                latency = time.perf_counter() - t0
-            finally:
-                self.guard.release(permit)
-
+        res = await self.send_job(site, names[site], prompt)
         if not res.get("ok"):
-            code = res.get("error", "extension_error")
-            status, hours, text = ERRORS.get(code, (502, None, "falló en la página del chat"))
-            message = f"{name}: {text.format(site=name)}"
-            if hours is not None:
-                message = self.guard.trip(provider, text.format(site=name), None if hours < 0 else hours)
             detail = res.get("detail")
-            self.log(f"{message}" + (f" [{detail}]" if detail else ""))
-            return self._error(status, message + (f" ({detail})" if detail and status == 502 else ""), code)
+            message = res["message"] + (f" ({detail})" if detail and res["status"] == 502 else "")
+            return self._error(res["status"], message, res["error"])
 
+        latency = res["latency"]
         text = res.get("text", "")
         label = str(res.get("model_label") or "")
         if label:

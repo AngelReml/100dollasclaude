@@ -48,6 +48,46 @@ async function waitAnswers(page) {
   await page.waitForFunction(() => !document.body.innerText.match(/Esperando…|En cola/), null, { timeout: 60000 });
 }
 
+// "+ Añadir otra IA" (PLAN-v3 7b): a blocked address, a site that works, one that does not, and Quitar.
+async function addAnAi(page, tag) {
+  const dialog = page.getByRole("dialog");
+  const address = dialog.getByLabel("Dirección de la web");
+  await page.goto(base);
+  await page.getByRole("button", { name: "Añadir otra IA" }).click();
+  await address.fill("https://chatgpt.com");
+  await dialog.getByRole("button", { name: "Probar y añadir" }).click();
+  await dialog.getByText("no se puede añadir").waitFor();
+  await shot(page, `${tag}-11-anadir-bloqueada`);
+
+  await address.fill("https://chat.mistral.ai");
+  await dialog.getByRole("button", { name: "Probar y añadir" }).click();
+  await dialog.getByText("Permitir y probar").waitFor();
+  await shot(page, `${tag}-12-anadir-permiso`);
+  await dialog.getByText("Enviando una prueba").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-13-anadir-probando`);
+  await dialog.getByText("¡Listo!").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-14-anadir-lista`);
+  await dialog.getByRole("button", { name: "Hecho" }).click();
+
+  const card = page.locator('[data-card="mistral"]');
+  await card.getByText("Añadida por ti").waitFor();
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-15-inicio-anadida`);
+
+  await page.getByRole("button", { name: "Añadir otra IA" }).click();
+  await address.fill("https://nochat.example.com");
+  await dialog.getByRole("button", { name: "Probar y añadir" }).click();
+  await dialog.getByText("No encontré la caja de texto").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-16-anadir-fallo`);
+  await dialog.getByRole("button", { name: "Cerrar", exact: true }).last().click();
+
+  await card.getByRole("button", { name: "Quitar" }).click();
+  await card.getByText("¿Quitar Mistral de webllm?").waitFor();
+  await shot(page, `${tag}-17-quitar-confirmar`);
+  await card.getByRole("button", { name: "Sí, quitar" }).click();
+  await card.waitFor({ state: "detached" });
+}
+
 async function run(theme, width, full) {
   const height = width === 1920 ? 1080 : 800;
   const browser = await chromium.launch({ executablePath: exe });
@@ -110,6 +150,7 @@ async function run(theme, width, full) {
     await page.getByRole("link").filter({ hasText: /Intacto|Alterado/ }).last().click();
     await page.getByText("Mensaje enviado").first().waitFor();
     await shot(page, `${tag}-10-historial-detalle`);
+    await addAnAi(page, tag);
   }
   await browser.close();
 }

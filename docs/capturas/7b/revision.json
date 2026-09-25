@@ -1,0 +1,314 @@
+[
+  {
+    "name": "claro-1280-01-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-02-guia-conectar-esperando",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-03-guia-conectada-sola",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-04-preguntar-vacio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-05-elegir-ias",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-06-preguntar-en-curso",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-07-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-08-pasar-dialogo",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-10-historial-detalle",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-11-anadir-bloqueada",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-12-anadir-permiso",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-13-anadir-probando",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-14-anadir-lista",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-15-inicio-anadida",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-16-anadir-fallo",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-17-quitar-confirmar",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1920-01-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1920-07-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1920-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-01-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-03-guia-conectada-sola",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-04-preguntar-vacio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-05-elegir-ias",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-06-preguntar-en-curso",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-07-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-08-pasar-dialogo",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-10-historial-detalle",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-11-anadir-bloqueada",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-12-anadir-permiso",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-13-anadir-probando",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-14-anadir-lista",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-15-inicio-anadida",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-16-anadir-fallo",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-17-quitar-confirmar",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1920-01-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1920-07-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1920-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  }
+]
