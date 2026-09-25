@@ -1,5 +1,7 @@
 # VISIÓN — En qué se convierte webllm
 
+> **Nota (25-sep-2026):** el plan vigente es `docs/PLAN-v5.md` (Open WebUI como cara, webllm como motor, Comité obligatorio, memoria de un solo escritor, webs que se reparan solas). Donde este documento no coincida, manda PLAN-v5.
+
 Escrito el 25-sep-2026, a partir de lo que Iván imagina. Este documento dice **hacia dónde va** webllm.
 El **cómo y en qué orden** está en `docs/PLAN-v4.md`, y las reglas de diseño y de evidencia en `docs/PLAN-v3.md`.
 

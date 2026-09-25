@@ -1,5 +1,7 @@
 # PLAN-v4 — El enrutador de webllm: un solo chat delante y comités de IAs detrás
 
+> **Nota (25-sep-2026):** el plan vigente es `docs/PLAN-v5.md` (Open WebUI como cara, webllm como motor, Comité obligatorio, memoria de un solo escritor, webs que se reparan solas). Donde este documento no coincida, manda PLAN-v5.
+
 Escrito el 25-sep-2026 con el método `experto-cowork-operativo`: las decisiones se toman con
 evidencia fechada y la solución elegida es la más pequeña que funcione.
 Actualizado el mismo día con las decisiones de Iván:

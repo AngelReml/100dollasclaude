@@ -9,11 +9,13 @@ program in his folders through those chats.
 - **Where this is going: `docs/VISION.md`** (Spanish): a frontier-level coding workshop made of free
   AIs; seven concepts (sources, skills, router, workshop, memory, guard, one chat). Anything built
   must fit one of them.
-- **What to build next: `docs/PLAN-v4.md`** (Spanish, 2026-09-25): the router. One chat box in
-  front; behind it a preloaded catalog of ~17 web AIs, committees (strong proposers, an odd,
-  anonymized, mixed-family jury mostly via API, a fusion that states disagreements), code with a
-  jury (aider + tests + Iván's Aceptar, never an automatic push), and learned scores. Phases
-  0 (Iván's live test of PR #3) → A → B → C → D → E → F → G → H → I.
+- **What to build next: `docs/PLAN-v5.md`** (Spanish, 2026-09-25; supersedes PLAN-v4): Open WebUI
+  Desktop is the face, webllm the engine (its one OpenAI-compatible connection: every source and
+  skill is a "model"). The Committee is mandatory (role → `CONFIRMO:` → problem → closed verdict →
+  one fusion document by the strongest available AI). Memory has one writer (journal → one-way
+  export to an Obsidian vault in Drive). Web layer self-repairs in 4 layers and records chats Iván
+  continues by hand. Phases F0 (stabilize; Meta) → F1 (face spike, 8 checks) → F2 … F10, each with
+  an entry gate and a measurable exit.
 - `docs/PLAN-v3.md` still holds the design rules, contract and evidence rules (and what 3b, 7a, 7b
   and the lost-answer fix did, all done 2026-09-25, pending Iván's live test).
 
