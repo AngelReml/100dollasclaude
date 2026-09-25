@@ -2,6 +2,12 @@
 
 Escrito el 25-sep-2026 con el método `experto-cowork-operativo`: las decisiones se toman con
 evidencia fechada y la solución elegida es la más pequeña que funcione.
+Actualizado el mismo día con las decisiones de Iván:
+- se aprueba el uso indirecto de Claude;
+- se añaden las APIs gratis;
+- se confirman los 4 datos pendientes.
+
+**La visión de fondo (en qué se convierte webllm y sus siete conceptos) está en `docs/VISION.md`.**
 
 **Relación con PLAN-v3:**
 - Siguen valiendo sus reglas de diseño (sección "Diseño: ultra intuitiva y estética"), su contrato y sus reglas de evidencia.
@@ -56,8 +62,10 @@ evidencia fechada y la solución elegida es la más pequeña que funcione.
 
 - **¿Faltó Brave?** Brave tiene dos cosas y no son iguales.
   - **Ask Brave** (en `search.brave.com`) es una web normal con chat y búsqueda, que usa el modelo abierto Qwen3. **Entra en el catálogo.**
-  - **Brave Leo** vive dentro del navegador Brave, no en una web. La extensión de webllm vive en tu Chrome, así que Leo no se puede manejar. Además, su versión gratis incluye modelos Claude, que webllm deja fuera. **No entra.**
-- **Mistral y GitHub.** Es verdad: el chat de Mistral (Le Chat) tiene conectores, uno de ellos para GitHub, con los que puede leer y tocar repositorios. Una fuente de poca calidad dice que desde mayo de 2026 se llama "Vibe". Hay que comprobarlo al conectarla.
+  - **Brave Leo no se puede manejar, ni siquiera ahora que el Claude indirecto está aprobado.** Vive en una página interna del navegador Brave (`brave://leo-ai`), y ninguna extensión puede entrar en las páginas internas de un navegador.
+  - **El sustituto:** el Claude Haiku gratis que tiene Leo también está en **Duck.ai**, gratis, sin cuenta y en una web normal. Duck.ai sí entra.
+  - Ask Brave: confirmado que es gratis, sin cuenta y funciona en cualquier navegador.
+- **Mistral y GitHub.** Es verdad, y **está confirmado que es gratis**: desde septiembre de 2025 los conectores de Le Chat, GitHub incluido, van en el plan gratuito. Con ellos puede leer y tocar repositorios. Una fuente de poca calidad dice que desde mayo de 2026 se llama "Vibe"; se ve al conectarla.
   - **Mistral entra en el catálogo** como una IA más: propone, critica y vota.
   - **Pero no le damos permiso para escribir en tu GitHub.** Eso haría que una web de fuera, fuera del guardián y del registro, tocara tu código.
   - En webllm, el código lo escribe **tu PC** (aider), con git para deshacer, con tests, y con tu **Aceptar**.
@@ -147,6 +155,10 @@ evidencia fechada y la solución elegida es la más pequeña que funcione.
 | Ai2 Playground | `https://playground.allenai.org` | general, modelos totalmente abiertos |
 | Pi (Inflection) | `https://pi.ai` | conversación; puede cerrar |
 | Inception Chat (Mercury) | `https://chat.inceptionlabs.ai` | rápida; menos lista |
+| **Duck.ai** (DuckDuckGo) | `https://duck.ai` | **Claude Haiku 4.5 gratis y sin cuenta**; también Mistral Small, gpt-oss y Gemma. **Nunca elegir los GPT de OpenAI** |
+| **Arena** (antes LMArena), chat directo | `https://arena.ai/direct` | elegir un modelo concreto, Claude incluido; lo que escribes puede publicarse para investigación: **nada privado** |
+| **Perplexity** | `https://www.perplexity.ai` | investigar, con fuentes (gratis con su modelo propio) |
+| Nous Chat | `https://chat.nousresearch.com` | Hermes 4; gratis |
 
 **Grupo 2: se precargan marcadas "puede fallar"** (por su página complicada, por pocos mensajes o por una dirección sin confirmar):
 
@@ -154,14 +166,18 @@ evidencia fechada y la solución elegida es la más pequeña que funcione.
 |---|---|---|
 | Venice | `https://venice.ai` | unos 10 mensajes gratis al día |
 | Google AI Studio | `https://aistudio.google.com` | la página es complicada; Google puede usar lo que escribas |
-| MiMo (Xiaomi) | `https://mimo.xiaomi.com` | no está confirmado si es esa dirección o `mimo.mi.com` |
-| Nous Chat | [FALTA DATO: dirección] | dirección sin confirmar |
+| MiMo Studio (Xiaomi) | `https://aistudio.xiaomimimo.com` | pide cuenta Xiaomi; Xiaomi dice que es un escaparate de modelos, no un asistente |
+| Poe | `https://poe.com` | solo unos 300 puntos al día (15-30 mensajes cortos); los Claude buenos no entran en el plan gratis |
 | LingGuang (Ant Group) | `https://www.lingguang.com/chat` | puede pedir cuenta china |
 
 **No se precargan:**
 - **Agentes que hacen tareas, no chats:** MiniMax Agent, Manus y Genspark. No encajan en pregunta-respuesta, actúan por su cuenta en la web y abren otro frente de riesgo.
 - **OpenRouter Chat:** su web deja elegir GPT y Claude. Sus modelos gratis se añaden mejor **por API**, vía OmniRoute, que es más rápido y no gasta cuentas web. Son buenos candidatos a jurado.
-- **Fuera por la regla 1** (usan ChatGPT o Claude por dentro): Perplexity, Poe, Copilot, Duck.ai, You.com, LMArena, Brave Leo y Sakana Fugu.
+- **Siguen fuera:**
+  - ChatGPT, directo o solo con GPT por dentro: Copilot;
+  - Claude directo (`claude.ai`);
+  - Brave Leo, porque no se puede manejar;
+  - Sakana Fugu, que es solo API y de pago.
 - **Bloqueadas por país:**
   - Sakana Chat (solo Japón);
   - Amazon Nova (solo Estados Unidos);
@@ -173,7 +189,51 @@ evidencia fechada y la solución elegida es la más pequeña que funcione.
 - Cada IA aparece en Inicio como tarjeta **"Sin conectar"** con el botón **Conectar**.
 - Ese botón hace el recorrido de "Añadir otra IA" con la dirección ya puesta: permiso de Chrome solo para esa web, entrar con tu cuenta y prueba "pong" por el guardián.
 - Así Chrome solo da permiso a las webs que de verdad usas (mínimo privilegio).
-- **Alternativa descartada:** meter las 17 webs en los permisos fijos de la extensión. Sería un solo aviso de Chrome, pero con acceso a webs que quizá nunca uses.
+- **Alternativa descartada:** meter las 22 webs en los permisos fijos de la extensión. Sería un solo aviso de Chrome, pero con acceso a webs que quizá nunca uses.
+
+### Fuentes gratis por API comprobadas (25-sep-2026)
+
+Las APIs son **el motor del jurado, del enrutador y del taller de código**:
+- van rápido y en paralelo;
+- saben usar herramientas;
+- no gastan tus cuentas web ni sacan verificaciones.
+
+Cada clave la crea Iván en la web del proveedor y la guarda en OmniRoute. **Nunca va a git.**
+
+Límites cambiantes: cuando dos listas no coinciden, se dan las dos cifras.
+
+| Proveedor | Qué es gratis | Modelos que interesan | Qué pide |
+|---|---|---|---|
+| **NVIDIA NIM** (build.nvidia.com) | unas 40 peticiones/min por modelo | **GLM-5.2 / GLM-5.3** (el mejor modelo abierto para programar), Nemotron | cuenta NVIDIA Developer + teléfono |
+| **Mistral** (console.mistral.ai) | plan "Experiment": todos los modelos con límite; una lista comprobada en agosto dice **10 $/mes en créditos** | Mistral Medium/Large, **Codestral** (código) | nada (sin tarjeta) |
+| **Groq** | 30/min; entre 250 y 1.000 al día según el modelo | gpt-oss-120b, **Qwen3.8-27B**, Kimi K2 | nada |
+| **Google Gemini API** (AI Studio) | modelos Flash; desde abril los Pro ya no son gratis; límites bajos y cambiantes (de 20 a 1.500 al día según el modelo) | Gemini 3.x Flash | nada; condiciones propias en Europa |
+| **OpenRouter** | modelos ":free": 20/min y 50 al día (1.000 al día tras una recarga única de 10 $) | Nemotron 3 Ultra, Ling 3.0, Gemma 4… | nada |
+| **Z.ai** | GLM-4.7-Flash y GLM-4.6V-Flash gratis (ya lo usas) | GLM Flash | nada |
+| **Ollama Cloud** | cuota por tiempo de GPU (cada 5 h y semanal) | **Kimi, DeepSeek V4 Pro, GLM-5.1**; los grandes gastan la cuota rápido | cuenta |
+| **OpenCode Zen** | modelos gratis que van rotando | MiMo, MiniMax M2.5, Nemotron 3 Ultra | cuenta; pensado para el agente OpenCode |
+| **Kilo Code** (pasarela) | 200 peticiones/hora (comprobado en agosto) | Nemotron 3 Ultra, Step 3.7 Flash | nada |
+| **Cohere** | unas 1.000 llamadas/mes, uso no comercial | Command A+ | nada |
+| **Cloudflare Workers AI** | 10.000 "neuronas"/día | Llama 3.3 70B, Mistral Small | cuenta |
+| **Hugging Face** | 0,10 $/mes | modelos pequeños | cuenta |
+| **OVHcloud AI Endpoints** (UE) | 2/min sin registrarse | Qwen3.5-397B, gpt-oss-120b | nada |
+| **LLM7.io** | 10/min sin registrarse | gpt-oss-20b | nada |
+| **SambaNova** | según la lista, 20 al día **o** 5 $ para 30 días | DeepSeek V3.1 | cuenta |
+| Otros con uso justo | Aion Labs, AI21 (Jamba), Chutes, Glhf, Nscale, Agnes | variados | cuenta |
+
+- **Con verificación china o de identidad real:** ModelScope y SiliconFlow (esta, desde mayo de 2026) y Alibaba Model Studio.
+- **Créditos de una sola vez:**
+  - DeepSeek: 5 millones de tokens;
+  - xAI;
+  - Fireworks: 1 $;
+  - Nebius: 1 $;
+  - Cerebras: 5 $ para 30 días, **solo con tarjeta**.
+- **Gratis que se acabó en 2026:**
+  - **GitHub Models** (cerrado el 30-jul);
+  - **Gemini CLI** gratis (18-jun);
+  - **Qwen Code** con cuenta gratis (15-abr);
+  - **Cerebras** sin tarjeta (16-jul).
+- **Claude por API** (unos 5 $ al registrarse) es Claude directo: sigue fuera.
 
 ## Procedimiento exacto (fases, cada una con prueba que ves)
 
@@ -182,12 +242,13 @@ Orden obligatorio: la **fase 0** va antes que todo. Después, **A → B → C �
 | Fase | Qué se hace | Evidencia que se exige |
 |---|---|---|
 | **0. Prueba en vivo del PR #3** (ya fusionado) | Tú: ACTUALIZAR, pulsar ↻, verificación con Qwen y añadir Mistral | Tus capturas o tu "funciona / no funciona" en cada punto. Si algo falla, se arregla antes de seguir |
+| **A2. APIs gratis** | Iván crea las claves (NVIDIA, Mistral, Groq, Gemini, OpenRouter, Ollama Cloud…) y las mete en OmniRoute; webllm las lista como fuentes "Por API" con su ficha (límites, herramientas) | Una prueba de ida y vuelta por proveedor (como las de z.ai y groq), con sus límites reales apuntados |
 | **A. Catálogo precargado** | `catalog.yaml` con los grupos 1 y 2; tarjetas "Sin conectar"; **Conectar** en un paso; el diagnóstico de las que fallan se guarda para programar su soporte | pytest; prueba en Chromium con la extensión de verdad contra varias webs de mentira del catálogo; capturas. **Tú** conectas las que quieras y apuntamos cuáles pasan |
 | **B. Chats a la vez (requisito de velocidad)** | Hoy los chats van de uno en uno. Se prueba en tu PC preguntar a 3 a la vez con la rotación de pestañas | Tus tiempos: de uno en uno contra a la vez. **Si a la vez no mejora o falla, se queda de uno en uno** y el comité tira más de las IAs por API |
 | **C. Motor de comités** | Pasos "jurado" y "fusión" en `flows.py`; plantilla `comite`; voto impar garantizado; anonimato y barajado; reservas; tope de gasto | pytest: el empate es imposible, el jurado reserva entra, ningún texto del jurado lleva el nombre de la IA, el orden barajado se puede repetir, se para al llegar al tope. Más un comité real guardado con su candado |
 | **D. Enrutador automático** | `router.py`: clasifica con una IA rápida por API (o reglas si OmniRoute está apagado), elige IAs por etiqueta, salud, presupuesto y puntuación, y explica en una línea por qué | pytest con 30 preguntas de ejemplo y su modo esperado; el tope de gasto se respeta siempre |
 | **E. Pantalla de chat única** | Pantalla "Chat" por defecto; "Cómo se decidió" plegable; selector de modo; las pantallas de ahora pasan a "modo experto" | Lista de diseño de PLAN-v3 + capturas claro/oscuro a 1280 y 1920 sin fallos; tú haces 3 preguntas sin ayuda |
-| **F. Código con jurado** (sustituye a la fase 5 de PLAN-v3) | aider en una rama de prueba de tu carpeta; tests; jurado sobre el cambio y el resultado de los tests; como mucho 2 correcciones; Aceptar o Deshacer | Una ejecución real en el proyecto de prueba: cambio, tests, votos del jurado y Deshacer que funciona |
+| **F. Código con jurado** (sustituye a la fase 5 de PLAN-v3) | El taller: **OpenCode** (MIT) o aider en una rama de prueba de tu carpeta, con modelos gratis por API que usan herramientas (GLM-5.x en NVIDIA como principal); tests; jurado sobre el cambio y el resultado de los tests; como mucho 2 correcciones; Aceptar o Deshacer. Además, el **banco de pruebas**: 20 tareas reales con tests para puntuar cada versión | La puntuación del banco de pruebas (tareas resueltas de 20) y una ejecución real con votos y Deshacer |
 | **G. Aprendizaje** | `scores.json`: puntuación por IA y por tipo de pregunta, a partir de los votos y de tus 👍/👎; el enrutador la usa; tabla en Ajustes | pytest; la tabla con datos reales tras una semana de uso |
 | **H. Catálogo vivo** | Tarea programada semanal en la nube (`create_trigger`): busca cambios (cierres, cambios de nombre, IAs nuevas) y **abre un PR** con evidencia. Nunca lo fusiona ella | El primer PR que abre, con las fuentes |
 | **I. Cierre** | Icono único y limpieza (fase 6 de PLAN-v3), 7c (elegir el modelo dentro de Qwen y z.ai) y el constructor de cadenas (Mesa) en modo experto | Lo de PLAN-v3 |
@@ -309,8 +370,24 @@ Subagentes (solo en el desarrollo): en **C + E** el motor y la pantalla no tocan
   - elegir lo más pequeño que funcione y automatizar después: https://claude.com/blog/subagents-in-claude-code ;
   - "trifecta letal": Simon Willison, 16-jun-2025;
   - tareas programadas: https://code.claude.com/docs/en/scheduled-tasks
-- **[FALTA DATO]:**
-  - la dirección de Nous Chat;
-  - si MiMo es `mimo.xiaomi.com` o `mimo.mi.com`;
-  - si Mistral exige plan de pago para el conector de GitHub (no se usa, pero conviene saberlo);
-  - si Ask Brave deja chatear sin cuenta en España.
+- **Datos confirmados el 25-sep-2026 (antes pendientes):**
+  - Nous Chat: `chat.nousresearch.com` — https://chat.nousresearch.com/
+  - MiMo Studio: `aistudio.xiaomimimo.com`, con cuenta Xiaomi — https://xiaomiplanets.com/xiaomi-mimo-studio-ai/
+  - Conector de GitHub de Mistral: gratis — https://venturebeat.com/ai/mistral-ai-just-made-enterprise-ai-features-free-and-thats-a-big-problem-for · https://help.mistral.ai/en/articles/393509-setting-up-my-first-connector
+  - Ask Brave: gratis, sin cuenta y en cualquier navegador — https://brave.com/blog/ask-brave/
+- **Claude indirecto y fuentes nuevas:**
+  - Duck.ai — https://duckduckgo.com/duckduckgo-help-pages/duckai/chat-models
+  - Arena — https://arena.ai/direct · https://en.wikipedia.org/wiki/LMArena
+  - Poe — https://aisotools.com/poe-pricing
+  - Leo en página interna — https://github.com/brave/brave-browser/issues/42817
+- **APIs gratis:**
+  - https://github.com/mnfst/awesome-free-llm-apis (con cada fila comprobada con una llamada real entre el 19 y el 21 de agosto de 2026)
+  - https://github.com/open-free-llm-api/awesome-freellm-apis (actualizada el 25-sep-2026)
+  - Mistral — https://pricepertoken.com/endpoints/mistral/free
+  - Fin de GitHub Models — https://www.free-model.com/providers/github-models/
+  - Gemini CLI — https://www.tembo.io/blog/gemini-cli-pricing
+  - Qwen Code — https://inventivehq.com/blog/qwen-code-still-free-2026-shutdown
+  - Cerebras — https://klymentiev.com/blog/free-llm-api
+  - Ollama Cloud — https://hackup.ai/ai-plans/ollama/
+  - OpenCode Zen — https://opencode.ai/docs/zen/
+  - DeepSeek — https://pricepertoken.com/endpoints/deepseek/free

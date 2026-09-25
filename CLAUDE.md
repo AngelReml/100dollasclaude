@@ -6,6 +6,9 @@ API models, see the answers side by side, chain them (cross-model "intelligence"
 program in his folders through those chats.
 
 - Current state and how Iván uses it: `docs/ESTADO.md` (Spanish).
+- **Where this is going: `docs/VISION.md`** (Spanish): a frontier-level coding workshop made of free
+  AIs; seven concepts (sources, skills, router, workshop, memory, guard, one chat). Anything built
+  must fit one of them.
 - **What to build next: `docs/PLAN-v4.md`** (Spanish, 2026-09-25): the router. One chat box in
   front; behind it a preloaded catalog of ~17 web AIs, committees (strong proposers, an odd,
   anonymized, mixed-family jury mostly via API, a fusion that states disagreements), code with a
@@ -46,7 +49,9 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ## Hard rules (non-negotiable)
 
-1. **Never target Claude or ChatGPT/Codex** (they are excluded; `config.is_blocked_model` refuses them).
+1. **Never target claude.ai or ChatGPT/Codex directly** (`config.is_blocked_model` and the blocked
+   hosts refuse them). **Iván approved on 2026-09-25 services that use Claude inside** (Duck.ai, Poe,
+   Perplexity, Arena…); inside them never pick OpenAI's proprietary GPT models.
 2. **Never solve, bypass or evade CAPTCHAs / anti-bot checks**, no fingerprint spoofing, no
    "human-like" typing to avoid detection. Detect → notify Iván → wait for him → continue or pause.
 3. **Never read or export cookies, passwords or browser storage**, and never type credentials.
