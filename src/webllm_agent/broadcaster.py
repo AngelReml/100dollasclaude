@@ -22,7 +22,7 @@ from typing import Callable
 import httpx
 
 from . import journal
-from .client import OK, TRANSPARENT_HEADERS, ChatResult, chat
+from .client import OK, TRANSPARENT_HEADERS, ChatResult, auth_headers, chat
 from .config import AppConfig, ProviderConfig, is_blocked_model
 from .guard import Guard, GuardBlocked
 
@@ -92,7 +92,7 @@ def new_run_id() -> str:
 async def check_gateway(client: httpx.AsyncClient, base_url: str, api_key: str) -> None:
     """Fail fast (before touching any guarded provider) if OmniRoute is down or rejects the key."""
     try:
-        r = await client.get(f"{base_url}/models", headers={"Authorization": f"Bearer {api_key}"}, timeout=15)
+        r = await client.get(f"{base_url}/models", headers=auth_headers(api_key), timeout=15)
     except httpx.HTTPError as exc:
         raise GatewayError(
             f"OmniRoute no responde en {base_url} ({type(exc).__name__}). "

@@ -23,7 +23,7 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from .bridge import SITES, load_token
-from .client import TRANSPARENT_HEADERS
+from .client import TRANSPARENT_HEADERS, auth_headers
 from .config import PROJECT_ROOT, AppConfig
 from .omniroute import load_api_key
 
@@ -108,7 +108,7 @@ async def _check_api(client: httpx.AsyncClient, base: str, key: str, id_: str, l
     t0 = time.perf_counter()
     try:
         r = await client.post(f"{base}/chat/completions", timeout=180,
-                              headers={"Authorization": f"Bearer {key}", **TRANSPARENT_HEADERS},
+                              headers={**auth_headers(key), **TRANSPARENT_HEADERS},
                               json={"model": model, "messages": [{"role": "user", "content": PING}]})
     except httpx.HTTPError as exc:
         await emit(_event(f"api:{id_}", label, "fail", f"No respondió ({type(exc).__name__})."))
