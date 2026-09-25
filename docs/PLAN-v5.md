@@ -38,6 +38,7 @@
 | D17 | **Webs que se reparan solas** ante cambios de diseño o webs nuevas raras, en 4 capas y sin saltarse nunca un bloqueo anti-bot (sección 3) | Petición de Iván + la crítica número 1 de todas: la fragilidad de la extensión |
 | D18 | **Interfaz ultraintuitiva = la estándar de los chats de IA** (ChatGPT, Claude): conversaciones a la izquierda, selector de modelo arriba, caja de texto abajo con adjuntar, respuesta que se escribe en directo, tarjeta Permitir/Denegar. **webllm no inventa pantallas ni botones nuevos en la conversación**: todo lo suyo entra por piezas que ese estándar ya tiene (sección "La cara") | Petición de Iván. Refuerza D1: el diseño de Open WebUI sigue el de ChatGPT, así que lo que ya sabes usar funciona igual |
 | D19 | **Claude y GPT por dentro de otros servicios, aprobados** (Duck.ai, Poe, Perplexity, Arena, Copilot…), y dentro de ellos se puede elegir cualquier modelo. **Siguen fuera:** `claude.ai` y `chatgpt.com` directos, y tus suscripciones de Claude, ChatGPT o Codex a través de OmniRoute | Decisión de Iván (25-sep-2026). Da al Comité una familia más (OpenAI), y el jurado es mejor con familias distintas |
+| D20 | **Todas las IAs con chat web que hemos encontrado vienen precargadas** (catálogo de la sección 6): no escribes ninguna dirección. Lo único que nadie puede hacer por ti es **entrar una vez con tu cuenta** en las que la pidan (regla dura 3). Chrome da permiso solo a las que dejas marcadas | Petición de Iván: "quiero tenerlas todas". Mínimo privilegio: nada de permisos fijos para 27 webs que quizá no uses |
 
 ### La cara (D18): cómo se ve todo lo de webllm sin salir del estándar
 
@@ -133,7 +134,7 @@ Sirve para **evaluar ideas**.
 - **Tiempo:**
   - los chats web van hoy de uno en uno, así que 3 chats × 2 turnos ≈ 3 a 6 minutos;
   - las APIs van en paralelo y tardan segundos;
-  - si en F5 se confirma que dos chats pueden ir a la vez, baja.
+  - si en F6 se confirma que dos chats pueden ir a la vez, baja.
 
 ### Lo que necesita por dentro
 
@@ -237,7 +238,7 @@ Cada fase tiene:
 ### F1 — Prueba de la cara (decide D1 con datos)
 
 - **Puerta:** F0 cerrada.
-- **Qué:** conectar Open WebUI a webllm y pasar esta lista de 8 comprobaciones:
+- **Qué:** conectar Open WebUI a webllm y pasar esta lista de 10 comprobaciones:
   1. Salen los modelos de webllm en el selector.
   2. La respuesta llega por partes (streaming).
   3. Una petición de 6 minutos no se corta (webllm manda señales de vida mientras espera).
@@ -279,7 +280,40 @@ Cada fase tiene:
 - **En tu PC:** en Open WebUI eliges una IA web, una por API y una de tu PC, y las tres responden; "Parar" corta una respuesta.
 - **Salida:** las 3 responden desde Open WebUI y el registro las tiene todas.
 
-### F3 — Memoria en Obsidian (un solo escritor)
+### F3 — Todas las IAs con chat web, precargadas
+
+- **Puerta:** F2.
+- **Qué:**
+  - `catalog.yaml` en el proyecto (en git) con las 27 IAs del catálogo (sección 6). Para cada una: dirección, para qué sirve, familia de modelo, si pide cuenta, si es privada, límite diario propio y fecha de la última comprobación.
+  - Qwen, DeepSeek, z.ai y Meta pasan también al catálogo, con sus ajustes de `sites.js`.
+  - En el panel de webllm ("Ajustes → Conectores", D18) cada IA es una tarjeta **"Sin conectar"** con **Conectar**. Arriba está **"Conectar varias"**:
+    1. vienen todas marcadas, como pediste, y desmarcas las que no quieras;
+    2. Chrome pide permiso **una sola vez**, solo para las webs marcadas;
+    3. la ventana de webllm las abre de una en una. Si una pide entrar, te la enseña y espera hasta 3 minutos (la contraseña la pones tú: regla dura 3). Si no entras, queda "Sin conectar" y pasa a la siguiente;
+    4. cada una recibe la prueba "pong" a través del guardián (1 mensaje).
+  - **Resultado por IA:** "Conectada", "No funciona todavía" (con el motivo y el diagnóstico guardado para F5) o "Sin conectar".
+  - **Solo las conectadas salen en el selector de Open WebUI** (D18: lo que no usas no se ve).
+  - **El guardián vale para todas.** Las de pocos mensajes gratis (Venice, Poe) llevan en el catálogo un límite diario más bajo.
+  - **Las no privadas** (Arena publica lo que escribes) no las usan nunca "Automático" ni el Comité. Solo se usan si las eliges tú, y su nombre en el selector lo avisa.
+- **Probado aquí:**
+  - tests del catálogo:
+    - todas las direcciones son https y ninguna se repite;
+    - ninguna pasa el bloqueo (`claude.ai`, `chatgpt.com`);
+    - cada IA tiene familia y etiquetas;
+    - las no privadas quedan fuera de "Automático" y del Comité;
+  - Chromium con la extensión de verdad y 3 webs de prueba del catálogo:
+    - una conecta a la primera;
+    - otra pide entrar y conecta cuando "entras";
+    - otra no tiene caja y queda "No funciona todavía" con su diagnóstico;
+    - una sola petición de permiso para las tres (el aviso de Chrome se simula, como en 7b);
+  - capturas del panel en claro y oscuro.
+  - Desde la nube no se abre ninguna web real, así que cuántas funcionan solo se sabe en tu PC.
+- **En tu PC:** "Conectar varias" con las que quieras.
+- **Salida:**
+  - la tabla del catálogo rellena en `docs/ESTADO.md`, con cada IA como "conectada", "no funciona todavía y por qué" o "no la quiero";
+  - cada IA conectada responde desde Open WebUI.
+
+### F4 — Memoria en Obsidian (un solo escritor)
 
 - **Puerta:** F2.
 - **Qué:**
@@ -293,9 +327,9 @@ Cada fase tiene:
 - **En tu PC:** abres Obsidian y ves la conversación de hace un minuto; desde el móvil, en Drive, ves el mismo archivo.
 - **Salida:** 10 conversaciones seguidas, las 10 en el vault, idénticas al registro.
 
-### F4 — Webs que se reparan solas y modo observador
+### F5 — Webs que se reparan solas y modo observador
 
-- **Puerta:** F2 y F3.
+- **Puerta:** F2, F3 y F4.
 - **Qué:** lo de la sección 3:
   - detección genérica ampliada (etiquetas en varios idiomas);
   - radiografía de la página;
@@ -313,12 +347,12 @@ Cada fase tiene:
   - Cada caso falla con el código anterior y pasa con el nuevo.
 - **En tu PC:**
   - una conversación que empieza en webllm y sigues en la web de Kimi: aparece entera en el vault;
-  - una web nueva del catálogo, sin ajustes propios, funcionando gracias a la capa 1, a la 3 o a la 4.
-- **Salida:** las dos cosas anteriores, y el registro de un arreglo automático real (o, si ninguna web cambia durante la prueba, del simulado).
+  - las webs del catálogo que en F3 quedaron "No funciona todavía", probadas otra vez.
+- **Salida:** la conversación completa en el vault; el recuento de webs del catálogo que ahora funcionan gracias a la capa 1, a la 3 o a la 4 (apuntado en `docs/ESTADO.md`), y el registro de un arreglo automático real (o, si ninguna web cambia durante la prueba, del simulado).
 
-### F5 — El Comité
+### F6 — El Comité
 
-- **Puerta:** F2, F3 y F4.
+- **Puerta:** F2, F3, F4 y F5.
 - **Qué:** todo lo de la sección 2:
   - modo "seguir en la misma conversación" en la extensión (con cambio de versión);
   - plantillas de rol;
@@ -335,9 +369,9 @@ Cada fase tiene:
 - **En tu PC:** un Comité real con 5 participantes sobre una idea tuya. Después, el mismo Comité con dos chats a la vez: si sale bien 3 veces seguidas, se deja activado.
 - **Salida:** documento de fusión completo con sus 8 apartados, recuento impar, anexo con los 5 veredictos y candado verde.
 
-### F6 — Elegir modelo y "Automático" bien afinado
+### F7 — Elegir modelo y "Automático" bien afinado
 
-- **Puerta:** F2.
+- **Puerta:** F2 y F3.
 - **Qué:**
   - fichas de cada modelo de API (por ejemplo GLM-5.2, GLM Flash, Qwen3.8-27B, Codestral, Gemini Flash);
   - selector de modelo **dentro** de Qwen y z.ai web (7c: pulsar el menú de modelos de la página, frágil por naturaleza);
@@ -348,7 +382,7 @@ Cada fase tiene:
 - **En tu PC:** 10 preguntas de prueba (2 de cada tipo) con "Automático", apuntando qué eligió y si acertó. La tabla se ajusta con esos datos antes de darla por buena.
 - **Salida:** 9 de 10 bien enrutadas.
 
-### F7 — Acciones y conectores
+### F8 — Acciones y conectores
 
 - **Puerta:** F1 (comprobaciones 5 y 6) y F2.
 - **Qué:**
@@ -362,16 +396,16 @@ Cada fase tiene:
 - **En tu PC:** "crea un issue de prueba en mi repo" con una IA de API y con una web; las dos pasan por tu Permitir.
 - **Salida:** los dos issues creados; un intento de inyección, denegado y apuntado en el registro.
 
-### F8 — Móvil
+### F9 — Móvil
 
 - **Puerta:** F1 (comprobación 8).
 - **Qué:** guía de Tailscale en el PC y en el móvil, Tailscale Serve (HTTPS) y la app instalada como PWA. **Solo chatear y leer.**
 - **En tu PC y tu móvil:** una conversación desde el móvil con datos, que aparece en el vault.
 - **Salida:** lo anterior funciona sin abrir ningún puerto del router.
 
-### F9 — Taller de código
+### F10 — Taller de código
 
-- **Puerta:** F2 y F7.
+- **Puerta:** F2 y F8.
 - **Qué:**
   - OpenCode configurado con `edit: ask` y `bash: ask`;
   - trabajo en un **git worktree** (una rama de prueba);
@@ -385,17 +419,18 @@ Cada fase tiene:
 - **En tu PC:** 5 tareas reales tuyas.
 - **Salida:** tareas resueltas de 5, apuntadas. Es la base del banco de pruebas pequeño.
 
-### F10 — Después (no se empieza sin nueva decisión)
+### F11 — Después (no se empieza sin nueva decisión)
 
 - imágenes, vídeo y audio como fuentes;
 - plugins;
 - encargar trabajos desde el móvil;
 - trabajo nocturno supervisado;
-- sello del registro en GitHub.
+- sello del registro en GitHub;
+- catálogo vivo: una tarea semanal busca IAs nuevas, cierres y cambios de nombre y abre un PR con las pruebas, que nunca se fusiona solo.
 
 ---
 
-## 6. Listas iniciales (se afinan en F6 con datos de tu PC)
+## 6. Listas iniciales (se afinan en F7 con datos de tu PC)
 
 **Lista del Comité (participantes, en orden):**
 1. Kimi (web)
@@ -406,7 +441,7 @@ Cada fase tiene:
 6. Gemini Flash (API)
 7. Duck.ai · Claude Haiku (web)
 8. z.ai chat (web)
-9. Duck.ai o Copilot · GPT (web): el modelo GPT que ofrezcan, comprobado en F6 (D19)
+9. Duck.ai o Copilot · GPT (web): el modelo GPT que ofrezcan, comprobado en F7 (D19)
 
 **Lista de fusión ("la más potente disponible"):**
 1. GLM-5.2 (API)
@@ -428,7 +463,69 @@ Cada fase tiene:
 | Investigar con fuentes | Felo (web) | Ask Brave (web) → Perplexity (web) → Kimi (web) |
 | Evaluar una idea | **webllm · Comité** | — |
 
-Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla de APIs gratis de PLAN-v4. Son un punto de partida: **F6 las mide con tus cuentas antes de darlas por buenas.**
+Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla de APIs gratis de PLAN-v4. Son un punto de partida: **F7 las mide con tus cuentas antes de darlas por buenas.**
+
+### Catálogo: todas las IAs con chat web (se precargan en F3)
+
+Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la nube no se pueden abrir estas webs: si cada una funciona con webllm solo se sabe en tu PC, en F3.
+
+**Las que ya usas (4):**
+
+| IA | Dirección |
+|---|---|
+| Qwen (Alibaba) | `https://chat.qwen.ai` |
+| DeepSeek | `https://chat.deepseek.com` |
+| z.ai (Zhipu, GLM) | `https://chat.z.ai` |
+| Meta AI | `https://www.meta.ai` |
+
+**Grupo 1: chat sencillo y funciona desde España (17).**
+
+| IA | Dirección | Para qué | Nota |
+|---|---|---|---|
+| Kimi (Moonshot) | `https://www.kimi.com` | documentos largos, investigar, código | |
+| Le Chat (Mistral) | `https://chat.mistral.ai` | general, código, rápida | su conector de GitHub no se activa (sección 9) |
+| HuggingChat (Hugging Face) | `https://huggingface.co/chat` | general, modelos abiertos | sin cuenta |
+| LongCat (Meituan) | `https://longcat.chat` | general, instrucciones | |
+| Grok (xAI) | `https://grok.com` | general, actualidad | |
+| Gemini (Google) | `https://gemini.google.com` | general, documentos largos | |
+| Dola (ByteDance) | `https://www.dola.com/chat/` | general | |
+| Felo (Japón) | `https://felo.ai` | investigar, con fuentes | |
+| Ask Brave | `https://search.brave.com` (modo chat) | investigar, con fuentes | sin cuenta; la dirección exacta del modo chat se ve al conectar |
+| Ai2 Playground | `https://playground.allenai.org` | general, modelos totalmente abiertos | |
+| Pi (Inflection) | `https://pi.ai` | conversación | apenas la mantienen; puede cerrar |
+| Inception Chat (Mercury) | `https://chat.inceptionlabs.ai` | muy rápida | menos lista |
+| Duck.ai (DuckDuckGo) | `https://duck.ai` | Claude Haiku 4.5, GPT (D19), Mistral Small, gpt-oss, Gemma | sin cuenta |
+| Arena, chat directo | `https://arena.ai/direct` | elegir un modelo concreto, Claude incluido | **no privada:** lo que escribes puede publicarse |
+| Perplexity | `https://www.perplexity.ai` | investigar, con fuentes | gratis con su modelo propio |
+| Nous Chat | `https://chat.nousresearch.com` | Hermes 4 | |
+| Copilot (Microsoft) | `https://copilot.microsoft.com` | general, actualidad; GPT por dentro (D19) | sin cuenta; con cuenta de Microsoft, más mensajes |
+
+**Grupo 2: se precargan marcadas "puede fallar" (6).**
+
+| IA | Dirección | Por qué puede fallar |
+|---|---|---|
+| Venice | `https://venice.ai` | unos 10 mensajes gratis al día |
+| Google AI Studio | `https://aistudio.google.com` | página complicada; Google puede usar lo que escribas |
+| MiMo Studio (Xiaomi) | `https://aistudio.xiaomimimo.com` | pide cuenta Xiaomi; es un escaparate de modelos, no un asistente |
+| Poe | `https://poe.com` | unos 300 puntos al día (15 a 30 mensajes cortos) |
+| LingGuang (Ant Group) | `https://www.lingguang.com/chat` | puede pedir cuenta china |
+| You.com | `https://you.com` | la empresa se centra ahora en sus APIs; el chat gratis puede desaparecer |
+
+**Total: 27** (4 + 17 + 6).
+
+**No se precargan, y por qué:**
+- **Agentes que hacen tareas, no chats:** MiniMax Agent, Manus y Genspark. Actúan por su cuenta en la web; no encajan en pregunta-respuesta.
+- **OpenRouter Chat:** sus modelos gratis van mejor por API (tabla de PLAN-v4), sin gastar cuenta web. Si la quieres como web, "+ Añadir otra IA" la acepta.
+- **Directas, fuera siempre:** `chatgpt.com` y `claude.ai`.
+- **Brave Leo:** vive dentro del navegador Brave (`brave://leo-ai`) y ninguna extensión puede manejarla. Su Claude Haiku está en Duck.ai.
+- **Sakana Fugu:** solo API y de pago.
+- **Bloqueadas por país:**
+  - Sakana Chat (solo Japón);
+  - Amazon Nova (solo Estados Unidos);
+  - Doubao, Yuanbao, ERNIE e iFlytek Spark (piden teléfono chino).
+- **Cerradas en 2026:** Phind, Naver Clova X y StepFun internacional.
+
+**Riesgo para tus cuentas:** algunas webs prohíben el uso automático en sus normas. El guardián lo frena, pero no lo elimina.
 
 ---
 
@@ -459,12 +556,12 @@ Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla d
 | El modo observador registra algo que no querías | Solo webs con permiso; solo pestañas que tú marcas; nunca campos de contraseña; un botón para dejar de observar |
 | Open WebUI cambia algo que usamos | Se fija la versión que pasó F1; se actualiza solo tras repetir la lista de 10 |
 | Open WebUI trae demasiadas opciones y abruma | D18: se desactiva lo que no se usa; la prueba sin guía de F1 lo mide |
-| El Comité tarda (chats web de uno en uno) | APIs en paralelo; se prueban dos chats a la vez en F5; 3 participantes para lo urgente |
+| El Comité tarda (chats web de uno en uno) | APIs en paralelo; se prueban dos chats a la vez en F6; 3 participantes para lo urgente |
 | Cuentas: más mensajes = más verificaciones y más riesgo de bloqueo | Coste visible y "adelante"; límites por fuente; Comité con parte por API |
 | Cuotas gratis que desaparecen (ya pasó 4 veces este año) | Las fichas guardan la fecha de la última comprobación; si una API falla por cuota, se pasa a la reserva sin romper nada |
 | Inyección entre IAs y en herramientas | Datos marcados; formatos cerrados; analizador estricto; aprobación siempre; test de inyección en cada fase que toca herramientas |
 | Conflictos de memoria | D5: un solo escritor, sin leer nunca de Drive |
-| Un agente de código rompe algo | Worktree, modo simulación, pedir permiso para editar y ejecutar, tests, Deshacer; aislamiento decidido con prueba en F9 |
+| Un agente de código rompe algo | Worktree, modo simulación, pedir permiso para editar y ejecutar, tests, Deshacer; aislamiento decidido con prueba en F10 |
 
 ## 9. Lo que NO se hace
 
@@ -473,7 +570,7 @@ Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla d
 - Un enrutador que aprende solo.
 - Leer o escribir en Drive en los dos sentidos.
 - Dar permisos de escritura en GitHub a webs de terceros (el conector de Mistral).
-- Imágenes, vídeo, audio o plugins antes de F10.
+- Imágenes, vídeo, audio o plugins antes de F11.
 
 ## 10. Preguntas abiertas (no frenan F0 ni F1)
 
@@ -497,4 +594,8 @@ Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla d
   - skills: https://www.librechat.ai/docs/features/skills
   - aprobaciones: https://github.com/danny-avila/LibreChat/pull/13942
 - **OpenCode, permisos:** https://opencode.ai/docs/permissions/
+- **Catálogo de chats web:**
+  - las fuentes de cada IA, en la tabla del catálogo de PLAN-v4 y en la conversación con Iván del 24 y 25 de septiembre de 2026;
+  - Copilot gratis y sin cuenta: https://support.microsoft.com/en-us/microsoft-365-copilot/what-s-the-difference-between-microsoft-copilot-free-and-copilot-in-microsoft-365 y https://medhacloud.com/blog/microsoft-copilot-free
+  - You.com, ahora centrada en APIs: https://en.wikipedia.org/wiki/You.com y https://aiproductivity.ai/pricing/you/
 - **Crítica de las 5 IAs:** conversación con Iván del 25-sep-2026. Su criba está resumida en las decisiones D3, D5, D6, D7, D8, D9, D10, D11, D13 y D14.

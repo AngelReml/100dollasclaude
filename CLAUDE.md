@@ -14,8 +14,9 @@ program in his folders through those chats.
   skill is a "model"). The Committee is mandatory (role → `CONFIRMO:` → problem → closed verdict →
   one fusion document by the strongest available AI). Memory has one writer (journal → one-way
   export to an Obsidian vault in Drive). Web layer self-repairs in 4 layers and records chats Iván
-  continues by hand. Phases F0 (stabilize; Meta) → F1 (face spike, 8 checks) → F2 … F10, each with
-  an entry gate and a measurable exit.
+  continues by hand. Every web chat found (27) is preloaded from a catalog; Iván only logs in.
+  Phases F0 (stabilize; Meta) → F1 (face spike, 10 checks) → F2 (gateway) → F3 (catalog) → F4 …
+  F11, each with an entry gate and a measurable exit.
 - `docs/PLAN-v3.md` still holds the design rules, contract and evidence rules (and what 3b, 7a, 7b
   and the lost-answer fix did, all done 2026-09-25, pending Iván's live test).
 
