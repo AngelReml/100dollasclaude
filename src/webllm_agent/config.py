@@ -60,6 +60,13 @@ class Paths:
             p.mkdir(parents=True, exist_ok=True)
 
 
+# Human names for the default providers (data/config.yaml can set "label").
+DEFAULT_LABELS = {
+    "qwen": "Qwen", "deepseek": "DeepSeek", "zai-chat": "z.ai (chat)", "meta": "Meta AI",
+    "zai": "z.ai", "groq": "groq", "nemotron": "Nemotron",
+}
+
+
 @dataclass(frozen=True)
 class ProviderConfig:
     name: str
@@ -77,10 +84,16 @@ class ProviderConfig:
     fallback_models: tuple[str, ...] = ()
     # The dashboard step Iván must redo when this provider's session expires.
     relogin_hint: str = ""
+    # Name shown to Iván (default: DEFAULT_LABELS, else the provider name).
+    label: str = ""
 
     @property
     def guarded(self) -> bool:
         return self.kind == "web"
+
+    @property
+    def display(self) -> str:
+        return self.label or DEFAULT_LABELS.get(self.name, self.name)
 
 
 @dataclass(frozen=True)
@@ -173,6 +186,7 @@ def _coerce_providers(raw: Any) -> dict[str, ProviderConfig]:
             timeout_s=float(spec.get("timeout_s", 180.0)),
             fallback_models=_as_tuple(spec.get("fallback_models")),
             relogin_hint=str(spec.get("relogin_hint", "")),
+            label=str(spec.get("label", "")),
         )
     return out
 

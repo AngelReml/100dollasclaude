@@ -7,6 +7,8 @@ The behaviour is chosen by the last segment of the requested model id:
     r401       401 session expired
     r403cf     403 with a Cloudflare-style challenge page
     r500       500 internal error
+    r503       503 overloaded (temporary)
+    flaky      503 on the first call to that model, then like ok
     malformed  200 with a body that is not JSON
     html200    200 whose content is an HTML login page
 GET /v1/models returns 200, or 401 when the Bearer key is "bad-key".
@@ -86,6 +88,13 @@ def _make_handler(state: MockState):
                 if behaviour == "r403cf":
                     return self._send(403, b"<!DOCTYPE html><html><title>Just a moment...</title>cf-chl</html>",
                                       ctype="text/html", headers=hdr)
+                if behaviour == "r503" or (behaviour == "flaky" and state.calls(model) == 1):
+                    return self._send(503, b'{"error":{"message":"model is currently at capacity"}}', headers=hdr)
+                if behaviour == "flaky":
+                    out = {"id": "x", "object": "chat.completion", "model": model,
+                           "choices": [{"index": 0, "message": {"role": "assistant",
+                                                                "content": f"answer from {model}"}}]}
+                    return self._send(200, json.dumps(out).encode(), headers=hdr)
                 if behaviour == "r500":
                     return self._send(500, b'{"error":{"message":"upstream exploded"}}', headers=hdr)
                 if behaviour == "malformed":
