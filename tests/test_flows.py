@@ -193,7 +193,18 @@ def test_web_provider_in_cooldown_is_skipped_not_sent(tmp_path, mock_server):
     run, events = go(cfg, Flow("x", (Step("s1", ("web",), "q"),)))
     assert run.status == flows.STOPPED and mock_server.requests == []
     done = [e for e in events if e["type"] == "target_done"][0]
-    assert not done["ok"] and "pausa" in done["notices"][0]
+    assert not done["ok"] and done["code"] == "cooldown" and "pausa" in done["notices"][0]
+
+
+@pytest.mark.parametrize("model, code", [
+    ("x/r429", "rate_limited"), ("x/r401", "unauthorized"), ("x/r503", "overloaded"),
+    ("x/r500", "error"), ("x/malformed", "malformed"),
+])
+def test_failures_carry_a_code_for_the_app(tmp_path, mock_server, model, code):
+    cfg = cfg_for(tmp_path, mock_server, [P("x", model)])
+    run, events = go(cfg, Flow("x", (Step("s1", ("x",), "q"),)))
+    assert run.steps["s1"].answers["x"].code == code
+    assert [e["code"] for e in events if e["type"] == "target_done"] == [code]
 
 
 def test_gateway_down_fails_before_anything_is_written_or_sent(tmp_path):

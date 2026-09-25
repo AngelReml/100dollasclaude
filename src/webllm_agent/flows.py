@@ -92,6 +92,7 @@ class Answer:
     text: str = ""
     seconds: float = 0.0
     error: str = ""
+    code: str = ""            # machine-readable reason when not ok (see error_code)
     notices: list[str] = field(default_factory=list)
 
 
@@ -383,10 +384,12 @@ async def run_flow(
             "http_status": r.http_status,
             "latency_s": round(r.latency_s, 3),
             "error": r.error,
+            "code": error_code(r),
             "notices": outcome.notices,
         })
         return Answer(target=target, provider=outcome.target.name, ok=r.ok, text=r.text if r.ok else "",
-                      seconds=round(r.latency_s, 1), error=_error_text(r), notices=list(outcome.notices))
+                      seconds=round(r.latency_s, 1), error=_error_text(r), code=error_code(r),
+                      notices=list(outcome.notices))
 
     async with httpx.AsyncClient(transport=transport) as client:
         if any(p.gateway == "omniroute" for ps in resolved.values() for p in ps):
@@ -427,7 +430,7 @@ async def run_flow(
                                "label": _label(cfg, target), "provider": answer.provider,
                                "provider_label": _label(cfg, answer.provider), "ok": answer.ok,
                                "text": answer.text, "seconds": answer.seconds, "error": answer.error,
-                               "notices": answer.notices})
+                               "code": answer.code, "notices": answer.notices})
             return answer
 
         async def run_step(step: Step) -> None:
@@ -473,6 +476,38 @@ async def run_flow(
     await _emit(emit, {"type": "flow_done", "run_id": run_id, "status": status, "verified": verified,
                        "steps": {sid: r.status for sid, r in results.items()}})
     return FlowRun(run_id=run_id, run_dir=run_dir, status=status, steps=results, verified=verified)
+
+
+def error_code(r: ChatResult) -> str:
+    """Why a call failed, as a short code the app turns into "what happened + what to do + button".
+
+    Chrome chats: the bridge's own code (login_required, paused, site_busy, bridge_unavailable, ...).
+    Skipped by the guard: cooldown, daily_cap, busy. API AIs: rate_limited, unauthorized, overloaded,
+    timeout, unreachable (OmniRoute off), malformed. Anything else: error.
+    """
+    if r.ok:
+        return ""
+    if r.status == "skipped":
+        return r.error or "cooldown"
+    try:
+        err = json.loads(r.body_excerpt or "")["error"]
+        if isinstance(err, dict) and err.get("code"):
+            return str(err["code"])
+    except (ValueError, KeyError, TypeError):
+        pass
+    if r.status == TIMEOUT or r.http_status == 504:
+        return "timeout"
+    if r.status == CONNECTION_ERROR:
+        return "unreachable"
+    if r.http_status == 429:
+        return "rate_limited"
+    if r.http_status in (401, 403):
+        return "unauthorized"
+    if r.http_status in (502, 503, 529):
+        return "overloaded"
+    if r.status == "malformed":
+        return "malformed"
+    return "error"
 
 
 def _error_text(r: ChatResult) -> str:
@@ -577,6 +612,6 @@ TEMPLATES = {
 
 __all__ = [
     "Flow", "Step", "FlowRun", "StepResult", "Answer", "FlowError", "GatewayError", "flow_from_dict",
-    "flow_to_dict", "load_flow", "validate", "estimate_messages", "render_message", "run_flow",
+    "flow_to_dict", "load_flow", "validate", "estimate_messages", "render_message", "run_flow", "error_code",
     "council_and_judge", "split_and_merge", "debate", "chain", "TEMPLATES",
 ]

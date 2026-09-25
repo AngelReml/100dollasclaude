@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 from aiohttp import WSMsgType, web
 
+from .appapi import AppApi
 from .client import _content_text
 from .config import PROJECT_ROOT, AppConfig, ProviderConfig
 from .guard import Guard, GuardBlocked
@@ -116,6 +117,7 @@ class Bridge:
         self.locks: dict[str, asyncio.Lock] = {s: asyncio.Lock() for s in SITES}
         self._last_launch = -1e9
         self._panel_running = False
+        self.app_api = AppApi(self)
 
     # ------------------------------------------------------------------ app
 
@@ -140,6 +142,7 @@ class Bridge:
         app.router.add_get("/status", self.status)
         app.router.add_post("/admin/resume", self.resume)
         app.router.add_post("/admin/diagnose", self.diagnose)
+        self.app_api.register(app)
         return app
 
     def _authorized(self, request: web.Request) -> bool:
@@ -432,7 +435,7 @@ def serve(cfg: AppConfig, port: int, timeout_s: float) -> None:
 
     bridge = Bridge(cfg, token, timeout_s=timeout_s, log=log)
     print(f"Puente webllm en http://127.0.0.1:{port}/v1  (extensión: {cfg_path.parent})")
-    print(f"Panel de pruebas: http://127.0.0.1:{port}/")
+    print(f"Panel de pruebas: http://127.0.0.1:{port}/   App: http://127.0.0.1:{port}/app/")
     print("Esperando a Chrome... Deja esta ventana abierta.")
     web.run_app(bridge.app(), host="127.0.0.1", port=port, print=None, access_log=None)
 
