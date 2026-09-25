@@ -269,6 +269,74 @@ def test_timeout_is_504(tmp_path):
     run(go())
 
 
+class WaitingExtension(FakeExtension):
+    """Like extension 0.5.0 while Iván solves a verification: "still on it" every 0.2 s, then the answer
+    (or, with answer=None, it goes silent: a lost job)."""
+
+    def __init__(self, beats: int, answer: dict | None):
+        super().__init__({})
+        self.beats, self.answer = beats, answer
+        self.waiting_seen: list = []
+
+    async def _answer(self, job):
+        for _ in range(self.beats):
+            await self.ws.send_json({"type": "job_alive", "id": job["id"], "site": job["site"], "waiting": "challenge"})
+            await asyncio.sleep(0.2)
+        if self.answer is not None:
+            await self.ws.send_json({"type": "job_alive", "id": job["id"], "site": job["site"], "waiting": None})
+            await self.ws.send_json({"type": "result", "id": job["id"], **self.answer})
+
+
+async def start_waiting(tmp_path, ext: WaitingExtension, **kw):
+    cfg, bridge, server, old, *_ = await start(tmp_path, **kw)
+    await old.close()
+    await ext.connect(server)
+    await asyncio.sleep(0.2)
+    return bridge, server
+
+
+def test_answer_after_a_long_verification_is_not_lost(tmp_path):
+    """Iván's report: the time spent solving a verification made the bridge give up on the chat."""
+    async def go():
+        ext = WaitingExtension(beats=10, answer={"ok": True, "text": "late but here", "via": "copy-button"})
+        bridge, server = await start_waiting(tmp_path, ext, timeout_s=0.5)  # 2 s of "waiting for Iván"
+        try:
+            task = asyncio.create_task(post(server, "browser/qwen"))
+            await asyncio.sleep(0.8)
+            assert bridge.waiting == {"qwen": "challenge"}  # the app shows "te espera"
+            status, body, _ = await asyncio.wait_for(task, 10)
+            assert status == 200 and json.loads(body)["choices"][0]["message"]["content"] == "late but here"
+            assert bridge.waiting == {} and bridge.alive == {}
+        finally:
+            await ext.close(); await server.close()
+    run(go())
+
+
+def test_a_job_the_extension_stops_talking_about_times_out(tmp_path, monkeypatch):
+    import webllm_agent.bridge as bridge_module
+    monkeypatch.setattr(bridge_module, "JOB_ALIVE_GRACE_S", 0.6)
+
+    async def go():
+        ext = WaitingExtension(beats=3, answer=None)  # alive for 0.6 s, then nothing
+        bridge, server = await start_waiting(tmp_path, ext, timeout_s=0.3)
+        try:
+            t0 = time.monotonic()
+            status, _, _ = await asyncio.wait_for(post(server, "browser/qwen"), 10)
+            assert status == 504 and 0.9 < time.monotonic() - t0 < 3
+            assert bridge.waiting == {} and bridge.alive == {} and bridge.pending == {}
+        finally:
+            await ext.close(); await server.close()
+    run(go())
+
+
+def test_the_app_never_hangs_up_on_a_chat_first():
+    from webllm_agent.broadcaster import client_timeout
+    from webllm_agent.config import JOB_HARD_CAP_S
+    chat = ProviderConfig(name="qwen", model="browser/qwen", kind="browser", gateway="bridge", timeout_s=420)
+    api = ProviderConfig(name="groq", model="groq/x", timeout_s=120)
+    assert client_timeout(chat) > JOB_HARD_CAP_S and client_timeout(api) == 120
+
+
 def test_no_chrome_opens_it_and_returns_503(tmp_path):
     async def go():
         cfg, bridge, server, ext, logs, launched = await start(tmp_path, connect=False, connect_wait_s=0.3)

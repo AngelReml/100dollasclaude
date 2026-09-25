@@ -16,6 +16,6 @@ export function Page({ title, subtitle, action, children }: { title: string; sub
   );
 }
 
-export function SectionTitle({ children }: { children: ReactNode }) {
-  return <h2 className="mb-3 text-[19px] font-semibold">{children}</h2>;
+export function SectionTitle({ children, className = "mb-3" }: { children: ReactNode; className?: string }) {
+  return <h2 className={`${className} text-[19px] font-semibold`}>{children}</h2>;
 }

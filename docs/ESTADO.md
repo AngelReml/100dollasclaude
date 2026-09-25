@@ -34,14 +34,76 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
    - Cada cambio queda guardado con git. Si pregunta algo, responde `y` (sí) o `n` (no).
    - Cada cambio gasta 2 mensajes del chat.
 5. **`REANUDAR`.** Quita las pausas cuando ya has entrado con una cuenta nueva o has resuelto una verificación.
-6. **Deja a la vista las ventanas de chat que abre webllm.** Pueden estar detrás de otras, pero no minimizadas.
-   - Si se ocultan, las webs no escriben la respuesta; webllm las trae al frente él solo.
+6. **Deja a la vista la ventanita de webllm** (pequeña, abajo a la derecha). Puede estar en una esquina, pero no minimizada ni tapada del todo.
+   - Si queda tapada, las webs no escriben la respuesta. La app te lo dice en la tarjeta del chat ("Te espera") y la respuesta sigue sola cuando se vuelve a ver.
 7. **Si un chat te echa, te banea o pide verificación,** sale un aviso de Windows que te dice qué hacer.
    - **Sin sesión:** entra y repite.
    - **Verificación:** la resuelves tú en esa ventana y el envío sigue solo.
    - **Baneo o límite:** entra con otra cuenta y haz doble clic en `REANUDAR`.
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
+
+## Novedades del 25-sep-2026, noche
+
+**Una vez, después de ACTUALIZAR:** la extensión cambia a la versión **0.5.0**. Abre `chrome://extensions` y pulsa la flecha ↻ en "webllm puente".
+
+1. **Arreglado: las respuestas que se perdían tras resolver una verificación.**
+   - **Lo que pasaba:**
+     - el tiempo que tardabas en resolver la verificación contaba como si el chat tardara en contestar;
+     - la app dejaba de esperar a los 7 minutos, antes que el resto de webllm;
+     - mientras resolvías la verificación, la ventanita cambiaba de pestaña cada 2 segundos;
+     - si la ventanita quedaba tapada (por la propia app, por ejemplo), la web dejaba de escribir y el reloj seguía corriendo.
+   - **Ahora:**
+     - el tiempo que un chat te espera no cuenta;
+     - la pestaña que te necesita se queda delante;
+     - cada verificación te espera 5 minutos;
+     - la respuesta llega sola al terminar, sin volver a preguntar.
+   - **En la app,** la tarjeta de ese chat dice **"Te espera"** y qué hacer:
+     - resolver la verificación;
+     - responder la ventana emergente;
+     - o dejar la ventanita a la vista.
+   - **Los demás chats** dicen **"En cola"** hasta que les toca, en vez de un reloj que corría sin haber enviado nada. Se preguntan de uno en uno, como hasta ahora.
+2. **"Añadir otra IA".** En Inicio (sección *Tus IAs*) y al final del desplegable de IAs.
+   - Pegas la dirección de una web de chat en la que tengas cuenta, por ejemplo `https://chat.mistral.ai`, y pulsas **Probar y añadir**.
+   - Chrome abre una pestaña "Añadir … a webllm". Pulsa **Permitir y probar** y luego **Permitir** en el aviso de Chrome. El permiso es solo para esa web.
+   - webllm la abre, busca la caja de texto y le manda una prueba ("pong"). La app te enseña cada paso con ✓ o ✗.
+   - La prueba gasta 1 mensaje de esa web y pasa por la protección de siempre.
+   - **Si contesta:** queda entre tus IAs, con su icono.
+   - **Si no:** te dice por qué, no guarda nada y tienes **Probar otra vez** y **Copiar diagnóstico**.
+   - Claude y ChatGPT no se pueden añadir.
+   - Las IAs que añades se pueden **Quitar** desde su tarjeta en Inicio. Tu cuenta en esa web no se toca.
+
+| Qué | Probado aquí | Falta probarlo en tu PC |
+|---|---|---|
+| Verificación en mitad de una pregunta a todas | Sí, en Chromium con la extensión y el puente de verdad y una web de chat de mentira con una verificación resuelta a los 20 s. Con el código de antes, el mismo test falla igual que te pasó a ti | Preguntar a todas y resolver una verificación de Qwen |
+| Ventanita tapada | Sí, pero simulado. Se le dice a la página que no se ve, como hace Chrome en Windows con una ventana tapada, porque el Chromium sin pantalla de la nube no lo hace solo | Tapar la ventanita con la app mientras un chat escribe y ver el aviso |
+| Añadir otra IA | Sí, en Chromium con la extensión y el puente de verdad: añadir, preguntarle, una web sin caja de texto, otra que pide entrar, quitar. Lo único simulado es tu clic en "Permitir" del aviso de Chrome | Añadir una web de verdad (por ejemplo Mistral) y preguntarle |
+| Todo lo demás | 166 tests en verde; 41 capturas en `docs/capturas/7b/` sin fallos de diseño | — |
+
+## Novedades del 25-sep-2026, tarde (lo que pediste tras probar la app)
+
+1. **Un solo botón, "Conectar", por cada chat.**
+   - Abre el chat en la ventanita de webllm y, si no tienes la sesión abierta, la trae al frente.
+   - Entras ahí con tu cuenta y la app lo ve sola: mira cada 3 segundos, hasta 3 minutos, y se pone en verde sin que vuelvas a pulsar.
+   - No envía ningún mensaje.
+2. **La guía de primera vez ya no sale** si Chrome está conectado y tienes algún chat listo. Para verla: Inicio → **Ver la guía otra vez**.
+3. **Las IAs, en un desplegable.** En Preguntar hay un solo botón, "IAs: N elegidas":
+   - al abrirlo salen agrupadas en *Chats en tu Chrome*, *IAs por API* y *En tu PC*;
+   - arriba tienes atajos: *Todas las listas*, *Solo las que no gastan cuenta* y *Ninguna*;
+   - recuerda tu última elección.
+4. **Los modelos de tu PC (LM Studio y Ollama).**
+   - Salen solos en el grupo *En tu PC*, por ejemplo "LM Studio · qwen2.5-1.5b-instruct". Los modelos de "embeddings" no salen, porque no sirven para chatear.
+   - No gastan ninguna cuenta.
+   - Si el programa está apagado, tienes el botón **Encender LM Studio** (o **Encender Ollama**).
+
+**Una vez, después de ACTUALIZAR:** la extensión cambia a la versión 0.4.0. Abre `chrome://extensions` y pulsa la flecha ↻ en "webllm puente". `ACTUALIZAR` te lo recuerda.
+
+| Qué | Probado aquí (con dobles de prueba) | Falta probarlo en tu PC |
+|---|---|---|
+| Conectar | Sí: la extensión de mentira "entra" 6 s después y el círculo se pone verde solo; 3 tests | Pulsar Conectar en un chat sin sesión y entrar |
+| Desplegable de IAs | Sí: capturas y uso completo con teclado | — |
+| LM Studio / Ollama | Sí: un LM Studio de mentira, 9 tests; un Ollama "instalado pero apagado" sale en gris | Ver la respuesta de tu `qwen2.5-1.5b-instruct` en la app |
+| Todo lo demás | 144 tests en verde | — |
 
 ## Novedades del 25-sep-2026 (programado por Claude Code desde GitHub)
 

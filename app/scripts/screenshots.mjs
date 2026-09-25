@@ -45,7 +45,58 @@ async function shot(page, name) {
 }
 
 async function waitAnswers(page) {
-  await page.waitForFunction(() => !document.body.innerText.match(/Esperando…|En cola/), null, { timeout: 60000 });
+  await page.waitForFunction(() => !document.body.innerText.match(/Esperando…|En cola|Te espera/), null, { timeout: 60000 });
+}
+
+// "+ Añadir otra IA" (PLAN-v3 7b): a blocked address, a site that works, one that does not, and Quitar.
+async function addAnAi(page, tag) {
+  const dialog = page.getByRole("dialog");
+  const address = dialog.getByLabel("Dirección de la web");
+  await page.goto(base);
+  await page.getByRole("button", { name: "Añadir otra IA" }).click();
+  await address.fill("https://chatgpt.com");
+  await dialog.getByRole("button", { name: "Probar y añadir" }).click();
+  await dialog.getByText("no se puede añadir").waitFor();
+  await shot(page, `${tag}-11-anadir-bloqueada`);
+
+  await address.fill("https://chat.mistral.ai");
+  await dialog.getByRole("button", { name: "Probar y añadir" }).click();
+  await dialog.getByText("Permitir y probar").waitFor();
+  await shot(page, `${tag}-12-anadir-permiso`);
+  await dialog.getByText("Enviando una prueba").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-13-anadir-probando`);
+  await dialog.getByText("¡Listo!").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-14-anadir-lista`);
+  await dialog.getByRole("button", { name: "Hecho" }).click();
+
+  const card = page.locator('[data-card="mistral"]');
+  await card.getByText("Añadida por ti").waitFor();
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-15-inicio-anadida`);
+
+  await page.getByRole("button", { name: "Añadir otra IA" }).click();
+  await address.fill("https://nochat.example.com");
+  await dialog.getByRole("button", { name: "Probar y añadir" }).click();
+  await dialog.getByText("No encontré la caja de texto").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-16-anadir-fallo`);
+  await dialog.getByRole("button", { name: "Cerrar", exact: true }).last().click();
+
+  await card.getByRole("button", { name: "Quitar" }).click();
+  await card.getByText("¿Quitar Mistral de webllm?").waitFor();
+  await shot(page, `${tag}-17-quitar-confirmar`);
+  await card.getByRole("button", { name: "Sí, quitar" }).click();
+  await card.waitFor({ state: "detached" });
+}
+
+// A chat waiting for Iván (a verification): it says so and the question goes on after.
+async function waitingForYou(page, tag) {
+  await page.goto(base + "#/preguntar");
+  await page.getByLabel("Tu pregunta").fill("¿Qué es la inflación? (demo: verificación)");
+  await page.getByRole("button", { name: /^Preguntar a/ }).click();
+  await page.getByText("pide una verificación").waitFor({ timeout: 15000 });
+  await page.waitForTimeout(2500);
+  await shot(page, `${tag}-18-te-espera`);
+  await waitAnswers(page);
 }
 
 async function run(theme, width, full) {
@@ -56,44 +107,51 @@ async function run(theme, width, full) {
   const page = await ctx.newPage();
   const tag = `${theme === "oscuro" ? "oscuro" : "claro"}-${width}`;
 
+  // With Chrome connected and chats ready, the guide must NOT open by itself.
   await page.goto(base);
-  if (full) {
-    await page.getByText("Bienvenido a webllm").waitFor();
-    await shot(page, `${tag}-01-guia-paso1`);
-    await page.getByRole("button", { name: "Siguiente" }).click();
-    for (const ai of ["qwen", "meta"]) {
-      await page.locator(`[data-ai="${ai}"]`).getByRole("button", { name: "Comprobar" }).click();
-    }
-    await page.getByText("Sesión abierta").first().waitFor();
-    await page.getByText("Sin sesión").first().waitFor();
-    await shot(page, `${tag}-02-guia-paso2`);
-  }
-  await page.getByRole("button", { name: "Saltar la guía" }).click();
-
-  await page.goto(base + "#/");
   await page.getByText("Tus IAs").waitFor();
-  await shot(page, `${tag}-03-inicio`);
+  await page.waitForTimeout(1500);
+  if (await page.getByText("Bienvenido a webllm").count()) report.push({ name: `${tag}-guia`, clipped: ["la guía se abrió sola con todo listo"], smallText: [] });
+  await shot(page, `${tag}-01-inicio`);
+
+  if (full) {
+    await page.getByRole("button", { name: "Ver la guía otra vez" }).click();
+    await page.getByText("Bienvenido a webllm").waitFor();
+    await page.getByRole("button", { name: "Siguiente" }).click();
+    await page.locator('[data-ai="meta"]').getByRole("button", { name: "Conectar" }).click();
+    if (await page.getByText("Esperando a que entres").waitFor({ timeout: 5000 }).then(() => true, () => false)) {
+      await shot(page, `${tag}-02-guia-conectar-esperando`);
+    }
+    await page.locator('[data-ai="meta"]').getByText("Conectada").waitFor({ timeout: 30000 });
+    await shot(page, `${tag}-03-guia-conectada-sola`);
+    await page.getByRole("button", { name: "Saltar la guía" }).click();
+  }
 
   await page.goto(base + "#/preguntar");
   await page.getByText("¿A quién?").waitFor();
-  if (full) await shot(page, `${tag}-04-preguntar-vacio`);
+  if (full) {
+    await shot(page, `${tag}-04-preguntar-vacio`);
+    await page.getByRole("button", { name: /^IAs: / }).click();
+    await page.getByRole("menuitemcheckbox").first().waitFor();
+    await shot(page, `${tag}-05-elegir-ias`);
+    await page.keyboard.press("Escape");
+  }
   await page.getByRole("button", { name: "Probar este ejemplo" }).first().click();
   if (full) {
     await page.waitForTimeout(1800);
-    await shot(page, `${tag}-05-preguntar-en-curso`);
+    await shot(page, `${tag}-06-preguntar-en-curso`);
   }
   await waitAnswers(page);
-  await shot(page, `${tag}-06-preguntar-respuestas`);
+  await shot(page, `${tag}-07-preguntar-respuestas`);
 
   if (full) {
     await page.getByRole("button", { name: "Pásasela a…" }).first().click();
     await page.getByRole("menuitem", { name: /DeepSeek/ }).click();
     await page.getByText("Este es el mensaje que recibirá").waitFor();
-    await shot(page, `${tag}-07-pasar-dialogo`);
+    await shot(page, `${tag}-08-pasar-dialogo`);
     await page.getByRole("button", { name: /^Enviar a/ }).click();
     await page.waitForTimeout(500);
     await waitAnswers(page);
-    await shot(page, `${tag}-08-pasar-respuesta`);
   }
 
   await page.goto(base + "#/historial");
@@ -103,6 +161,8 @@ async function run(theme, width, full) {
     await page.getByRole("link").filter({ hasText: /Intacto|Alterado/ }).last().click();
     await page.getByText("Mensaje enviado").first().waitFor();
     await shot(page, `${tag}-10-historial-detalle`);
+    await addAnAi(page, tag);
+    await waitingForYou(page, tag);
   }
   await browser.close();
 }
@@ -112,7 +172,7 @@ for (const theme of ["claro", "oscuro"]) {
   await run(theme, 1920, false);
 }
 writeFileSync(`${out}/revision.json`, JSON.stringify(report, null, 2));
-const bad = report.filter((r) => r.pageOverflow || r.mainOverflow || r.wrappedFooters || r.smallText.length || r.clipped.length);
+const bad = report.filter((r) => r.pageOverflow || r.mainOverflow || r.wrappedFooters || r.smallText?.length || r.clipped?.length);
 console.log(`${report.length} capturas; con problemas: ${bad.length}`);
 for (const b of bad) console.log(JSON.stringify(b));
 if (bad.length) process.exitCode = 1;

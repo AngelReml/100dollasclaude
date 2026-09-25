@@ -3,18 +3,56 @@
 
 const TOKEN = document.querySelector<HTMLMetaElement>('meta[name="webllm-token"]')?.content ?? "";
 
+export type Session = "lista" | "sin_sesion" | "verificacion" | "sin_chrome" | "desconocido";
+
 export type AiState = "lista" | "en_pausa" | "sin_chrome" | "apagada" | "sin_sesion" | "saturada";
 
 export interface Ai {
   name: string;
   label: string;
-  kind: "chat" | "api";
+  kind: "chat" | "api" | "local";
   state: AiState;
   detail: string;
   until: number | null;
   url: string | null;
   today: number;
   cap: number | null;
+  /** Local AIs only: the program on this PC that runs it. */
+  server: string | null;
+  server_name: string | null;
+  /** Added by Iván with "+ Añadir otra IA" (can be removed). */
+  custom: boolean;
+  /** The site's own icon is available at iconUrl(name). */
+  icon: boolean;
+  /** Its chat is waiting for Iván right now (a verification, a pop-up, or the webllm window is
+   *  covered/minimized so the page cannot write); the question goes on after. */
+  waiting: "challenge" | "popup" | "hidden" | null;
+}
+
+export interface AddStep {
+  step: string;
+  ok: boolean | null;
+  text: string;
+}
+
+export interface AddState {
+  add_id: string;
+  key: string;
+  name: string;
+  url: string;
+  status: "running" | "ok" | "failed";
+  steps: AddStep[];
+  error: string;
+  message: string;
+  detail: string;
+}
+
+export interface LocalServer {
+  key: string;
+  name: string;
+  up: boolean;
+  installed: boolean;
+  models: number;
 }
 
 export interface Estado {
@@ -22,6 +60,7 @@ export interface Estado {
   omniroute: boolean;
   extension_path: string;
   ais: Ai[];
+  local_servers: LocalServer[];
 }
 
 export interface HistoryAnswer {
@@ -128,9 +167,14 @@ const post = <T>(path: string, body: unknown) => call<T>(path, { method: "POST",
 export const api = {
   estado: () => call<Estado>("/api/estado"),
   reanudar: (ia: string) => post<{ ok: boolean; cleared: boolean }>("/api/reanudar", { ia }),
-  comprobar: (ia: string) =>
-    post<{ session: "lista" | "sin_sesion" | "verificacion" | "sin_chrome" | "desconocido" }>("/api/comprobar", { ia }),
+  comprobar: (ia: string) => post<{ session: Session }>("/api/comprobar", { ia }),
+  conectar: (ia: string) => post<{ session: Session; shown: boolean }>("/api/conectar", { ia }),
   encenderOmniroute: () => post<{ ok: boolean; already: boolean }>("/api/encender-omniroute", {}),
+  encenderLocal: (server: string) => post<{ ok: boolean; already: boolean }>("/api/encender-local", { server }),
+  anadir: (url: string) => post<AddState>("/api/anadir", { url }),
+  anadirEstado: (id: string) => call<AddState>(`/api/anadir/${encodeURIComponent(id)}`),
+  quitar: (ia: string) => post<{ ok: boolean }>("/api/quitar", { ia }),
+  iconUrl: (key: string) => `/api/icono/${encodeURIComponent(key)}?token=${encodeURIComponent(TOKEN)}`,
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),
   exportUrl: (id: string) => `/api/historial/${encodeURIComponent(id)}/exportar?token=${encodeURIComponent(TOKEN)}`,

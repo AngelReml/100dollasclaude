@@ -136,11 +136,23 @@
     return null;
   };
 
+  // Sites without selectors (added from the app): usual markers of an AI message.
+  // querySelectorAll is in document order, so the last match is the innermost
+  // element of the last message.
+  const GENERIC_ANSWER = "[data-message-author-role='assistant'],[data-role='assistant'],[class*='assistant' i]," +
+    "[class*='markdown' i],[class*='response' i],[class*='answer' i],[class*='bot-message' i],[class*='ai-message' i]";
+  const genericAnswers = () => [...document.querySelectorAll(GENERIC_ANSWER)].filter((el) =>
+    visible(el) && (el.innerText || "").trim() && !el.querySelector("textarea,input,[contenteditable='true']"));
+
   const lastAnswerEl = (site) => {
     const a = answers(site);
     if (a.length) return a[a.length - 1];
     const cps = copyButtons(site);
-    if (!cps.length) return null;
+    if (!cps.length) {
+      if ((site.answer || []).length) return null;
+      const g = genericAnswers();
+      return g.length ? g[g.length - 1] : null;
+    }
     // Walk up from the last copy button to the smallest block holding real text.
     let el = cps[cps.length - 1].parentElement;
     while (el && el !== document.body && (el.innerText || "").trim().length < 2) el = el.parentElement;

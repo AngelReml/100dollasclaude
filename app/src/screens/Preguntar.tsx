@@ -1,10 +1,11 @@
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Copy, Forward, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
+import { Copy, Forward, Hand, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Ai } from "../api";
 import { go } from "../nav";
 import { useStore, type Turn, type TurnAnswer } from "../state";
-import { AiAvatar, AiToggle } from "../ui/Ai";
+import { AiAvatar } from "../ui/Ai";
+import { AiPicker } from "../ui/AiPicker";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
@@ -20,6 +21,17 @@ const EXAMPLES = [
   "Dame 5 ideas de nombre para una cafetería pequeña de barrio y di por qué funciona cada una.",
   "Quiero aprender inglés en 3 meses. ¿Clases o una app? Dame un plan semana a semana.",
 ];
+
+const PICKED_KEY = "webllm.elegidas";
+
+function readPicked(): string[] | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(PICKED_KEY) ?? "null");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+}
 
 const short = (text: string, n = 240) => (text.length > n ? `${text.slice(0, n).trimEnd()}…` : text);
 
@@ -137,8 +149,31 @@ function PassMenu({
   );
 }
 
+/** While one chat waits for Iván (verification, pop-up), the others are hidden and wait too. */
+function waitingText(answer: TurnAnswer, ais: Ai[]): { mine: boolean; text: string } | null {
+  if (answer.phase !== "asking") return null;
+  const me = ais.find((a) => a.name === answer.target);
+  if (me?.waiting === "challenge")
+    return {
+      mine: true,
+      text: `${answer.label} pide una verificación. Resuélvela en la ventanita de webllm (ya la he puesto delante). Te espero hasta 5 minutos; después la respuesta llega sola, no hace falta volver a preguntar.`,
+    };
+  if (me?.waiting === "popup")
+    return { mine: true, text: `${answer.label} ha sacado una ventana. Respóndela en la ventanita de webllm y sigo yo solo.` };
+  if (me?.waiting === "hidden")
+    return {
+      mine: true,
+      text: `La ventanita de webllm está tapada o minimizada, y ${answer.label} no escribe la respuesta mientras no se vea. Déjala a la vista (pequeña en una esquina vale): la respuesta sigue sola.`,
+    };
+  const other = me?.kind === "chat" ? ais.find((a) => a.waiting && a.name !== answer.target) : undefined;
+  if (other?.waiting === "hidden") return { mine: false, text: "La ventanita de webllm está tapada o minimizada: déjala a la vista y sigue sola." };
+  if (other) return { mine: false, text: `Esperando a que termines con ${other.label} en la ventanita de webllm; después ${answer.label} sigue sola.` };
+  return null;
+}
+
 function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAnswer; now: number; onPass: (kind: "pasar" | "criticar", to: Ai) => void }) {
-  const { ask } = useStore();
+  const { ask, estado } = useStore();
+  const waiting = waitingText(answer, estado?.ais ?? []);
   const toast = useToast();
   const elapsed = answer.startedAt ? Math.max(0, Math.round((now - answer.startedAt) / 1000)) : 0;
   const retry = () => ask({ prompt: turn.prompt, to: [answer.target], title: `${turn.title} (otra vez)`, question: turn.question, from: turn.from });
@@ -160,17 +195,29 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
           {replaced && <p className="text-[15px] text-muted">en lugar de {answer.label}</p>}
         </div>
         {answer.phase === "waiting" && <Badge tone="neutral" icon={<span className="animate-dot h-2 w-2 rounded-full bg-current" />}>En cola</Badge>}
-        {answer.phase === "asking" && <WorkingBadge>Esperando… {elapsed} s</WorkingBadge>}
+        {answer.phase === "asking" &&
+          (waiting?.mine ? (
+            <Badge tone="warn" icon={<Hand size={16} aria-hidden />}>
+              Te espera · {elapsed} s
+            </Badge>
+          ) : (
+            <WorkingBadge>Esperando… {elapsed} s</WorkingBadge>
+          ))}
         {answer.phase === "done" && (
           <DoneBadge ok={answer.ok}>{answer.ok ? `Respondió en ${answer.seconds} s` : "No respondió"}</DoneBadge>
         )}
       </div>
       <div className="max-h-[560px] min-h-28 flex-1 overflow-y-auto px-5 py-4 text-[16px]">
-        {answer.phase !== "done" && (
-          <p className="text-ink-2">
-            {answer.phase === "waiting" ? `En cola: ${answer.label} contesta de una en una.` : `${answer.label} está preparando la respuesta…`}
-          </p>
-        )}
+        {answer.phase !== "done" &&
+          (waiting ? (
+            <p className={waiting.mine ? "rounded-xl bg-warn-bg px-4 py-3 font-semibold text-warn-ink" : "text-ink-2"} role="status">
+              {waiting.text}
+            </p>
+          ) : (
+            <p className="text-ink-2">
+              {answer.phase === "waiting" ? `En cola: le pregunto en cuanto termine la anterior.` : `${answer.label} está preparando la respuesta…`}
+            </p>
+          ))}
         {answer.phase === "done" && answer.ok && <Markdown text={answer.text} />}
         {answer.phase === "done" && !answer.ok && <ProblemBox code={answer.code} ai={answer.target} onRetry={retry} />}
       </div>
@@ -233,19 +280,28 @@ export function Preguntar() {
   const { estado, turns, ask } = useStore();
   const toast = useToast();
   const [text, setText] = useState("");
-  const [picked, setPicked] = useState<string[] | null>(null);
+  const [picked, setPickedState] = useState<string[] | null>(readPicked);
   const [pass, setPass] = useState<Parameters<typeof PassDialog>[0]["pass"]>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const ais = estado?.ais ?? [];
-  // First time the list arrives: every AI that is ready is ticked.
-  const selected = useMemo(() => picked ?? ais.filter((a) => a.state === "lista").map((a) => a.name), [picked, ais]);
+  // The last choice is remembered; the first time, every AI that is ready is ticked.
+  const selected = useMemo(() => {
+    const names = ais.map((a) => a.name);
+    return picked ? picked.filter((n) => names.includes(n)) : ais.filter((a) => a.state === "lista").map((a) => a.name);
+  }, [picked, ais]);
+  const setPicked = (names: string[]) => {
+    setPickedState(names);
+    try {
+      localStorage.setItem(PICKED_KEY, JSON.stringify(names));
+    } catch {
+      // not remembered: the default choice comes back next time
+    }
+  };
   const running = turns.some((t) => t.running);
   const now = useNow(running);
 
   useEffect(() => box.current?.focus(), []);
 
-  const toggle = (name: string) =>
-    setPicked((selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]));
   const chats = ais.filter((a) => a.kind === "chat" && selected.includes(a.name)).length;
 
   const send = (prompt = text) => {
@@ -284,27 +340,15 @@ export function Preguntar() {
           placeholder="Escribe aquí lo que quieras preguntar…"
           className="w-full resize-y rounded-xl border border-line-strong bg-surface p-3.5 text-[17px] leading-relaxed text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
-        <div className="mt-4">
-          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-            <p className="text-[17px] font-semibold">¿A quién?</p>
-            <button type="button" className="cursor-pointer text-[15px] font-semibold text-accent-soft-ink underline underline-offset-2 dark:text-accent" onClick={() => setPicked(ais.map((a) => a.name))}>
-              A todas
-            </button>
-            <button type="button" className="cursor-pointer text-[15px] font-semibold text-accent-soft-ink underline underline-offset-2 dark:text-accent" onClick={() => setPicked([])}>
-              A ninguna
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="IAs que recibirán la pregunta">
-            {ais.map((a) => (
-              <AiToggle key={a.name} name={a.name} label={a.label} state={a.state} selected={selected.includes(a.name)} onToggle={() => toggle(a.name)} />
-            ))}
-          </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-[17px] font-semibold">¿A quién?</p>
+          <AiPicker ais={ais} selected={selected} onChange={setPicked} />
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[15px] text-muted">
             {chats > 0
-              ? `Gasta 1 mensaje de cada chat elegido (${chats}). Las IAs por API no gastan tus chats.`
-              : "Las IAs por API no gastan mensajes de tus chats."}{" "}
+              ? `Gasta 1 mensaje de cada chat elegido (${chats}). Las IAs por API y las de tu PC no gastan tus chats.`
+              : "No gasta mensajes de tus chats."}{" "}
             Atajo: Ctrl + Enter.
           </p>
           <Button variant="primary" size="lg" icon={<Send size={20} aria-hidden />} onClick={() => send()} disabled={!text.trim() || !selected.length}>

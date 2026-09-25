@@ -3,10 +3,12 @@
 // jobs {site, prompt}, drives that site's chat page in a dedicated window, and
 // sends back the answer. It stops and tells you when a site shows a login page,
 // a verification (CAPTCHA) or a limit; it never tries to get around them.
-importScripts("sites.js");
+importScripts("common.js", "sites.js");
 
 const SITES = self.WEBLLM_SITES;
-const HUMAN_WAIT_MS = 180000;
+const { genericSite, parseChatUrl } = self.WEBLLM_COMMON;
+const HUMAN_WAIT_MS = 300000;  // how long a verification or pop-up waits for you (each time)
+const JOB_HARD_CAP_MS = 29 * 60000; // no job runs longer, whatever it waits for (the bridge gives up at 30)
 let ws = null;
 let config = null;
 let connecting = false;
@@ -68,6 +70,48 @@ function notify(site, kind, message) {
   sendToBridge({ type: "notice", site, kind, message });
 }
 
+// ---------------------------------------------------------- waiting for you
+
+// While a chat waits for you (a verification, a pop-up) its tab stays in front,
+// so the other chats are hidden and cannot write either: that time does not
+// count against any job's time limit. The bridge hears about it (job_alive) and
+// keeps waiting too, and the app shows "te espero" instead of an error.
+const needsHuman = new Map(); // site -> "challenge" | "popup" | "hidden" (first one stays in front)
+const runningJob = {};        // site -> id of the job it is doing for the bridge
+let humanSince = 0;
+let humanTotal = 0;
+
+function humanMs() {
+  return humanTotal + (humanSince ? Date.now() - humanSince : 0);
+}
+
+function humanStart(site, kind) {
+  if (!needsHuman.size) humanSince = Date.now();
+  needsHuman.set(site, kind);
+  beat(site);
+}
+
+function humanEnd(site) {
+  if (!needsHuman.delete(site)) return;
+  if (!needsHuman.size && humanSince) {
+    humanTotal += Date.now() - humanSince;
+    humanSince = 0;
+  }
+  beat(site);
+}
+
+// A stopwatch that pauses while you are needed.
+function jobClock() {
+  const t0 = Date.now();
+  const h0 = humanMs();
+  return () => Date.now() - t0 - (humanMs() - h0);
+}
+
+function beat(site) {
+  if (runningJob[site]) sendToBridge({ type: "job_alive", id: runningJob[site], site, waiting: needsHuman.get(site) || null });
+}
+setInterval(() => Object.keys(runningJob).forEach(beat), 10000);
+
 // ---------------------------------------------------------------- tabs
 
 // All chats live as tabs of ONE small webllm window in the bottom-right corner.
@@ -119,9 +163,10 @@ async function siteTab(site) {
 }
 
 // Chat pages only write the answer on screen in the visible tab, so while
-// several chats work at once, show each of their tabs in turn.
+// several chats work at once, show each of their tabs in turn. A chat that
+// needs you (verification, pop-up) stays in front until you are done.
 setInterval(async () => {
-  const sites = [...busy];
+  const sites = needsHuman.size ? [needsHuman.keys().next().value] : [...busy];
   if (!sites.length) return;
   rotateIndex = (rotateIndex + 1) % sites.length;
   const tabId = (await chrome.storage.local.get("tab:" + sites[rotateIndex]))["tab:" + sites[rotateIndex]];
@@ -156,14 +201,23 @@ async function waitLoaded(tabId, timeoutMs) {
 }
 
 // Chat pages stop writing the answer while their window is minimized or fully
-// covered. We never force the window up; we only tell you once.
-async function keepVisible(tabId, st, site) {
-  if (!st || !st.hidden) return;
-  let win = null;
-  try { win = await chrome.windows.get((await chrome.tabs.get(tabId)).windowId); } catch (e) { return; }
-  if (win.state === "minimized" || busy.size === 1) {
-    notify(site, "hidden", "La ventanita de webllm está minimizada o tapada: las webs no terminan de escribir hasta que se vea. Déjala a la vista (puede estar pequeña en una esquina).");
+// covered (by the app's window, for example). We never force the window up: we
+// tell you (a notice, and the app says "te espera") and that time does not count
+// against the time limit. Returns true while the chat's own tab is in front but
+// cannot be seen. A tab hidden only because another chat's tab is in front (the
+// rotation) is not "covered".
+async function coveredWindow(tabId, st, site) {
+  let covered = false;
+  if (st && st.hidden) {
+    try { covered = (await chrome.tabs.get(tabId)).active; } catch (e) { covered = false; }
   }
+  if (covered && needsHuman.get(site) !== "hidden") {
+    humanStart(site, "hidden");
+    notify(site, "hidden", "La ventanita de webllm está minimizada o tapada: las webs no terminan de escribir hasta que se vea. Déjala a la vista (puede estar pequeña en una esquina).");
+  } else if (!covered && needsHuman.get(site) === "hidden") {
+    humanEnd(site);
+  }
+  return covered;
 }
 
 async function call(tabId, op, ...args) {
@@ -191,17 +245,22 @@ class JobError extends Error {
 }
 
 async function waitForHuman(site, tabId, what) {
-  const tab = await chrome.tabs.get(tabId);
-  await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
-  await chrome.tabs.update(tabId, { active: true });
-  notify(site, "challenge", `${SITES[site].name} pide una verificación (${what}). Resuélvela tú en la ventana que acabo de traer al frente; espero 3 minutos.`);
-  const t0 = Date.now();
-  while (Date.now() - t0 < HUMAN_WAIT_MS) {
-    await sleep(2000);
-    const st = await call(tabId, "state", SITES[site]);
-    if (!st.challenge) return;
+  humanStart(site, "challenge");
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+    await chrome.tabs.update(tabId, { active: true });
+    notify(site, "challenge", `${SITES[site].name} pide una verificación (${what}). Resuélvela tú en la ventana que acabo de traer al frente; te espero 5 minutos.`);
+    const t0 = Date.now();
+    while (Date.now() - t0 < HUMAN_WAIT_MS) {
+      await sleep(2000);
+      const st = await call(tabId, "state", SITES[site]);
+      if (!st.challenge) return;
+    }
+    throw new JobError("challenge", what);
+  } finally {
+    humanEnd(site);
   }
-  throw new JobError("challenge", what);
 }
 
 function checkBlocks(site, st) {
@@ -212,6 +271,7 @@ function checkBlocks(site, st) {
 }
 
 async function runJob(job) {
+  const jobStart = Date.now();
   const site = SITES[job.site];
   if (!site) throw new JobError("unknown_site", job.site);
   const tabId = await siteTab(job.site);
@@ -221,13 +281,13 @@ async function runJob(job) {
 
   // 1. wait for the chat box (or a login / verification page)
   let st;
-  const t0 = Date.now();
+  const boxClock = jobClock();
   for (;;) {
     st = await call(tabId, "state", site);
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
     checkBlocks(job.site, st);
     if (st.input) break;
-    if (Date.now() - t0 > 30000) throw new JobError("no_input", st.url);
+    if (boxClock() > 30000) throw new JobError("no_input", st.url);
     await sleep(1000);
   }
 
@@ -242,35 +302,44 @@ async function runJob(job) {
   // 2b. make sure it really went out. A pop-up (age check, cookies, "new
   // feature"...) can swallow the click and leave the text in the box: then ask
   // the user to answer the pop-up and press send again once it is gone.
-  const sendDeadline = Date.now() + HUMAN_WAIT_MS;
-  let asked = false;
-  for (let tries = 0; ; tries++) {
-    await sleep(2500);
-    st = await call(tabId, "state", site);
-    if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
-    checkBlocks(job.site, st);
-    const stillThere = st.inputLen > 0 && st.inputLen >= before.inputLen * 0.5 && st.bodyLen <= before.bodyLen + 20;
-    if (!stillThere) break;
-    if (Date.now() > sendDeadline) throw new JobError("not_sent", "the text stayed in the chat box");
-    if (st.overlay && !asked) {
-      asked = true;
-      const tab = await chrome.tabs.get(tabId);
-      await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
-      await chrome.tabs.update(tabId, { active: true });
-      notify(job.site, "popup", `${site.name} ha sacado una ventana ("${st.overlay}"). Respóndela en la ventanita de webllm y sigo yo solo.`);
+  const sendClock = jobClock();
+  let askedAt = 0;
+  try {
+    for (let tries = 0; ; tries++) {
+      await sleep(2500);
+      st = await call(tabId, "state", site);
+      if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
+      checkBlocks(job.site, st);
+      const stillThere = st.inputLen > 0 && st.inputLen >= before.inputLen * 0.5 && st.bodyLen <= before.bodyLen + 20;
+      if (!stillThere) break;
+      if (sendClock() > 90000 || (askedAt && Date.now() - askedAt > HUMAN_WAIT_MS)) {
+        throw new JobError("not_sent", "the text stayed in the chat box");
+      }
+      if (st.overlay && !askedAt) {
+        askedAt = Date.now();
+        humanStart(job.site, "popup");
+        const tab = await chrome.tabs.get(tabId);
+        await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+        await chrome.tabs.update(tabId, { active: true });
+        notify(job.site, "popup", `${site.name} ha sacado una ventana ("${st.overlay}"). Respóndela en la ventanita de webllm y sigo yo solo.`);
+      }
+      if (!st.overlay || tries % 3 === 2) await call(tabId, "send", site);
     }
-    if (!st.overlay || tries % 3 === 2) await call(tabId, "send", site);
+  } finally {
+    if (askedAt) humanEnd(job.site);
   }
 
-  // 3. wait until the answer is complete
-  const deadline = Date.now() + (job.timeout_ms || 300000);
+  // 3. wait until the answer is complete (time spent on a verification does not count)
+  const limit = job.timeout_ms || 300000;
+  const answerClock = jobClock();
   let lastSig = "";
   let stable = 0;
   let changed = false;
-  while (Date.now() < deadline) {
+  while (answerClock() < limit) {
     await sleep(1500);
+    if (Date.now() - jobStart > JOB_HARD_CAP_MS) break;
     st = await call(tabId, "state", site);
-    await keepVisible(tabId, st, job.site);
+    if (await coveredWindow(tabId, st, job.site)) continue;
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
     checkBlocks(job.site, st);
     const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
@@ -278,7 +347,9 @@ async function runJob(job) {
     const newCopy = st.copyCount > before.copyCount;
     if (!st.generating && changed && ((newCopy && stable >= 1) || stable >= 5)) break;
   }
-  if (Date.now() >= deadline) throw new JobError("timeout", `${Math.round((job.timeout_ms || 300000) / 1000)} s`);
+  if (answerClock() >= limit || Date.now() - jobStart > JOB_HARD_CAP_MS) {
+    throw new JobError("timeout", `${Math.round(limit / 1000)} s`);
+  }
 
   // 4. take the answer: the page's own copy button first, HTML as fallback
   await sleep(800);
@@ -296,6 +367,8 @@ async function handleJob(job) {
   const prev = siteQueue[job.site] || Promise.resolve();
   const run = prev.catch(() => {}).then(async () => {
     jobStarted(job.site);
+    runningJob[job.site] = job.id;
+    beat(job.site);
     try {
       const out = await runJob(job);
       sendToBridge({ type: "result", id: job.id, ok: true, text: out.text, via: out.via, model_label: out.modelName });
@@ -311,6 +384,8 @@ async function handleJob(job) {
       if (code === "not_sent") notify(job.site, code, `${name}: el mensaje se quedó sin enviar (¿una ventana emergente?). Vuelve a pedirlo.`);
       sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
     } finally {
+      delete runningJob[job.site];
+      humanEnd(job.site);
       jobFinished(job.site);
     }
   });
@@ -329,7 +404,117 @@ async function handleDiagnose(msg) {
   }
 }
 
+// Sites you added from the app are not in sites.js: the bridge sends their
+// name and address with every message, and driver.js detects them generically.
+function ensureSite(msg) {
+  if (msg.site && !SITES[msg.site] && msg.site_config && parseChatUrl(msg.site_config.url).ok) {
+    SITES[msg.site] = genericSite(msg.site_config.name, parseChatUrl(msg.site_config.url).url);
+  }
+}
+
+// ------------------------------------------------------- add a site from the app
+
+// 1) The app asks: open our own page, where you click "Permitir y probar".
+async function handleAddSite(msg) {
+  const p = parseChatUrl(msg.url);
+  if (!p.ok) {
+    sendToBridge({ type: "result", id: msg.id, ok: false, error: p.error });
+    return;
+  }
+  const q = new URLSearchParams({ add_id: msg.add_id, key: msg.key, name: msg.name, url: p.url });
+  const tab = await chrome.tabs.create({ url: chrome.runtime.getURL("add.html?" + q), active: true });
+  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "add" });
+}
+
+function addProgress(addId, step, ok, text) {
+  sendToBridge({ type: "add_progress", add_id: addId, step, ok, text });
+}
+
+async function favicon(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId);
+    if (!t.favIconUrl || !/^https:/.test(t.favIconUrl)) return null;
+    const r = await fetch(t.favIconUrl);
+    const type = r.headers.get("content-type") || "";
+    if (!r.ok || !/^image\//.test(type)) return null;
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.length > 60000) return null;
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 8192) bin += String.fromCharCode(...buf.subarray(i, i + 8192));
+    return `data:${type.split(";")[0]};base64,${btoa(bin)}`;
+  } catch (e) {
+    return null; // the icon lives on another domain, or there is none: the app draws a letter
+  }
+}
+
+// 2) Permission granted: open the site and find its text box, reporting every step.
+//    Then the bridge sends the test message like any other one (through its account guard).
+async function testSite(m) {
+  const done = (ok, extra) => sendToBridge({ type: "add_done", add_id: m.add_id, ok, ...extra });
+  SITES[m.key] = genericSite(m.name, m.url);
+  addProgress(m.add_id, "permission", true, "Permiso concedido");
+  addProgress(m.add_id, "open", null, "Abriendo la web…");
+  let tabId = null;
+  jobStarted(m.key);
+  try {
+    tabId = await siteTab(m.key);
+    await chrome.tabs.update(tabId, { url: m.url });
+    await sleep(800);
+    await waitLoaded(tabId, 45000);
+    let st;
+    const t0 = Date.now();
+    for (;;) {
+      st = await call(tabId, "state", SITES[m.key]);
+      if (st.challenge || st.loginWall || st.input || Date.now() - t0 > 20000) break;
+      await sleep(1000);
+    }
+    addProgress(m.add_id, "open", true, "Web abierta");
+    if (st.challenge || st.loginWall) {
+      const tab = await chrome.tabs.get(tabId);
+      await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+      await chrome.tabs.update(tabId, { active: true });
+      return done(false, { error: st.challenge ? "challenge" : "login_required", detail: String(st.challenge || st.url) });
+    }
+    if (!st.input) {
+      const d = await call(tabId, "diagnose", SITES[m.key]).catch(() => null);
+      return done(false, { error: "no_input", detail: JSON.stringify(d).slice(0, 6000) });
+    }
+    addProgress(m.add_id, "input", true, "Caja de texto: encontrada");
+    sendToBridge({ type: "add_ready", add_id: m.add_id, icon: await favicon(tabId) });
+  } catch (e) {
+    const code = e instanceof JobError ? e.code : "extension_error";
+    done(false, { error: code, detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
+  } finally {
+    jobFinished(m.key);
+  }
+}
+
+chrome.runtime.onMessage.addListener((m) => {
+  if (!m || !m.add_id) return;
+  if (m.type === "add_test") testSite(m);
+  else if (m.type === "add_denied") sendToBridge({ type: "add_done", add_id: m.add_id, ok: false, error: "permission_denied" });
+  else if (m.type === "add_cancel") sendToBridge({ type: "add_done", add_id: m.add_id, ok: false, error: "cancelled" });
+});
+
+// "Conectar" in the app: bring the chat's tab forward so you can log in there.
+// Only used when the page has no session (you must type in it), never for jobs.
+async function handleShow(msg) {
+  try {
+    const tabId = await siteTab(msg.site);
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+    await chrome.tabs.update(tabId, { active: true });
+    sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "show" });
+  } catch (e) {
+    sendToBridge({ type: "result", id: msg.id, ok: false, error: "extension_error", detail: String(e && e.message || e) });
+  }
+}
+
 function onMessage(msg) {
-  if (msg.type === "job") handleJob(msg);
+  ensureSite(msg);
+  if (msg.type === "add_site") handleAddSite(msg);
+  else if (msg.type === "job") handleJob(msg);
   else if (msg.type === "diagnose") handleDiagnose(msg);
+  else if (msg.type === "show") handleShow(msg);
 }

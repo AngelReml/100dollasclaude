@@ -1,15 +1,17 @@
-import { AppWindow, Cpu, LifeBuoy, Server, MessageSquarePlus, MonitorCheck, TestTube2, Unplug } from "lucide-react";
-import type { ReactNode } from "react";
-import type { Ai } from "../api";
-import { go, useOpenGuide } from "../nav";
+import { AppWindow, Cpu, LifeBuoy, Plus, Power, Server, MessageSquarePlus, MonitorCheck, TestTube2, Unplug } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { api, ApiError, type Ai } from "../api";
+import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
+import { RemoveAiButton } from "../ui/AddAi";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
 import { FixButtons } from "../ui/Fix";
 import { Page, SectionTitle } from "../ui/Page";
 import { AiStateBadge, Badge } from "../ui/Status";
+import { useToast } from "../ui/Toast";
 import type { FixAction } from "../fix";
 
 const when = (ts: number) =>
@@ -19,7 +21,12 @@ function aiLine(ai: Ai): { text: string; actions: FixAction[] } {
   switch (ai.state) {
     case "lista":
       return {
-        text: ai.kind === "chat" && ai.cap ? `Hoy: ${ai.today} de ${ai.cap} mensajes.` : "Lista para preguntar. No gasta mensajes de tus chats.",
+        text:
+          ai.kind === "chat" && ai.cap
+            ? `Hoy: ${ai.today} de ${ai.cap} mensajes.`
+            : ai.kind === "local"
+              ? "Lista. Funciona en tu PC: no gasta ninguna cuenta."
+              : "Lista para preguntar. No gasta mensajes de tus chats.",
         actions: [],
       };
     case "en_pausa":
@@ -28,20 +35,22 @@ function aiLine(ai: Ai): { text: string; actions: FixAction[] } {
         actions: ["reanudar"],
       };
     case "sin_sesion":
-      return { text: "Entra con tu cuenta en su web y comprueba otra vez.", actions: ["abrir", "comprobar"] };
+      return { text: "Pulsa Conectar y entra con tu cuenta en la ventana que se abre.", actions: ["conectar"] };
     case "sin_chrome":
       return { text: "Hace falta Chrome abierto con la extensión webllm.", actions: ["guia"] };
     case "apagada":
-      return { text: "El programa que conecta las IAs por API está apagado.", actions: ["encender"] };
+      return ai.kind === "local"
+        ? { text: `${ai.server_name ?? "El programa"} está apagado.`, actions: ["encender_local"] }
+        : { text: "El programa que conecta las IAs por API está apagado.", actions: ["encender"] };
     case "saturada":
-      return { text: "Tiene demasiada gente ahora mismo. No es cosa de tu cuenta: prueba en un rato.", actions: ai.kind === "chat" ? ["comprobar"] : [] };
+      return { text: "Tiene demasiada gente ahora mismo. No es cosa de tu cuenta: prueba en un rato.", actions: [] };
   }
 }
 
 function AiCard({ ai }: { ai: Ai }) {
   const line = aiLine(ai);
   return (
-    <Card className="flex flex-col gap-3 p-5">
+    <Card className="flex flex-col gap-3 p-5" data-card={ai.name}>
       <div className="flex items-center gap-3">
         <AiAvatar name={ai.name} label={ai.label} size={44} />
         <div className="min-w-0 flex-1">
@@ -54,11 +63,69 @@ function AiCard({ ai }: { ai: Ai }) {
       </div>
       <p className="text-[15px] text-ink-2">{line.text}</p>
       {line.actions.length > 0 && <FixButtons actions={line.actions} ai={ai.name} />}
+      {ai.custom && (
+        <div className="-mb-1 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+          <span className="min-w-0 truncate text-[15px] text-muted">Añadida por ti · {ai.url?.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>
+          <RemoveAiButton name={ai.name} label={ai.label} />
+        </div>
+      )}
     </Card>
   );
 }
 
-function PieceCard({ icon, name, ok, good, bad, children }: { icon: ReactNode; name: string; ok: boolean; good: string; bad: string; children?: ReactNode }) {
+const GROUPS: { kind: Ai["kind"]; title: string }[] = [
+  { kind: "chat", title: "Chats en tu Chrome" },
+  { kind: "api", title: "IAs por API" },
+  { kind: "local", title: "En tu PC" },
+];
+
+function StartLocal({ server, name }: { server: string; name: string }) {
+  const { refresh } = useStore();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div>
+      <Button
+        variant="soft"
+        icon={<Power size={18} aria-hidden />}
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await api.encenderLocal(server);
+            toast(r.already ? `${name} ya estaba encendido.` : `Encendiendo ${name}… tarda unos segundos.`);
+            await refresh();
+          } catch (err) {
+            toast(err instanceof ApiError ? err.message : "No se pudo encender.", "bad");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? "Un momento…" : `Encender ${name}`}
+      </Button>
+    </div>
+  );
+}
+
+function PieceCard({
+  icon,
+  name,
+  ok,
+  good,
+  bad,
+  optional = false,
+  children,
+}: {
+  icon: ReactNode;
+  name: string;
+  ok: boolean;
+  good: string;
+  bad: string;
+  /** Off but nothing depends on it yet: grey, not red. */
+  optional?: boolean;
+  children?: ReactNode;
+}) {
   return (
     <Card className="flex flex-col gap-3 p-5">
       <div className="flex items-center gap-3">
@@ -66,7 +133,7 @@ function PieceCard({ icon, name, ok, good, bad, children }: { icon: ReactNode; n
         <div className="min-w-0 flex-1">
           <p className="text-[17px] font-semibold leading-tight">{name}</p>
           <div className="mt-1.5">
-            <Badge tone={ok ? "ok" : "bad"} icon={ok ? <MonitorCheck size={16} aria-hidden /> : <Unplug size={16} aria-hidden />}>
+            <Badge tone={ok ? "ok" : optional ? "neutral" : "bad"} icon={ok ? <MonitorCheck size={16} aria-hidden /> : <Unplug size={16} aria-hidden />}>
               {ok ? good : bad}
             </Badge>
           </div>
@@ -80,6 +147,7 @@ function PieceCard({ icon, name, ok, good, bad, children }: { icon: ReactNode; n
 export function Inicio() {
   const { estado, offline } = useStore();
   const openGuide = useOpenGuide();
+  const openAdd = useOpenAddAi();
   const ready = estado ? estado.ais.filter((a) => a.state === "lista").length : 0;
   return (
     <Page
@@ -100,7 +168,7 @@ export function Inicio() {
         <>
           <section className="mb-10">
             <SectionTitle>Lo que hace falta</SectionTitle>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid items-start gap-4 md:grid-cols-3">
               <PieceCard icon={<Cpu size={22} aria-hidden />} name="webllm" ok good="Funcionando" bad="Parado" />
               <PieceCard icon={<AppWindow size={22} aria-hidden />} name="Chrome con la extensión" ok={estado.chrome} good="Conectado" bad="No conectado">
                 <p className="text-[15px] text-ink-2">Sin esto no se puede preguntar a los chats (las IAs por API sí funcionan).</p>
@@ -114,19 +182,41 @@ export function Inicio() {
                 <p className="text-[15px] text-ink-2">Sin esto no responden z.ai, groq ni Nemotron.</p>
                 <FixButtons actions={["encender"]} ai={estado.ais.find((a) => a.kind === "api")?.name ?? ""} />
               </PieceCard>
-            </div>
-          </section>
-          <section className="mb-10">
-            <SectionTitle>Tus IAs</SectionTitle>
-            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-              {estado.ais.map((ai) => (
-                <AiCard key={ai.name} ai={ai} />
+              {estado.local_servers.map((srv) => (
+                <PieceCard key={srv.key} icon={<Cpu size={22} aria-hidden />} name={`${srv.name} (IAs en tu PC)`} ok={srv.up} good="Encendido" bad="Apagado" optional={!srv.models}>
+                  <p className="text-[15px] text-ink-2">
+                    {srv.models ? `Sin esto no responden sus ${srv.models} modelo${srv.models > 1 ? "s" : ""}.` : "Enciéndelo para ver sus modelos aquí."}
+                  </p>
+                  {srv.installed && <StartLocal server={srv.key} name={srv.name} />}
+                </PieceCard>
               ))}
             </div>
           </section>
+          <section className="mb-10">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <SectionTitle className="">Tus IAs</SectionTitle>
+              <Button variant="soft" icon={<Plus size={19} aria-hidden />} onClick={openAdd}>
+                Añadir otra IA
+              </Button>
+            </div>
+            {GROUPS.map((g) => {
+              const members = estado.ais.filter((a) => a.kind === g.kind);
+              if (!members.length) return null;
+              return (
+                <div key={g.kind} className="mb-6">
+                  <h3 className="mb-2.5 text-[16px] font-semibold text-ink-2">{g.title}</h3>
+                  <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                    {members.map((ai) => (
+                      <AiCard key={ai.name} ai={ai} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </section>
           <section className="flex flex-wrap gap-2 border-t border-line pt-6">
             <Button variant="ghost" icon={<LifeBuoy size={18} aria-hidden />} onClick={openGuide}>
-              Guía de primera vez
+              Ver la guía otra vez
             </Button>
             <a href="/" target="_blank" rel="noopener" className="inline-flex min-h-11 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink-2 hover:bg-surface-2 hover:text-ink">
               <TestTube2 size={18} aria-hidden />

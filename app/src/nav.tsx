@@ -19,3 +19,7 @@ export const go = (path: string) => {
 /** Opens the first-time guide from anywhere (for example from a "Chrome no está conectado" box). */
 export const GuideContext = createContext<() => void>(() => {});
 export const useOpenGuide = () => useContext(GuideContext);
+
+/** Opens "Añadir otra IA" from anywhere (Inicio, the AI picker). */
+export const AddAiContext = createContext<() => void>(() => {});
+export const useOpenAddAi = () => useContext(AddAiContext);

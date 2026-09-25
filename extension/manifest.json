@@ -1,10 +1,19 @@
 {
   "manifest_version": 3,
   "name": "webllm puente",
-  "version": "0.3.0",
-  "description": "Lets webllm (on this PC) write to your Qwen, DeepSeek, z.ai and Meta AI chats and read the answers.",
-  "background": { "service_worker": "background.js" },
-  "permissions": ["tabs", "scripting", "storage", "alarms", "notifications", "system.display"],
+  "version": "0.5.0",
+  "description": "Lets webllm (on this PC) write to your Qwen, DeepSeek, z.ai and Meta AI chats (and any chat site you add) and read the answers.",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "alarms",
+    "notifications",
+    "system.display"
+  ],
   "host_permissions": [
     "https://chat.qwen.ai/*",
     "https://chat.deepseek.com/*",
@@ -12,5 +21,11 @@
     "https://www.meta.ai/*",
     "http://127.0.0.1/*"
   ],
-  "icons": { "48": "icon.png", "128": "icon.png" }
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  },
+  "optional_host_permissions": [
+    "https://*/*"
+  ]
 }

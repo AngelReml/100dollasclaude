@@ -9,12 +9,22 @@ Fecha: 24-sep-2026. Hecho con la skill `experto-cowork-operativo`. Es un **plan*
 | **1. Motor de cadenas** | **Hecho y probado con tests** (39 tests: plantillas, paralelo, reintentos, respaldo, candado). `webllm cadena` y `herramientas\probar-cadena.cmd` | La ejecución de verdad con tus chats: la haces tú con `probar-cadena` |
 | 2. API de la app + eventos en directo | **En parte:** lo que necesitan Inicio, Preguntar e Historial (13 tests) | Rutas de cadenas para la Mesa y los eventos de una cadena larga |
 | **3. App: Inicio, Preguntar, Historial** | **Hecho**, con guía de primera vez, modo claro y oscuro, capturas en `docs/capturas/fase3/` y revisión automática sin fallos | Tu prueba sin ayuda: doble clic en `WEBLLM` y una pregunta a todas |
-| 4-6 | Sin empezar | — |
+| **3b. Arreglos tras tu prueba** | **Hecho** (25-sep, tarde): botón único **Conectar** que se pone en verde solo, guía que solo sale si falta algo, IAs en un desplegable agrupado. Capturas en `docs/capturas/3b-7a/` | Pulsar ↻ en la extensión (pasa a 0.4.0) y probar **Conectar** con un chat sin sesión |
+| **7a. Modelos de tu PC** | **Hecho**: LM Studio y Ollama salen solos en "En tu PC", sin los modelos de embeddings, con botón **Encender** si están apagados. Una pregunta a la vez por programa. 9 tests con un LM Studio de mentira | Ver en la app la respuesta de tu `qwen2.5-1.5b-instruct` |
+| **7b. Añadir una IA por su dirección** | **Hecho** (25-sep, noche): "Añadir otra IA" en Inicio y en el desplegable, permiso solo para esa web, prueba de verdad ("pong") paso a paso por el guardián, icono de la web, "Quitar". Extensión 0.5.0. Probado en Chromium con la extensión y el puente de verdad contra una web de chat de mentira (`tests/extension/add_flow.mjs`). Capturas en `docs/capturas/7b/` | Pulsar ↻ en la extensión (0.5.0) y añadir una web de verdad |
+| **Arreglo: respuestas perdidas tras una verificación** (fallo que vio Iván) | **Hecho** (25-sep, noche): el tiempo esperando a Iván (verificación, ventana emergente, ventanita tapada) no cuenta; la pestaña que le necesita no rota; el puente espera mientras la extensión dice que sigue; la app ya no cuelga antes; "Te espera" y "En cola" en las tarjetas. `tests/extension/captcha_flow.mjs` falla con el código anterior y pasa con el nuevo | Preguntar a todas y resolver una verificación de Qwen |
+| 4-6, 7c | Sin empezar (siguiente: 4) | — |
 
 Diferencias con el plan, dichas claras:
 - **Logos:** cada IA lleva un círculo de su color con su inicial, no el logo oficial.
 - **Piezas del diseño todavía sin hacer**, porque ninguna pantalla de la fase 3 las usa: la `Línea de tiempo` (el avance de cada IA se ve en su tarjeta) y la `Ventana de confirmación`. Llegan con las fases 4 y 5.
 - **Capturas de la guía:** son reales, de la página de extensiones de Chromium en español. Tu Chrome puede variar un poco.
+- **7b, diferencias con lo escrito abajo:**
+  - Las IAs añadidas se guardan en `data/state/custom_ais.json`, no en `data/config.yaml`. Ese archivo está en git y `ACTUALIZAR` chocaría con él.
+  - La extensión no las guarda en `chrome.storage`: el puente le manda el nombre y la dirección con cada mensaje. Así un Chrome recién abierto también las conoce.
+  - No hay pantalla de Ajustes todavía, así que el botón está en Inicio y en el desplegable.
+  - El mensaje de envío de prueba lo manda el puente, no la extensión, para que pase por el guardián de cuentas (regla dura 6).
+- **Los chats de tu Chrome se preguntan de uno en uno** (el motor de cadenas los trata como un solo origen). La extensión y el puente permiten varios a la vez, rotando pestañas, pero eso no está probado en tu PC. Queda así hasta probarlo.
 
 ## Lo que pidió Iván tras probar la app (25-sep-2026) — va ANTES de la fase 4
 
@@ -76,7 +86,7 @@ Iván ha probado la app en su PC: le gusta, "limpia y preciosa". El orden de tra
 **Cómo se hace:**
 1. **Bloqueos (regla dura).**
    - Se rechazan `claude.ai`, `anthropic.com`, `chatgpt.com`, `chat.openai.com`, `openai.com` y cualquier dirección que no sea `https`.
-   - Mensaje: "Esta IA está fuera de webllm por decisión tuya".
+   - Mensaje: "Claude y ChatGPT no se usan con webllm, así que esta dirección no se puede añadir."
 2. **Permiso mínimo.**
    - El manifiesto gana `optional_host_permissions: ["https://*/*"]`, pero **no se concede nada por adelantado**.
    - Al añadir una web, la extensión abre su propia página `add.html?url=…` con un botón **"Permitir y probar"**.

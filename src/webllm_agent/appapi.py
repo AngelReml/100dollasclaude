@@ -7,7 +7,11 @@
     GET  /api/historial/<id>, /api/historial/<id>/exportar
     POST /api/reanudar     lift an AI's protective pause
     POST /api/comprobar    open a chat page and report whether there is a session (sends nothing)
-    POST /api/encender-omniroute
+    POST /api/conectar     same, and bring the webllm window forward so Iván can log in
+    POST /api/encender-omniroute, /api/encender-local (LM Studio / Ollama)
+    POST /api/anadir       add a chat site by its address (the extension asks permission and tests it)
+    GET  /api/anadir/<id>  how that test is going, step by step
+    POST /api/quitar       remove a site added that way; GET /api/icono/<key> its icon
 
 Only answers on this PC (the bridge's local-only middleware) and only with the bridge token,
 which the app receives inside its HTML. Answers are untrusted text: the app renders them as
@@ -17,19 +21,26 @@ markdown without raw HTML, and this module never executes anything they contain.
 from __future__ import annotations
 
 import asyncio
+import base64
+import dataclasses
 import json
 import re
+import secrets
 import subprocess
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+from urllib.parse import urlsplit
 
 from aiohttp import web
 
 from . import flows
 from .broadcaster import GatewayError, verify_run
-from .config import PROJECT_ROOT, ProviderConfig
+from .config import (
+    PROJECT_ROOT, AppConfig, ProviderConfig, custom_provider, is_blocked_model, remove_custom_ai, save_custom_ai,
+)
 from .guard import Guard
+from .local import LocalModels, label_for
 from .omniroute import load_api_key
 
 if TYPE_CHECKING:
@@ -73,6 +84,10 @@ class AppApi:
         self.omniroute_launcher = omniroute_launcher
         self.app_dir = app_dir
         self.recent: dict[str, tuple[str, str, float]] = {}  # AI name -> (state, detail, when)
+        self.show_wait_s = 8.0  # an extension older than 0.4.0 never answers "show"
+        self.local = LocalModels()
+        self.adding: dict[str, dict[str, Any]] = {}  # add_id -> progress of "+ Añadir otra IA"
+        self._tasks: set[asyncio.Task] = set()  # test messages in flight (kept so they are not collected)
         self._last_omni_start = -1e9
 
     @property
@@ -89,7 +104,13 @@ class AppApi:
         app.router.add_get("/api/historial/{run_id}/exportar", self.exportar)
         app.router.add_post("/api/reanudar", self.reanudar)
         app.router.add_post("/api/comprobar", self.comprobar)
+        app.router.add_post("/api/conectar", self.conectar)
         app.router.add_post("/api/encender-omniroute", self.encender_omniroute)
+        app.router.add_post("/api/encender-local", self.encender_local)
+        app.router.add_post("/api/anadir", self.anadir)
+        app.router.add_get("/api/anadir/{add_id}", self.anadir_estado)
+        app.router.add_post("/api/quitar", self.quitar)
+        app.router.add_get("/api/icono/{key}", self.icono)
 
     # ---------------------------------------------------------------- helpers
 
@@ -104,6 +125,11 @@ class AppApi:
 
     def _unauthorized(self) -> web.Response:
         return self._fail(401, "Esta ventana está caducada: ciérrala y vuelve a abrir webllm.", "unauthorized")
+
+    async def _cfg(self, force: bool = False) -> AppConfig:
+        """The configured AIs plus the models found in the programs on this PC."""
+        await self.local.refresh(self.cfg, force)
+        return self.local.with_providers(self.cfg)
 
     def _guard_for(self, p: ProviderConfig) -> tuple[Guard, str]:
         site = site_of(p)
@@ -157,13 +183,14 @@ class AppApi:
         if not self._authorized(request):
             return self._unauthorized()
         chrome = self.bridge.connected.is_set()
-        omni = await self._omniroute_up()
+        omni, cfg = await asyncio.gather(self._omniroute_up(), self._cfg())
         now = time.time()
         ais = []
-        for p in self.cfg.enabled_providers:
+        for p in cfg.enabled_providers:
             guard, key = self._guard_for(p)
             st = guard.status().get(key, {})
             site = site_of(p)
+            server = self.local.status_of(p.model.split("/", 1)[0]) if p.gateway == "local" else None
             state, detail, until = "lista", "", None
             recent = self.recent.get(p.name)
             if recent and now - recent[2] > RECENT_S:
@@ -172,19 +199,30 @@ class AppApi:
                 state, detail, until = "en_pausa", st.get("cooldown_reason", ""), st["cooldown_until"]
             elif site and not chrome:
                 state = "sin_chrome"
-            elif not site and not omni:
+            elif p.gateway == "omniroute" and not omni:
+                state = "apagada"
+            elif server is not None and not server.up:
                 state = "apagada"
             elif recent:
                 state, detail = recent[0], recent[1]
             today = time.strftime("%Y-%m-%d")
             ais.append({
-                "name": p.name, "label": p.display, "kind": "chat" if site else "api",
+                "name": p.name, "label": p.display, "kind": "chat" if site else "local" if server else "api",
                 "state": state, "detail": detail, "until": until,
-                "url": SITE_URLS.get(site or ""), "today": st.get("count_today", 0) if st.get("day") == today else 0,
-                "cap": self.cfg.guard.daily_cap if (site or p.guarded) else None,
+                "url": p.url or SITE_URLS.get(site or ""), "today": st.get("count_today", 0) if st.get("day") == today else 0,
+                "cap": cfg.guard.daily_cap if (site or p.guarded) else None,
+                "server": server.server.key if server else None,
+                "server_name": server.server.name if server else None,
+                "custom": p.custom,
+                "icon": bool(site and self._icon_path(site)),
+                # "challenge" / "popup": its chat is waiting for Iván right now (the question goes on after)
+                "waiting": self.bridge.waiting.get(site) if site else None,
             })
+        local = [{"key": st.server.key, "name": st.server.name, "up": st.up, "installed": st.installed,
+                  "models": len(st.models)}
+                 for st in self.local._statuses if st.up or st.installed or st.models]
         return web.json_response({"chrome": chrome, "omniroute": omni, "extension_path": str(PROJECT_ROOT / "extension"),
-                                  "ais": ais})
+                                  "ais": ais, "local_servers": local})
 
     # ------------------------------------------------------------------- ask
 
@@ -204,19 +242,20 @@ class AppApi:
             return self._fail(400, "La pregunta es demasiado larga.", "too_long")
         if not names:
             return self._fail(400, "Elige al menos una IA.", "no_target")
-        unknown = [n for n in names if n not in self.cfg.providers or not self.cfg.providers[n].enabled]
+        cfg = await self._cfg()
+        unknown = [n for n in names if n not in cfg.providers or not cfg.providers[n].enabled]
         if unknown:
             return self._fail(400, f"No conozco esta IA: {', '.join(unknown)}.", "unknown_target")
         skipped = []
-        if any(site_of(self.cfg.providers[n]) is None for n in names) and not await self._omniroute_up():
-            skipped = [n for n in names if site_of(self.cfg.providers[n]) is None]
+        if any(cfg.providers[n].gateway == "omniroute" for n in names) and not await self._omniroute_up():
+            skipped = [n for n in names if cfg.providers[n].gateway == "omniroute"]
             names = [n for n in names if n not in skipped]
             if not names:
                 return self._fail(503, "El servicio de las IAs por API (OmniRoute) está apagado.", "unreachable")
         flow = flows.Flow(name=title, template="pregunta", inputs={"pregunta": prompt}, steps=(
             flows.Step(id="respuestas", title="Respuestas", to=tuple(dict.fromkeys(names)), message="{{pregunta}}"),))
         try:
-            flows.validate(self.cfg, flow)
+            flows.validate(cfg, flow)
         except flows.FlowError as exc:
             return self._fail(400, str(exc), "invalid")
 
@@ -248,7 +287,7 @@ class AppApi:
         try:
             for n in skipped:
                 await send({"type": "target_done", "step": "respuestas", "target": n, "provider": n,
-                            "label": self.cfg.providers[n].display, "provider_label": self.cfg.providers[n].display,
+                            "label": cfg.providers[n].display, "provider_label": cfg.providers[n].display,
                             "ok": False, "text": "", "seconds": 0, "code": "unreachable", "notices": [],
                             "error": "El servicio de las IAs por API (OmniRoute) está apagado."})
             try:
@@ -257,7 +296,7 @@ class AppApi:
                 api_key = ""
             guard = Guard(self.cfg.paths.state_dir / "guard.json", self.cfg.guard)
             try:
-                await flows.run_flow(self.cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
+                await flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
                                      emit=send)
             except GatewayError as exc:
                 await send({"type": "error", "code": "unreachable", "error": str(exc)})
@@ -286,7 +325,8 @@ class AppApi:
                 lines.append(json.loads(raw))
             except json.JSONDecodeError:
                 continue
-        label = {p.name: p.display for p in self.cfg.providers.values()}
+        known = {p.name: p.display for p in self.local.with_providers(self.cfg).providers.values()}
+        label = _Labels(known)
 
         def read(rel: str | None) -> str:
             if not rel:
@@ -416,18 +456,16 @@ class AppApi:
         self.recent.pop(name, None)
         return web.json_response({"ok": True, "cleared": cleared})
 
-    async def comprobar(self, request: web.Request) -> web.Response:
-        """Open the chat page in the webllm window and read its state (no message is sent)."""
-        if not self._authorized(request):
-            return self._unauthorized()
+    async def _chat_site(self, request: web.Request) -> tuple[str, str | None]:
         name = str((await request.json()).get("ia", ""))
         p = self.cfg.providers.get(name)
-        site = site_of(p) if p else None
-        if site is None:
-            return self._fail(404, f"«{name}» no es un chat de Chrome.", "unknown_target")
+        return name, site_of(p) if p else None
+
+    async def _session(self, name: str, site: str) -> str:
+        """Open the chat in the webllm window (an open tab is reused, never reloaded) and read its state."""
         if not await self.bridge._ensure_extension():
-            return web.json_response({"session": "sin_chrome"})
-        res = await self.bridge._send_to_extension({"type": "diagnose", "site": site}, 90)
+            return "sin_chrome"
+        res = await self.bridge._send_to_extension({"type": "diagnose", **self.bridge.site_payload(site)}, 90)
         try:
             state = json.loads(res.get("text") or "{}").get("state") or {}
         except (ValueError, AttributeError):
@@ -444,7 +482,35 @@ class AppApi:
             self.recent.pop(name, None)
         elif session == "sin_sesion":
             self.recent[name] = ("sin_sesion", "", time.time())
-        return web.json_response({"session": session})
+        return session
+
+    async def comprobar(self, request: web.Request) -> web.Response:
+        """Read whether a chat has a session (sends nothing). The app polls this while Iván logs in."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        name, site = await self._chat_site(request)
+        if site is None:
+            return self._fail(404, f"«{name}» no es un chat de Chrome.", "unknown_target")
+        return web.json_response({"session": await self._session(name, site)})
+
+    async def conectar(self, request: web.Request) -> web.Response:
+        """Open the chat in the webllm window; if there is no session, bring that window to the front.
+
+        Bringing a window forward is allowed here because Iván has to type his login in it
+        (same rule as a verification). ``shown`` is False when the extension could not do it
+        (for example an extension older than 0.4.0).
+        """
+        if not self._authorized(request):
+            return self._unauthorized()
+        name, site = await self._chat_site(request)
+        if site is None:
+            return self._fail(404, f"«{name}» no es un chat de Chrome.", "unknown_target")
+        session = await self._session(name, site)
+        shown = False
+        if session in ("sin_sesion", "verificacion", "desconocido"):
+            res = await self.bridge._send_to_extension({"type": "show", **self.bridge.site_payload(site)}, self.show_wait_s)
+            shown = bool(res.get("ok"))
+        return web.json_response({"session": session, "shown": shown})
 
     async def encender_omniroute(self, request: web.Request) -> web.Response:
         if not self._authorized(request):
@@ -460,6 +526,236 @@ class AppApi:
             except OSError as exc:
                 return self._fail(500, f"No pude encender OmniRoute: {exc}", "launch_failed")
         return web.json_response({"ok": True, "already": False})
+
+
+    # ------------------------------------------------------------- add a site
+
+    def _icon_path(self, key: str) -> Path | None:
+        folder = self.cfg.paths.state_dir / "icons"
+        for ext in ("png", "ico", "svg", "jpg", "webp", "gif"):
+            f = folder / f"{key}.{ext}"
+            if f.is_file():
+                return f
+        return None
+
+    async def anadir(self, request: web.Request) -> web.Response:
+        """Start adding a chat site: check the address, then the extension asks permission and tests it."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        try:
+            url, host = parse_chat_url(str((await request.json()).get("url", "")))
+        except ValueError as exc:
+            code = str(exc)
+            return self._fail(400, ADD_ERRORS.get(code, ADD_ERRORS["bad_url"]), code)
+        names = self.bridge.site_names()
+        for key, known in SITE_URLS.items():  # the built-in chats, configured or not
+            if urlsplit(known).hostname == host:
+                return self._fail(409, f"{names.get(key, key)} ya viene con webllm: no hace falta añadirla.", "duplicate")
+        for p in self.cfg.providers.values():
+            if p.url and (urlsplit(p.url).hostname or "").lower() == host:
+                return self._fail(409, f"Ya tienes esta IA: {p.display}.", "duplicate")
+        taken = {site_of(p) or p.name for p in self.cfg.providers.values()} | set(self.bridge.site_names())
+        key = site_key(host, taken)
+        if is_blocked_model(self.cfg, f"browser/{key}"):
+            return self._fail(400, ADD_ERRORS["blocked"], "blocked")
+        if not await self.bridge._ensure_extension():
+            return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm y vuelve a probar.", "sin_chrome")
+        add_id = secrets.token_hex(6)
+        name = site_name(key)
+        self.adding[add_id] = {"add_id": add_id, "key": key, "name": name, "url": url, "status": "running",
+                               "steps": [{"step": "permission", "ok": None,
+                                          "text": "Esperando tu permiso en Chrome…"}],
+                               "error": "", "message": "", "detail": ""}
+        res = await self.bridge._send_to_extension(
+            {"type": "add_site", "add_id": add_id, "key": key, "name": name, "url": url}, 15)
+        if not res.get("ok"):
+            old_extension = res.get("error") == "timeout"
+            self._add_failed(add_id, "old_extension" if old_extension else str(res.get("error") or "extension_error"),
+                             str(res.get("detail") or ""))
+        return web.json_response(self.adding[add_id])
+
+    def _add_failed(self, add_id: str, code: str, detail: str = "", fallback: str = "") -> None:
+        st = self.adding[add_id]
+        messages = {
+            "permission_denied": "No diste permiso en Chrome, así que webllm no puede usar esta web.",
+            "cancelled": "Cancelado. No se ha añadido nada.",
+            "login_required": f"{st['name']} te pide entrar con tu cuenta. Entra en la ventanita de webllm que se ha abierto y pulsa «Probar otra vez».",
+            "challenge": f"{st['name']} pide una verificación. Resuélvela tú en la ventanita de webllm y pulsa «Probar otra vez».",
+            "no_input": "No encontré la caja de texto de esta web, así que todavía no se deja manejar.",
+            "insert_failed": "Encontré la caja de texto, pero no pude escribir en ella.",
+            "not_sent": "Escribí la prueba, pero el mensaje no salió (quizá una ventana emergente lo tapó).",
+            "timeout": "La web no terminó de contestar a la prueba en 2 minutos.",
+            "empty_answer": "La web contestó, pero no supe leer la respuesta.",
+            "unexpected_answer": "La web contestó, pero no lo que le pedí, así que no me fío de cómo la leo.",
+            "site_busy": f"{st['name']} está saturada ahora mismo. Prueba en un rato.",
+            "rate_limited": f"{st['name']} dice que has llegado a su límite de mensajes.",
+            "old_extension": "La extensión de Chrome es antigua: en chrome://extensions pulsa la flecha ↻ de «webllm puente» y vuelve a probar.",
+        }
+        st.update(status="failed", error=code, detail=detail[:6000],
+                  message=messages.get(code) or fallback or "Algo falló al probar la web.")
+
+    @staticmethod
+    def _set_step(st: dict[str, Any], step: str, ok: bool | None, text: str) -> None:
+        st["steps"] = [*(x for x in st["steps"] if x["step"] != step), {"step": step, "ok": ok, "text": text}]
+
+    def on_add_event(self, data: dict[str, Any]) -> None:
+        """Progress from the extension while it checks a site: permission, page, text box.
+        Then ("add_ready") the test message goes like any other one, through the account guard."""
+        st = self.adding.get(str(data.get("add_id")))
+        if st is None or st["status"] != "running":
+            return
+        if data.get("type") == "add_progress":
+            self._set_step(st, str(data.get("step")), data.get("ok"), str(data.get("text") or ""))
+        elif data.get("type") == "add_ready":
+            task = asyncio.create_task(self._send_test(st, data.get("icon")))
+            self._tasks.add(task)
+            task.add_done_callback(self._tasks.discard)
+        elif not data.get("ok"):  # add_done: the extension stopped before the test message
+            self._add_failed(st["add_id"], str(data.get("error") or "extension_error"), str(data.get("detail") or ""))
+
+    async def _send_test(self, st: dict[str, Any], icon: Any) -> None:
+        """Send "pong" once, guarded like every message to a chat, and save the site if it answers."""
+        self._set_step(st, "send", None, "Enviando una prueba…")
+        res = await self.bridge.send_job(st["key"], st["name"], ADD_TEST_PROMPT, timeout_s=120,
+                                         site_config={"name": st["name"], "url": st["url"]})
+        if st["status"] != "running":
+            return
+        if not res.get("ok"):
+            self._add_failed(st["add_id"], res["error"], res.get("detail", ""), res.get("message", ""))
+            return
+        text = str(res.get("text") or "")
+        self._set_step(st, "send", True, "Prueba enviada y contestada")
+        self._set_step(st, "read", True, "Respuesta leída con el botón «copiar» de la web" if res.get("via") == "copy-button"
+                       else "Respuesta leída del texto de la página (esta web no tiene botón «copiar»)")
+        if not re.search(r"pong", text, re.IGNORECASE):
+            self._add_failed(st["add_id"], "unexpected_answer", text[:300])
+            return
+        save_custom_ai(self.cfg.paths, st["key"], st["name"], st["url"])
+        self._save_icon(st["key"], icon)
+        self.bridge.cfg = dataclasses.replace(
+            self.cfg, providers={**self.cfg.providers, st["key"]: custom_provider(st["key"], st["name"], st["url"])})
+        st.update(status="ok", via=str(res.get("via") or ""),
+                  message=f"¡Listo! {st['name']} ya está entre tus IAs. Puedes preguntarle desde Preguntar.")
+
+    def _save_icon(self, key: str, data_url: Any) -> None:
+        m = re.match(r"^data:image/(png|x-icon|vnd\.microsoft\.icon|svg\+xml|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$",
+                     str(data_url or ""))
+        if not m:
+            return
+        ext = {"x-icon": "ico", "vnd.microsoft.icon": "ico", "svg+xml": "svg", "jpeg": "jpg"}.get(m.group(1), m.group(1))
+        try:
+            raw = base64.b64decode(m.group(2), validate=True)
+        except ValueError:
+            return
+        if len(raw) > 60000:
+            return
+        folder = self.cfg.paths.state_dir / "icons"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{key}.{ext}").write_bytes(raw)
+
+    async def anadir_estado(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        st = self.adding.get(request.match_info["add_id"])
+        if st is None:
+            return self._fail(404, "No encuentro esa prueba.", "not_found")
+        return web.json_response(st)
+
+    async def quitar(self, request: web.Request) -> web.Response:
+        """Remove a chat site added from the app (the built-in ones stay)."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        name = str((await request.json()).get("ia", ""))
+        p = self.cfg.providers.get(name)
+        if p is None or not p.custom:
+            return self._fail(400, "Solo se pueden quitar las IAs que añadiste tú.", "not_custom")
+        remove_custom_ai(self.cfg.paths, name)
+        icon = self._icon_path(name)
+        if icon:
+            icon.unlink(missing_ok=True)
+        self.bridge.cfg = dataclasses.replace(
+            self.cfg, providers={k: v for k, v in self.cfg.providers.items() if k != name})
+        self.recent.pop(name, None)
+        return web.json_response({"ok": True})
+
+    async def icono(self, request: web.Request) -> web.StreamResponse:
+        if not self._authorized(request):
+            return self._unauthorized()
+        key = request.match_info["key"]
+        f = self._icon_path(key) if re.fullmatch(r"[a-z0-9-]{1,40}", key) else None
+        if f is None:
+            raise web.HTTPNotFound()
+        types = {".svg": "image/svg+xml", ".ico": "image/x-icon", ".jpg": "image/jpeg"}
+        return web.FileResponse(f, headers={"Content-Type": types.get(f.suffix, f"image/{f.suffix[1:]}"),
+                                            "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff",
+                                            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
+
+    async def encender_local(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        key = str((await request.json()).get("server", ""))
+        await self.local.refresh(self.cfg, force=True)
+        st = self.local.status_of(key)
+        if st is not None and st.up:
+            return web.json_response({"ok": True, "already": True})
+        result = self.local.start(self.cfg, key)
+        if result == "not_installed":
+            name = st.server.name if st else key
+            return self._fail(404, f"No encuentro {name} instalado en este PC.", "not_installed")
+        return web.json_response({"ok": True, "already": False})
+
+
+# ------------------------------------------------------------------ add a chat site
+
+BLOCKED_HOSTS = ("claude.ai", "anthropic.com", "chatgpt.com", "chat.openai.com", "openai.com")  # = extension/common.js
+ADD_TEST_PROMPT = "Responde solo con la palabra: pong"
+ADD_ERRORS = {
+    "bad_url": "Eso no parece una dirección de internet. Cópiala de la barra de Chrome, por ejemplo https://chat.mistral.ai",
+    "not_https": "La dirección tiene que empezar por https://",
+    "blocked": "Claude y ChatGPT no se usan con webllm, así que esta dirección no se puede añadir.",
+}
+
+
+def parse_chat_url(text: str) -> tuple[str, str]:
+    """(normalised url, host) or ValueError with a code of ADD_ERRORS. Same rules as extension/common.js."""
+    try:
+        u = urlsplit(str(text or "").strip())
+    except ValueError as exc:
+        raise ValueError("bad_url") from exc
+    if not u.scheme or not u.hostname:
+        raise ValueError("bad_url")
+    if u.scheme.lower() != "https":
+        raise ValueError("not_https")
+    host = u.hostname.lower()
+    if any(host == b or host.endswith("." + b) for b in BLOCKED_HOSTS):
+        raise ValueError("blocked")
+    path = re.sub(r"/+$", "/", u.path or "/")
+    origin = f"https://{host}" + (f":{u.port}" if u.port else "")
+    return origin + path, host
+
+
+def site_key(host: str, taken: set[str]) -> str:
+    """chat.mistral.ai -> "mistral" (same as extension/common.js)."""
+    parts = re.sub(r"^(chat|www|app|web)\.", "", host).split(".")
+    base = re.sub(r"[^a-z0-9]", "", parts[-2] if len(parts) > 1 else parts[0]) or "web"
+    key, n = base, 2
+    while key in taken:
+        key, n = f"{base}-{n}", n + 1
+    return key
+
+
+def site_name(key: str) -> str:
+    base = re.sub(r"-\d+$", "", key)
+    return base[:1].upper() + base[1:]
+
+
+class _Labels(dict):
+    """Provider name -> human name; local AIs no longer listed still read well."""
+
+    def get(self, key, default=None):  # type: ignore[override]
+        if key in self:
+            return self[key]
+        return label_for(key) if isinstance(key, str) and ":" in key else default
 
 
 __all__ = ["AppApi", "APP_DIR", "SITE_URLS", "site_of"]

@@ -394,24 +394,26 @@ async def run_flow(
                                       "labels": [_label(cfg, n) for n in s.to]} for s in flow.steps],
                            "estimate": estimate_messages(cfg, flow)})
 
-        async def call(step: Step, provider: ProviderConfig, message: str) -> Outcome:
+        async def call(step: Step, provider: ProviderConfig, message: str, target: str) -> Outcome:
             lock = locks.setdefault(upstream_key(provider.model), asyncio.Lock())
             async with lock:
+                # Started only now: until here it was queued behind another call to the same place
+                # (the app shows "En cola", not a clock that runs before anything was sent).
+                await _emit(emit, {"type": "target_start", "step": step.id, "target": target,
+                                   "label": _label(cfg, target), "provider": provider.name})
                 return await _run_target(provider, prompt=message, client=client, cfg=cfg, api_key=api_key,
                                          guard=guard, timeout_s=timeout_s, notify=lambda _m: None,
                                          bridge_key=bridge_key)  # guard waits show as "esperando"
 
         async def ask(step: Step, target: str, message: str, message_file: str, message_sha: str) -> Answer:
             provider = resolved[target][0]
-            await _emit(emit, {"type": "target_start", "step": step.id, "target": target,
-                               "label": _label(cfg, target), "provider": target})
-            outcome = await call(step, provider, message)
+            outcome = await call(step, provider, message, target)
             answer = log_call(step, message_file, message_sha, outcome, "first", target)
             if not answer.ok and step.on_error == "wait" and _retryable(outcome):
                 await _emit(emit, {"type": "target_wait", "step": step.id, "target": target,
                                    "label": _label(cfg, target), "seconds": step.wait_s, "error": answer.error})
                 await sleep(step.wait_s)
-                outcome = await call(step, provider, message)
+                outcome = await call(step, provider, message, target)
                 answer = log_call(step, message_file, message_sha, outcome, "retry", target)
             if not answer.ok and step.on_error == "fallback":
                 for alt in step.fallback:
@@ -420,7 +422,7 @@ async def run_flow(
                     await _emit(emit, {"type": "target_fallback", "step": step.id, "target": target,
                                        "label": _label(cfg, target), "provider": alt,
                                        "provider_label": _label(cfg, alt), "error": answer.error})
-                    outcome = await call(step, resolved[alt][0], message)
+                    outcome = await call(step, resolved[alt][0], message, target)
                     alt_answer = log_call(step, message_file, message_sha, outcome, "fallback", target)
                     if alt_answer.ok:
                         answer = alt_answer

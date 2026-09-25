@@ -22,14 +22,19 @@ AUTH = {"Authorization": f"Bearer {TOKEN}"}
 class DiagnosingExtension(FakeExtension):
     """Also answers "diagnose" jobs with a page state."""
 
-    def __init__(self, behaviour, page_state=None):
+    def __init__(self, behaviour, page_state=None, knows_show=True):
         super().__init__(behaviour)
         self.page_state = page_state or {"input": True, "loginWall": False, "challenge": None}
+        self.knows_show = knows_show  # False = an extension older than 0.4.0
+        self.shown: list[str] = []
 
     async def _loop(self):
         async for msg in self.ws:
             job = json.loads(msg.data)
-            if job.get("type") == "diagnose":
+            if job.get("type") == "show" and self.knows_show:
+                self.shown.append(job["site"])
+                await self.ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "show"})
+            elif job.get("type") == "diagnose":
                 await self.ws.send_json({"type": "result", "id": job["id"], "ok": True,
                                          "text": json.dumps({"state": self.page_state})})
             elif job.get("type") == "job":
@@ -48,9 +53,11 @@ def providers():
 class App:
     """Bridge + fake extension on a real port; base_url of the mock OmniRoute (or a dead one)."""
 
-    def __init__(self, tmp_path, base_url, behaviour=None, page_state=None, app_dir=None, connect=True):
+    def __init__(self, tmp_path, base_url, behaviour=None, page_state=None, app_dir=None, connect=True,
+                 knows_show=True):
         self.tmp_path, self.base_url, self.connect = tmp_path, base_url, connect
         self.behaviour, self.page_state, self.app_dir = behaviour or {}, page_state, app_dir
+        self.knows_show = knows_show
         self.launched: list[bool] = []
 
     async def __aenter__(self):
@@ -58,13 +65,14 @@ class App:
         self.bridge = Bridge(cfg, TOKEN, timeout_s=5, human_wait_s=0, connect_wait_s=0.5, launcher=None,
                              log=lambda m: None)
         self.bridge.app_api.omniroute_launcher = lambda: self.launched.append(True)
+        self.bridge.app_api.show_wait_s = 0.5
         if self.app_dir is not None:
             self.bridge.app_api.app_dir = self.app_dir
         self.server = TestServer(self.bridge.app())
         await self.server.start_server()
         object.__setattr__(cfg, "bridge_port", self.server.port)
         self.cfg = cfg
-        self.ext = DiagnosingExtension(self.behaviour, self.page_state)
+        self.ext = DiagnosingExtension(self.behaviour, self.page_state, self.knows_show)
         if self.connect:
             await self.ext.connect(self.server)
             await asyncio.wait_for(self.bridge.connected.wait(), 2)
@@ -279,6 +287,40 @@ def test_session_check_sends_nothing(tmp_path, mock_server):
             a.ext.page_state = {"input": True, "challenge": "slider"}
             assert (await a.post("/api/comprobar", {"ia": "qwen"}))[1] == {"session": "verificacion"}
             assert (await a.post("/api/comprobar", {"ia": "zai"}))[0] == 404
+    run(go())
+
+
+def test_connect_brings_the_login_forward_and_then_turns_green(tmp_path, mock_server):
+    """The "Conectar" flow: no session -> window forward; the app polls until the session is there."""
+    async def go():
+        async with App(tmp_path, mock_server.base_url, page_state={"input": False, "loginWall": True}) as a:
+            status, res = await a.post("/api/conectar", {"ia": "qwen"})
+            assert status == 200 and res == {"session": "sin_sesion", "shown": True}
+            assert a.ext.shown == ["qwen"] and a.ext.jobs == []  # nothing was sent to the chat
+            _, body, _ = await a.get("/api/estado")
+            assert body["ais"][0]["state"] == "sin_sesion"
+            a.ext.page_state = {"input": True, "loginWall": False}  # Iván logs in
+            assert (await a.post("/api/comprobar", {"ia": "qwen"}))[1] == {"session": "lista"}
+            _, body, _ = await a.get("/api/estado")
+            assert body["ais"][0]["state"] == "lista"
+            assert a.ext.shown == ["qwen"]  # polling never pulls the window forward again
+    run(go())
+
+
+def test_connect_with_a_session_does_not_touch_the_window(tmp_path, mock_server):
+    async def go():
+        async with App(tmp_path, mock_server.base_url) as a:
+            assert (await a.post("/api/conectar", {"ia": "zai-chat"}))[1] == {"session": "lista", "shown": False}
+            assert a.ext.shown == []
+            assert (await a.post("/api/conectar", {"ia": "zai"}))[0] == 404  # an API AI has no page
+    run(go())
+
+
+def test_connect_with_an_old_extension_says_it_could_not_show(tmp_path, mock_server):
+    async def go():
+        async with App(tmp_path, mock_server.base_url, page_state={"input": False, "loginWall": True},
+                       knows_show=False) as a:
+            assert (await a.post("/api/conectar", {"ia": "qwen"}))[1] == {"session": "sin_sesion", "shown": False}
     run(go())
 
 
