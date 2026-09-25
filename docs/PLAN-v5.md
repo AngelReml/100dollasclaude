@@ -20,41 +20,68 @@
 | # | Decisión | Por qué (evidencia) |
 |---|---|---|
 | D1 | **La cara es Open WebUI Desktop**, y webllm es **el motor**. Open WebUI habla con webllm como con cualquier proveedor de IA. **Plan B: LibreChat.** **Plan C: la app propia de webllm.** | Open WebUI se instala en Windows con un instalador o con `winget`, sin Docker. Ya trae: conectores MCP nativos, **aprobación de herramientas antes de ejecutarlas** (v0.11.1, agosto de 2026), skills con el mismo formato SKILL.md, y una guía oficial para usarlo desde el móvil con Tailscale. LibreChat también tiene MCP, skills y aprobaciones, pero pide Docker o Node 24 + MongoDB: demasiado peso. Hacerlo nosotros desde cero es lo que las 4 críticas puntuaron con 4/10 |
-| D2 | **Todo pasa por webllm.** Open WebUI tiene **una sola conexión**: webllm. Chats web, APIs, modelos de tu PC y skills de webllm aparecen como "modelos" en su selector | Así webllm es el único que escribe el registro y la memoria, y aplica el guardián y el presupuesto a todo |
+| D2 | **Todo pasa por webllm.** Open WebUI tiene **una sola conexión**: la **"pipe" de webllm**, una función pequeña que Open WebUI ejecuta (está en git y es parte de webllm). Chats web, APIs, modelos de tu PC y skills de webllm aparecen como "modelos" en su selector | Así webllm es el único que escribe el registro y la memoria, y aplica el guardián y el presupuesto a todo. Una pipe, y no la conexión normal, porque es la que recibe los archivos enteros y los interruptores del "+" (F1, comprobaciones 11 y 12) |
 | D3 | **El núcleo funciona sin ningún chat web.** Las APIs gratis y los modelos de tu PC son la base; los chats web son un extra valioso | La extensión es la pieza más frágil (4 de 5 críticas) |
 | D4 | **El Comité es obligatorio y es la pieza central**, con el protocolo de Iván (sección 2). Aparece en el selector como **"webllm · Comité"** | Decisión de Iván |
 | D5 | **Memoria con un solo escritor.** webllm guarda todo en su registro local y lo **copia en un solo sentido** al vault de Obsidian, que está en una carpeta sincronizada con Google Drive. **Nunca se lee de vuelta desde Drive** | Obsidian + Drive en ambos sentidos = conflictos (5 de 5 críticas). Es la idea de Meta |
 | D6 | **Un solo formato de "acción"** (el estándar `tool_calls`) para todas las IAs. Open WebUI enseña la tarjeta **Permitir/Denegar**. Con los chats web, webllm hace de intérprete: menú en texto → petición → `tool_calls` | Es la idea de z.ai: una tarjeta, un registro, un código |
-| D7 | **Ficha de capacidades por cada IA y modelo**, y **"Automático" con reglas escritas y a la vista**, afinadas antes de entregarlo. Siempre puedes elegir tú el modelo. **Sin aprendizaje automático** | Idea de DeepSeek; decisión de Iván |
+| D7 | **Ficha de capacidades por cada IA y modelo**, y **"Automático" con reglas escritas y a la vista**, afinadas antes de entregarlo. Siempre puedes elegir tú el modelo, y "Automático" no es el de partida (D21). **Sin aprendizaje automático** | Idea de DeepSeek; decisión de Iván |
 | D8 | **Claves de las APIs en el almacén de claves de Windows** (Administrador de credenciales), nunca en archivos del proyecto | 4 de 5 críticas |
 | D9 | **Botón "Parar todo"**, registro del sistema, límites de gasto por fuente y un "contrato de fallo" (qué pasa si algo se cae a mitad) | 5 de 5 críticas |
 | D10 | **Chats web sin memoria entre proyectos:** modo temporal donde exista (o memoria desactivada en tu cuenta) y chat nuevo en cada trabajo. El Comité sigue en la misma conversación solo entre el rol y el problema | Crítica de z.ai: la memoria de los chats web mezcla proyectos |
 | D11 | **El registro se llama "auditable"**, no "a prueba de manipulaciones". Más adelante, el sello del registro se podrá guardar en GitHub | Crítica de z.ai |
 | D12 | **Móvil con Tailscale Serve** (HTTPS privado), sin abrir el PC a internet. Primero solo chatear y leer; encargar trabajos, después | Guía oficial de Open WebUI + crítica de z.ai |
 | D13 | **Taller de código:** OpenCode con permiso "preguntar" antes de editar o ejecutar, en una rama de prueba (git worktree), con **modo simulación** y los **tests como juez**. Nunca sube nada solo a GitHub | Críticas de Meta y Qwen |
-| D14 | **Se aplazan:** imágenes, vídeo y audio; plugins; enrutador que aprende; pedir trabajos desde el móvil | 5 de 5 críticas |
+| D14 | **Se aplazan:** un enrutador propio de imágenes, vídeo y audio; plugins; enrutador que aprende; pedir trabajos desde el móvil. **No se aplaza** usar las herramientas de imagen, vídeo o audio que ya tenga un chat web: eso entra con D22 | 5 de 5 críticas; la excepción, por petición de Iván |
 | D15 | **Primeras skills:** el Comité (de webllm) y tu **prompt-forge** (tu SKILL.md). Después, experto-cowork y "experto GPT" | Suposición: confírmala o cámbiala |
 | D16 | **Seguir tú una conversación directamente en la web queda registrado** (modo observador, sección 3) | Petición de Iván: de 8 respuestas te gusta una y quieres seguir hablando con esa IA en su propia web |
 | D17 | **Webs que se reparan solas** ante cambios de diseño o webs nuevas raras, en 4 capas y sin saltarse nunca un bloqueo anti-bot (sección 3) | Petición de Iván + la crítica número 1 de todas: la fragilidad de la extensión |
 | D18 | **Interfaz ultraintuitiva = la estándar de los chats de IA** (ChatGPT, Claude): conversaciones a la izquierda, selector de modelo arriba, caja de texto abajo con adjuntar, respuesta que se escribe en directo, tarjeta Permitir/Denegar. **webllm no inventa pantallas ni botones nuevos en la conversación**: todo lo suyo entra por piezas que ese estándar ya tiene (sección "La cara") | Petición de Iván. Refuerza D1: el diseño de Open WebUI sigue el de ChatGPT, así que lo que ya sabes usar funciona igual |
 | D19 | **Claude y GPT por dentro de otros servicios, aprobados** (Duck.ai, Poe, Perplexity, Arena, Copilot…), y dentro de ellos se puede elegir cualquier modelo. **Siguen fuera:** `claude.ai` y `chatgpt.com` directos, y tus suscripciones de Claude, ChatGPT o Codex a través de OmniRoute | Decisión de Iván (25-sep-2026). Da al Comité una familia más (OpenAI), y el jurado es mejor con familias distintas |
 | D20 | **Todas las IAs con chat web que hemos encontrado vienen precargadas** (catálogo de la sección 6): no escribes ninguna dirección. Lo único que nadie puede hacer por ti es **entrar una vez con tu cuenta** en las que la pidan (regla dura 3). Chrome da permiso solo a las que dejas marcadas | Petición de Iván: "quiero tenerlas todas". Mínimo privilegio: nada de permisos fijos para 27 webs que quizá no uses |
+| D21 | **Tu control, lo primero.** Nada cambia a escondidas. Cada respuesta dice lo que se usó de verdad. El modelo de partida lo eliges tú. Nada sale de tu PC sin un gesto tuyo. webllm nunca pulsa botones que publican, comparten, borran, regeneran o despliegan (sección "Tu control") | Petición de Iván: "prioriza mi control absoluto" |
+| D22 | **Todo lo que sabe hacer cada chat, a tu alcance:** sus modelos (con el más potente marcado), sus modos (pensar, buscar, investigación profunda, constructor…), cada opción de su botón "+" y subir archivos igual que en su web. webllm lo descubre sin pulsar nada peligroso y lo pone en la cara estándar. Lo que no sepa manejar lo usas tú en la web y queda registrado (D16) (sección 3) | Petición de Iván. Las comprobaciones 11 y 12 de F1 deciden cómo llegan archivos e interruptores desde Open WebUI |
 
 ### La cara (D18): cómo se ve todo lo de webllm sin salir del estándar
 
 | Lo de webllm | Dónde aparece | Igual que en |
 |---|---|---|
-| Elegir IA, modelo o "Automático" | El selector de modelo de arriba, con nombres claros en español y agrupados: "Qwen 3.8 (web)", "GLM-4.7 rápido (API)", "webllm · Automático" | El selector de modelo de ChatGPT o Claude |
+| Elegir IA, modelo o "Automático" | El selector de modelo de arriba, agrupado por chat y con nombres claros en español. En cada chat **el más potente va primero y lo dice** (por ejemplo "Qwen · <modelo> — el más potente"), y también "GLM-4.7 rápido (API)" o "webllm · Automático" | El selector de modelo de ChatGPT o Claude |
 | El Comité | Un "modelo" más: "webllm · Comité". Escribes la idea y la respuesta es el documento de fusión | Elegir un modelo "que piensa más" |
 | El progreso del Comité (roles, veredictos, recuento) | El bloque plegable de razonamiento, encima de la respuesta | El "Pensando…" plegable de ChatGPT o Claude |
 | Una web te espera (verificación, ventana tapada) o se acabó una cuota | Una línea dentro de ese mismo bloque, en español: qué pasó y qué hacer | Los avisos dentro de la respuesta |
+| Los modos y herramientas de cada chat (pensar, buscar, investigación profunda, constructor, imágenes…) | Interruptores en el "+" de la caja de texto. Salen solo los que tiene el chat elegido, si Open WebUI lo permite (F1, comprobación 11); si no, salen todos y los que ese chat no tiene no hacen nada, y la respuesta lo dice | "Buscar", "Investigar" o "Crear imagen" en ChatGPT o Claude |
+| Adjuntar archivos | El clip o el "+" de la caja de texto. El archivo llega entero a la web elegida y se sube con su propio botón | Adjuntar en ChatGPT o Claude |
+| Lo que produce un chat (una web, unas diapositivas, imágenes, archivos) | Dentro de la respuesta: el texto, los archivos descargados y los enlaces | Los archivos y artefactos de ChatGPT o Claude |
 | Acciones (GitHub, tu terminal) | La tarjeta Permitir/Denegar | La aprobación de herramientas de Claude |
 | Skills (Comité, prompt-forge) | La lista de skills de Open WebUI | Las skills de Claude |
 | Conectar tus cuentas de chats web | El panel de webllm (la app actual), abierto desde un enlace, como si fuera "Ajustes → Conectores" | Los conectores en Ajustes |
+| La ficha de cada chat (modelos, modos, herramientas, límites de hoy) y sus ajustes | Su tarjeta en ese mismo panel | La página de un conector en Ajustes |
 
 - **En español.** Si la traducción de Open WebUI no convence, se corrige; se comprueba en F1.
 - **Lo que no uses no se ve.** Las funciones que no se usan se desactivan en la administración de Open WebUI, y los modelos que no quieres ver se ocultan.
 - **Cuando haya duda de diseño, gana lo que hacen ChatGPT y Claude**, no una idea nueva.
+
+### Tu control, lo primero (D21)
+
+1. **Nada cambia a escondidas.**
+   - webllm nunca cambia de IA, de modelo ni de modo sin decírtelo.
+   - Si lo que elegiste no está disponible (límite, web caída, verificación), para y te dice qué pasa y qué alternativa hay.
+   - Solo pasa sola a la reserva si tú lo activaste para esa IA, y aun así lo dice en la respuesta.
+2. **Lo que ves es lo que se usó.**
+   - Cada respuesta dice qué IA, qué modelo, qué modo y qué archivos se usaron **de verdad**.
+   - En los chats web se lee en la propia página después de elegirlos. Si la página no confirma lo que pediste, **no se envía** y te lo dice.
+3. **El punto de partida lo eliges tú.**
+   - Por defecto, cada chat usa su modelo más potente. Si se agota su cupo, se aplica el punto 1.
+   - "Automático" es una opción más del selector, no la de partida. Si lo usas, la primera línea de la respuesta dice qué eligió y por qué.
+   - El Comité enseña su plan y su coste y espera tu "adelante".
+4. **Nada sale de tu PC sin un gesto tuyo.**
+   - Un archivo va solo a las IAs de ese mensaje.
+   - Si va a varias empresas (en el Comité), te dice a cuántas antes del "adelante".
+   - A las webs no privadas (Arena) no va nunca, salvo que la elijas tú.
+5. **Botones prohibidos para webllm:** publicar, compartir, borrar, regenerar y desplegar, en todos los idiomas del catálogo. Esos solo los pulsas tú, en la web.
+6. **"Parar todo"** corta cualquier trabajo en cualquier momento (D9).
+7. **Todo se ajusta por chat:** modelo de partida, modos que vienen encendidos, qué se ve en el selector y límite diario.
 
 ---
 
@@ -79,6 +106,8 @@ Sirve para **evaluar ideas**.
   5. **Estratega:** coste, tiempo, alternativas más simples.
 - Con 3 participantes van los roles 1, 2 y 3.
 - Los roles se pueden editar y se guardan como plantillas.
+- **Cada participante de chat web usa el modelo más potente de su chat y, si lo tiene, el modo "pensar".** Se ve en el plan antes del "adelante" y se puede cambiar.
+- **Con archivos:** si adjuntas uno, el plan dice a cuántas empresas irá (D21).
 
 ### El protocolo, paso a paso
 
@@ -134,7 +163,7 @@ Sirve para **evaluar ideas**.
 - **Tiempo:**
   - los chats web van hoy de uno en uno, así que 3 chats × 2 turnos ≈ 3 a 6 minutos;
   - las APIs van en paralelo y tardan segundos;
-  - si en F6 se confirma que dos chats pueden ir a la vez, baja.
+  - si en F7 se confirma que dos chats pueden ir a la vez, baja.
 
 ### Lo que necesita por dentro
 
@@ -184,6 +213,41 @@ Sirve para **evaluar ideas**.
 - Un rediseño muy radical puede necesitar la capa 4. Si una web no se deja manejar de ninguna forma, webllm te dice exactamente qué pasa. No se promete que todas las webs funcionen.
 - Los selectores que propone una IA se tratan como datos: se validan (formato, longitud, que el navegador los acepte) y **nunca se ejecutan como código**.
 
+### Lo que sabe hacer cada chat (D22)
+
+**La ficha de cada chat.** webllm la descubre en tu PC al conectarlo y la repasa en la comprobación diaria:
+- **Modelos** de su selector, de más a menos potente, con "el más potente" marcado.
+  - El orden sale de una tabla del catálogo con pruebas públicas, su fuente y su fecha.
+  - Un modelo que no está en la tabla sale como "nuevo, sin datos". No se da por el más potente hasta que tú lo digas o la tabla se actualice.
+- **Modos:** pensar más, buscar en la web, investigación profunda, **modo constructor** (crear una web, una app o unas diapositivas), imágenes, vídeo…
+  - Ejemplos que esas webs han anunciado en 2025 y 2026: Qwen (Web Dev, investigación profunda), z.ai (diapositivas, desarrollo completo), Kimi (el agente OK Computer), Gemini y Le Chat (Canvas).
+  - Lo que haya de verdad hoy lo descubre webllm.
+- **Botón "+":** cada opción de su menú (subir archivo, imagen, herramientas, conectores…).
+- **Archivos:** qué tipos acepta y, si la web lo dice, el tamaño máximo.
+- **Límites propios:** los modos caros (investigación profunda, agente) suelen tener pocos usos al día. El guardián los cuenta aparte.
+
+**Cómo se descubre sin riesgo:**
+- webllm solo **abre menús** (el "+", el selector de modelo y los botones que despliegan opciones), **lee** lo que hay y los **cierra**.
+- **Nunca pulsa una opción al descubrir** y nunca envía nada.
+- Si algo no aparece, "Enséñame dónde está": haces un clic en ese botón.
+
+**Cómo se usa:**
+1. Eliges modelo, modos y archivos en la cara estándar (sección "La cara").
+2. En la web, la extensión pone ese modelo y esos modos, y **comprueba en la página** que han quedado puestos.
+3. Sube los archivos con el propio botón de subir de la web y comprueba que aparecen adjuntos.
+4. Solo entonces envía. Si algo no cuadra, no envía y te dice qué.
+5. Recoge la respuesta:
+   - lo que el chat produce como archivo se guarda con su botón de descargar, en `data/descargas/`, enlazado desde el vault;
+   - lo que solo vive en la web queda como enlace.
+
+**Lo que webllm no sepa manejar, lo usas tú:** "Continuar en la web" (arriba) abre esa conversación en tu Chrome. Usas a mano cualquier herramienta de la web y webllm lo registra.
+
+**Límites:**
+- Los modos agente o constructor pueden tardar minutos y trabajan en la nube de esa empresa. webllm espera (con las señales de vida que ya existen), pero nunca pulsa publicar ni desplegar.
+- Si una web no acepta un archivo subido así, te lo dice y lo arrastras tú, en modo observador.
+- Si un modo lanza una verificación, webllm para y te avisa (regla dura 2).
+- Un archivo que subes a una web lo recibe esa empresa: la respuesta dice a quién fue.
+
 ---
 
 ## 4. Arquitectura
@@ -196,7 +260,7 @@ Sirve para **evaluar ideas**.
  │ modelo · skills (SKILL.md) · conectores MCP · aprobación de    │
  │ herramientas                                                   │
  └───────────────┬──────────────────────────────────┬────────────┘
-                 │ una sola conexión (OpenAI)        │ herramientas MCP
+                 │ una sola conexión (pipe webllm)   │ herramientas MCP
                  ▼                                   ▼
  ┌──────────── webllm (el motor, 127.0.0.1:20130) ─┐   GitHub MCP · tu MCP de
  │ /v1/models: todas las fuentes + skills           │   terminal (vía mcpo) ·
@@ -238,24 +302,26 @@ Cada fase tiene:
 ### F1 — Prueba de la cara (decide D1 con datos)
 
 - **Puerta:** F0 cerrada.
-- **Qué:** conectar Open WebUI a webllm y pasar esta lista de 10 comprobaciones:
+- **Qué:** conectar Open WebUI a webllm con una pipe mínima de webllm y pasar esta lista de 12 comprobaciones:
   1. Salen los modelos de webllm en el selector.
   2. La respuesta llega por partes (streaming).
   3. Una petición de 6 minutos no se corta (webllm manda señales de vida mientras espera).
-  4. Con `ENABLE_FORWARD_USER_INFO_HEADERS` activado, llega a webllm el identificador de la conversación (`X-OpenWebUI-Chat-Id`), que hace falta para la memoria.
+  4. Llega a webllm el identificador de la conversación, que hace falta para la memoria: con la pipe, en sus datos; con la conexión normal, en la cabecera `X-OpenWebUI-Chat-Id` (con `ENABLE_FORWARD_USER_INFO_HEADERS`).
   5. Una herramienta MCP inofensiva (la hora) pide aprobación y funciona.
   6. Tu servidor MCP local de terminal funciona a través de `mcpo`.
   7. Se importa tu SKILL.md de prompt-forge y se usa.
   8. Desde el móvil con datos (no wifi), por Tailscale Serve, se chatea.
   9. La interfaz sale en español, y un aviso de webllm (texto de razonamiento) se ve en el bloque plegable, encima de la respuesta.
   10. **Prueba sin guía:** sin instrucciones, haces 6 cosas: empezar una conversación, elegir un modelo, adjuntar un archivo, parar una respuesta, encontrar una conversación antigua y aprobar una herramienta. Se apunta cuáles te salen a la primera.
-- **Probado aquí:** las comprobaciones 1 a 5 y 9, con Open WebUI instalado en la nube (pip, Python 3.11) contra el webllm de demostración. Con la salida de cada comprobación y capturas.
+  11. **Interruptores:** un interruptor de prueba de webllm sale en el "+" de la caja de texto (filtro con interruptor de Open WebUI) y su estado llega a webllm. Se comprueba si puede salir solo con los modelos que lo tienen.
+  12. **Archivos enteros:** un PDF y una imagen adjuntados llegan a webllm idénticos (misma huella sha256) a través de la pipe, sin pasar por la lectura de documentos de Open WebUI.
+- **Probado aquí:** las comprobaciones 1 a 5, 9, 11 y 12, con Open WebUI instalado en la nube (pip, Python 3.11) contra el webllm de demostración. Con la salida de cada comprobación y capturas.
 - **En tu PC:**
   - instalar Open WebUI Desktop (`winget install OpenWebUI.OpenWebUI` o el instalador);
   - las comprobaciones 6 a 8 y 10;
   - una guía paso a paso con capturas.
 - **Salida:**
-  - queda Open WebUI si pasan la 1, la 2, la 3 y la 10 (con las 6 cosas a la primera, o con lo que falle arreglado cambiando nombres u ocultando funciones), y de las demás falla como mucho una;
+  - queda Open WebUI si pasan la 1, la 2, la 3, la 10, la 11 y la 12 (con las 6 cosas a la primera, o con lo que falle arreglado cambiando nombres u ocultando funciones), y de las demás falla como mucho una;
   - si no, se prueba LibreChat con la misma lista; si tampoco, Plan C (la app propia, con el mismo diseño estándar).
   - La decisión, con la lista rellena, se apunta en `docs/ESTADO.md`.
 
@@ -266,6 +332,7 @@ Cada fase tiene:
   - `/v1/models` lista cada fuente y cada modelo con su **ficha** (herramientas, contexto, velocidad, coste, para qué sirve) y las skills de webllm ("webllm · Comité", "webllm · Automático"), con nombres claros en español y agrupados (D18).
   - Los avisos de webllm (una web te espera, una cuota agotada) van en el bloque de razonamiento de la respuesta.
   - Las APIs pasan sus herramientas tal cual.
+  - Cada respuesta dice qué IA y qué modelo la dieron. Si una fuente falla, no se cambia sola por otra: se avisa (D21).
   - Señales de vida en las respuestas largas.
   - Se agrupa por el identificador de conversación.
   - El botón **Parar todo**.
@@ -276,6 +343,7 @@ Cada fase tiene:
   - streaming con señales de vida;
   - un aviso de "te espera" llega como texto de razonamiento, no mezclado con la respuesta;
   - Parar cancela un trabajo en curso (extensión falsa);
+  - una fuente caída no se cambia sola por otra, y la respuesta lo dice;
   - ninguna clave en el disco del proyecto (test que busca claves en el repositorio).
 - **En tu PC:** en Open WebUI eliges una IA web, una por API y una de tu PC, y las tres responden; "Parar" corta una respuesta.
 - **Salida:** las 3 responden desde Open WebUI y el registro las tiene todas.
@@ -291,7 +359,7 @@ Cada fase tiene:
     2. Chrome pide permiso **una sola vez**, solo para las webs marcadas;
     3. la ventana de webllm las abre de una en una. Si una pide entrar, te la enseña y espera hasta 3 minutos (la contraseña la pones tú: regla dura 3). Si no entras, queda "Sin conectar" y pasa a la siguiente;
     4. cada una recibe la prueba "pong" a través del guardián (1 mensaje).
-  - **Resultado por IA:** "Conectada", "No funciona todavía" (con el motivo y el diagnóstico guardado para F5) o "Sin conectar".
+  - **Resultado por IA:** "Conectada", "No funciona todavía" (con el motivo y el diagnóstico guardado para F6) o "Sin conectar".
   - **Solo las conectadas salen en el selector de Open WebUI** (D18: lo que no usas no se ve).
   - **El guardián vale para todas.** Las de pocos mensajes gratis (Venice, Poe) llevan en el catálogo un límite diario más bajo.
   - **Las no privadas** (Arena publica lo que escribes) no las usan nunca "Automático" ni el Comité. Solo se usan si las eliges tú, y su nombre en el selector lo avisa.
@@ -313,7 +381,37 @@ Cada fase tiene:
   - la tabla del catálogo rellena en `docs/ESTADO.md`, con cada IA como "conectada", "no funciona todavía y por qué" o "no la quiero";
   - cada IA conectada responde desde Open WebUI.
 
-### F4 — Memoria en Obsidian (un solo escritor)
+### F4 — Todo lo que sabe hacer cada chat, bajo tu control
+
+- **Puerta:** F1 (comprobaciones 11 y 12) y F3.
+- **Qué:** lo de D21, D22 y la sección 3 ("Lo que sabe hacer cada chat"):
+  - descubrir la ficha de cada chat (abrir menús, leer y cerrar, sin pulsar opciones ni enviar) y "Enséñame dónde está";
+  - tabla de potencia de modelos en el catálogo (con fuente y fecha); modelo de partida = el más potente;
+  - elegir modelo y modos en la web y **comprobarlo en la página** antes de enviar (lo que antes era 7c, ahora para todos los chats);
+  - subir archivos con el botón de la web; los grandes van de webllm a la extensión por partes;
+  - recoger lo que produce el chat: texto, descargas y enlaces;
+  - la pipe de webllm completa: modelos agrupados, archivos enteros e interruptores de modos en el "+". La pipe toma solo los archivos del mensaje actual, porque Open WebUI le pasa todos los de la conversación;
+  - botones prohibidos, con test en todos los idiomas del catálogo;
+  - el registro guarda la IA, el modelo, el modo y los archivos (con su huella) usados de verdad; el guardián cuenta aparte los modos caros;
+  - con cambio de versión de la extensión.
+- **Probado aquí:**
+  - Chromium con la extensión de verdad y la web de prueba ampliada (selector de modelos, botón "+" con menú, interruptor de modo, subida de archivos, botón de descarga y un botón "Publicar"):
+    - el descubrimiento lo lista todo sin pulsar ninguna opción ni enviar nada (la web de prueba anota cada clic);
+    - se eligen modelo y modo, y la página lo confirma; con un selector que "no cambia", no se envía y se avisa;
+    - un PDF, una imagen y un archivo de 20 MB llegan a la web con la misma huella;
+    - "Publicar" no se pulsa nunca;
+    - una descarga que genera la web se guarda y se enlaza;
+  - Open WebUI en la nube con la pipe: un archivo adjuntado llega entero a la web de prueba, y un interruptor del "+" cambia el modo usado.
+- **En tu PC:**
+  - "Descubrir" en Qwen, z.ai, Kimi y DeepSeek, y comparar cada ficha con lo que ves en la web;
+  - una pregunta al modelo más potente de Qwen con un PDF adjunto;
+  - una tarea en modo constructor (por ejemplo, una web pequeña en Qwen o z.ai), con su resultado descargado o enlazado.
+- **Salida:**
+  - las 4 fichas coinciden con lo que ves; lo que falte se arregla o se enseña con "Enséñame";
+  - las 3 pruebas funcionan;
+  - el registro dice el modelo, el modo y los archivos de verdad.
+
+### F5 — Memoria en Obsidian (un solo escritor)
 
 - **Puerta:** F2.
 - **Qué:**
@@ -327,9 +425,9 @@ Cada fase tiene:
 - **En tu PC:** abres Obsidian y ves la conversación de hace un minuto; desde el móvil, en Drive, ves el mismo archivo.
 - **Salida:** 10 conversaciones seguidas, las 10 en el vault, idénticas al registro.
 
-### F5 — Webs que se reparan solas y modo observador
+### F6 — Webs que se reparan solas y modo observador
 
-- **Puerta:** F2, F3 y F4.
+- **Puerta:** F2, F3 y F5.
 - **Qué:** lo de la sección 3:
   - detección genérica ampliada (etiquetas en varios idiomas);
   - radiografía de la página;
@@ -350,9 +448,9 @@ Cada fase tiene:
   - las webs del catálogo que en F3 quedaron "No funciona todavía", probadas otra vez.
 - **Salida:** la conversación completa en el vault; el recuento de webs del catálogo que ahora funcionan gracias a la capa 1, a la 3 o a la 4 (apuntado en `docs/ESTADO.md`), y el registro de un arreglo automático real (o, si ninguna web cambia durante la prueba, del simulado).
 
-### F6 — El Comité
+### F7 — El Comité
 
-- **Puerta:** F2, F3, F4 y F5.
+- **Puerta:** F2, F3, F4, F5 y F6.
 - **Qué:** todo lo de la sección 2:
   - modo "seguir en la misma conversación" en la extensión (con cambio de versión);
   - plantillas de rol;
@@ -369,20 +467,18 @@ Cada fase tiene:
 - **En tu PC:** un Comité real con 5 participantes sobre una idea tuya. Después, el mismo Comité con dos chats a la vez: si sale bien 3 veces seguidas, se deja activado.
 - **Salida:** documento de fusión completo con sus 8 apartados, recuento impar, anexo con los 5 veredictos y candado verde.
 
-### F7 — Elegir modelo y "Automático" bien afinado
+### F8 — "Automático" bien afinado
 
-- **Puerta:** F2 y F3.
+- **Puerta:** F2, F3 y F4.
 - **Qué:**
   - fichas de cada modelo de API (por ejemplo GLM-5.2, GLM Flash, Qwen3.8-27B, Codestral, Gemini Flash);
-  - selector de modelo **dentro** de Qwen y z.ai web (7c: pulsar el menú de modelos de la página, frágil por naturaleza);
   - la tabla de "Automático" (sección 6), en un archivo y a la vista.
 - **Probado aquí:**
-  - tests de la tabla: cada tipo de tarea tiene primero y reserva; nada apunta a una IA prohibida;
-  - para la parte del selector web, la página de prueba con un menú de modelos.
+  - tests de la tabla: cada tipo de tarea tiene primero y reserva; nada apunta a una IA prohibida; ninguna regla usa una web no privada.
 - **En tu PC:** 10 preguntas de prueba (2 de cada tipo) con "Automático", apuntando qué eligió y si acertó. La tabla se ajusta con esos datos antes de darla por buena.
 - **Salida:** 9 de 10 bien enrutadas.
 
-### F8 — Acciones y conectores
+### F9 — Acciones y conectores
 
 - **Puerta:** F1 (comprobaciones 5 y 6) y F2.
 - **Qué:**
@@ -396,16 +492,16 @@ Cada fase tiene:
 - **En tu PC:** "crea un issue de prueba en mi repo" con una IA de API y con una web; las dos pasan por tu Permitir.
 - **Salida:** los dos issues creados; un intento de inyección, denegado y apuntado en el registro.
 
-### F9 — Móvil
+### F10 — Móvil
 
 - **Puerta:** F1 (comprobación 8).
 - **Qué:** guía de Tailscale en el PC y en el móvil, Tailscale Serve (HTTPS) y la app instalada como PWA. **Solo chatear y leer.**
 - **En tu PC y tu móvil:** una conversación desde el móvil con datos, que aparece en el vault.
 - **Salida:** lo anterior funciona sin abrir ningún puerto del router.
 
-### F10 — Taller de código
+### F11 — Taller de código
 
-- **Puerta:** F2 y F8.
+- **Puerta:** F2 y F9.
 - **Qué:**
   - OpenCode configurado con `edit: ask` y `bash: ask`;
   - trabajo en un **git worktree** (una rama de prueba);
@@ -419,7 +515,7 @@ Cada fase tiene:
 - **En tu PC:** 5 tareas reales tuyas.
 - **Salida:** tareas resueltas de 5, apuntadas. Es la base del banco de pruebas pequeño.
 
-### F11 — Después (no se empieza sin nueva decisión)
+### F12 — Después (no se empieza sin nueva decisión)
 
 - imágenes, vídeo y audio como fuentes;
 - plugins;
@@ -430,7 +526,7 @@ Cada fase tiene:
 
 ---
 
-## 6. Listas iniciales (se afinan en F7 con datos de tu PC)
+## 6. Listas iniciales (se afinan en F8 con datos de tu PC)
 
 **Lista del Comité (participantes, en orden):**
 1. Kimi (web)
@@ -441,7 +537,7 @@ Cada fase tiene:
 6. Gemini Flash (API)
 7. Duck.ai · Claude Haiku (web)
 8. z.ai chat (web)
-9. Duck.ai o Copilot · GPT (web): el modelo GPT que ofrezcan, comprobado en F7 (D19)
+9. Duck.ai o Copilot · GPT (web): el modelo GPT que ofrezcan, comprobado en F8 (D19)
 
 **Lista de fusión ("la más potente disponible"):**
 1. GLM-5.2 (API)
@@ -463,7 +559,7 @@ Cada fase tiene:
 | Investigar con fuentes | Felo (web) | Ask Brave (web) → Perplexity (web) → Kimi (web) |
 | Evaluar una idea | **webllm · Comité** | — |
 
-Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla de APIs gratis de PLAN-v4. Son un punto de partida: **F7 las mide con tus cuentas antes de darlas por buenas.**
+Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla de APIs gratis de PLAN-v4. Son un punto de partida: **F8 las mide con tus cuentas antes de darlas por buenas.**
 
 ### Catálogo: todas las IAs con chat web (se precargan en F3)
 
@@ -554,14 +650,17 @@ Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la n
 |---|---|
 | Las webs cambian y la extensión se rompe | D3: el núcleo no depende de ellas. D17: auto-reparación en 4 capas y comprobación diaria. Si nada funciona, "Copiar diagnóstico" y arreglo con su test |
 | El modo observador registra algo que no querías | Solo webs con permiso; solo pestañas que tú marcas; nunca campos de contraseña; un botón para dejar de observar |
-| Open WebUI cambia algo que usamos | Se fija la versión que pasó F1; se actualiza solo tras repetir la lista de 10 |
+| Open WebUI cambia algo que usamos | Se fija la versión que pasó F1; se actualiza solo tras repetir la lista de 12 |
 | Open WebUI trae demasiadas opciones y abruma | D18: se desactiva lo que no se usa; la prueba sin guía de F1 lo mide |
-| El Comité tarda (chats web de uno en uno) | APIs en paralelo; se prueban dos chats a la vez en F6; 3 participantes para lo urgente |
+| El Comité tarda (chats web de uno en uno) | APIs en paralelo; se prueban dos chats a la vez en F7; 3 participantes para lo urgente |
 | Cuentas: más mensajes = más verificaciones y más riesgo de bloqueo | Coste visible y "adelante"; límites por fuente; Comité con parte por API |
-| Cuotas gratis que desaparecen (ya pasó 4 veces este año) | Las fichas guardan la fecha de la última comprobación; si una API falla por cuota, se pasa a la reserva sin romper nada |
+| Cuotas gratis que desaparecen (ya pasó 4 veces este año) | Las fichas guardan la fecha de la última comprobación; si una API falla por cuota, se avisa y se ofrece la reserva; solo se pasa sola si lo activaste (D21) |
 | Inyección entre IAs y en herramientas | Datos marcados; formatos cerrados; analizador estricto; aprobación siempre; test de inyección en cada fase que toca herramientas |
 | Conflictos de memoria | D5: un solo escritor, sin leer nunca de Drive |
-| Un agente de código rompe algo | Worktree, modo simulación, pedir permiso para editar y ejecutar, tests, Deshacer; aislamiento decidido con prueba en F10 |
+| Un modo agente o constructor de una web hace algo hacia fuera (publicar, desplegar) | Botones prohibidos, con test; los modos solo se encienden si tú los eliges; el registro guarda cada modo usado |
+| Un archivo privado acaba en una empresa que no querías | Solo va a las IAs del mensaje; en el Comité, aviso con el número de empresas; nunca a webs no privadas; el registro guarda a quién fue |
+| Una web cambia los nombres de sus modelos o quita uno | La comprobación diaria rehace la ficha; si el modelo de partida ya no está, se avisa y no se elige otro a escondidas (D21) |
+| Un agente de código rompe algo | Worktree, modo simulación, pedir permiso para editar y ejecutar, tests, Deshacer; aislamiento decidido con prueba en F11 |
 
 ## 9. Lo que NO se hace
 
@@ -570,7 +669,8 @@ Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la n
 - Un enrutador que aprende solo.
 - Leer o escribir en Drive en los dos sentidos.
 - Dar permisos de escritura en GitHub a webs de terceros (el conector de Mistral).
-- Imágenes, vídeo, audio o plugins antes de F11.
+- Un enrutador propio de imágenes, vídeo y audio, o plugins, antes de F12. Las herramientas que ya tenga cada chat sí se usan desde F4.
+- Pulsar en las webs botones de publicar, compartir, borrar, regenerar o desplegar (D21).
 
 ## 10. Preguntas abiertas (no frenan F0 ni F1)
 
@@ -594,6 +694,10 @@ Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la n
   - skills: https://www.librechat.ai/docs/features/skills
   - aprobaciones: https://github.com/danny-avila/LibreChat/pull/13942
 - **OpenCode, permisos:** https://opencode.ai/docs/permissions/
+- **Open WebUI, interruptores y archivos** (comprobado con el buscador: su web está bloqueada desde la nube, y F1 lo confirma en la práctica):
+  - filtros con interruptor (`self.toggle = True`) en la caja de texto: https://docs.openwebui.com/features/extensibility/plugin/functions/filter/
+  - la pipe recibe los archivos (`__files__`), todos los de la conversación: https://docs.openwebui.com/features/extensibility/plugin/functions/pipe/ y https://github.com/open-webui/open-webui/discussions/15542
+  - ejemplo público de pipe que manda los archivos enteros: https://github.com/rbb-dev/Open-WebUI-OpenRouter-pipe/blob/main/docs/openrouter_direct_uploads.md
 - **Catálogo de chats web:**
   - las fuentes de cada IA, en la tabla del catálogo de PLAN-v4 y en la conversación con Iván del 24 y 25 de septiembre de 2026;
   - Copilot gratis y sin cuenta: https://support.microsoft.com/en-us/microsoft-365-copilot/what-s-the-difference-between-microsoft-copilot-free-and-copilot-in-microsoft-365 y https://medhacloud.com/blog/microsoft-copilot-free
