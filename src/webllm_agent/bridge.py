@@ -27,7 +27,7 @@ from aiohttp import WSMsgType, web
 
 from .appapi import AppApi
 from .client import _content_text
-from .config import PROJECT_ROOT, AppConfig, ProviderConfig
+from .config import JOB_HARD_CAP_S, PROJECT_ROOT, AppConfig, ProviderConfig
 from .guard import Guard, GuardBlocked
 
 MODEL_PREFIX = "browser/"
@@ -36,6 +36,9 @@ SITES = {"qwen": "Qwen", "deepseek": "DeepSeek", "zai": "z.ai", "meta": "Meta AI
 EXTENSION_DIR = PROJECT_ROOT / "extension"
 
 # extension error code -> (HTTP status, pause hours or None, Spanish message)
+# The extension says "still on it" every 10 s; without that for this long, the job is lost.
+JOB_ALIVE_GRACE_S = 45.0
+
 ERRORS: dict[str, tuple[int, float | None, str]] = {
     "login_required": (401, None, "no hay sesión abierta en Chrome. Entra en {site} con tu cuenta (o una nueva) y vuelve a pedirlo"),
     "banned": (403, 24 * 30, "la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y haz doble clic en REANUDAR"),
@@ -115,6 +118,8 @@ class Bridge:
         self.connected = asyncio.Event()
         self.pending: dict[str, asyncio.Future] = {}
         self.locks: dict[str, asyncio.Lock] = {}  # one message at a time per site
+        self.alive: dict[str, float] = {}  # job id -> last time the extension said it is still on it
+        self.waiting: dict[str, str] = {}  # site -> "challenge" | "popup" while the chat waits for Iván
         self._last_launch = -1e9
         self._panel_running = False
         self.app_api = AppApi(self)
@@ -188,6 +193,14 @@ class Bridge:
                     fut = self.pending.pop(data.get("id"), None)
                     if fut is not None and not fut.done():
                         fut.set_result(data)
+                elif data.get("type") == "job_alive":
+                    if data.get("id") in self.pending:
+                        self.alive[data["id"]] = time.monotonic()
+                        site = str(data.get("site") or "")
+                        if data.get("waiting"):
+                            self.waiting[site] = str(data["waiting"])
+                        else:
+                            self.waiting.pop(site, None)
                 elif data.get("type") in ("add_progress", "add_ready", "add_done"):
                     self.app_api.on_add_event(data)
                 elif data.get("type") == "notice":
@@ -201,6 +214,7 @@ class Bridge:
                     if not fut.done():
                         fut.set_result({"ok": False, "error": "extension_disconnected"})
                 self.pending.clear()
+                self.waiting.clear()
         return ws
 
     async def _ensure_extension(self) -> bool:
@@ -224,16 +238,32 @@ class Bridge:
             return False
 
     async def _send_to_extension(self, payload: dict[str, Any], wait_s: float) -> dict[str, Any]:
+        """Send one message to the extension and wait for its result: at least ``wait_s``, and
+        longer while the extension keeps saying it is still on the job (extension 0.5.0+ says so
+        every 10 s, e.g. while Iván solves a verification; it enforces the real time limits)."""
         job_id = uuid.uuid4().hex
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending[job_id] = fut
+        start = time.monotonic()
         try:
             await self.ws.send_json({**payload, "id": job_id})
-            return await asyncio.wait_for(fut, wait_s)
-        except asyncio.TimeoutError:
-            return {"ok": False, "error": "timeout"}
+            while True:
+                now = time.monotonic()
+                until = start + wait_s
+                if job_id in self.alive:
+                    until = max(until, self.alive[job_id] + JOB_ALIVE_GRACE_S)
+                until = min(until, start + JOB_HARD_CAP_S)
+                if now >= until:
+                    return {"ok": False, "error": "timeout"}
+                try:
+                    return await asyncio.wait_for(asyncio.shield(fut), min(until - now, 5.0))
+                except asyncio.TimeoutError:
+                    continue
         finally:
             self.pending.pop(job_id, None)
+            self.alive.pop(job_id, None)
+            if payload.get("type") == "job":
+                self.waiting.pop(str(payload.get("site")), None)
 
     async def send_job(self, site: str, name: str, prompt: str, *, site_config: dict[str, str] | None = None,
                        timeout_s: float | None = None) -> dict[str, Any]:

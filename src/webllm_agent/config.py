@@ -237,6 +237,9 @@ def _coerce_local_servers(raw: Any) -> tuple[LocalServer, ...]:
 
 
 CUSTOM_AIS_FILE = "custom_ais.json"
+# One message to a chat in the browser never waits longer than this, even while Iván solves
+# verifications (the extension waits 5 minutes for each one; see bridge.py).
+JOB_HARD_CAP_S = 30 * 60.0
 
 
 def _with_custom(configured: dict[str, ProviderConfig], paths: Paths) -> dict[str, ProviderConfig]:

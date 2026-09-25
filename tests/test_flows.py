@@ -125,6 +125,15 @@ def test_same_upstream_never_overlaps_across_parallel_steps(tmp_path, mock_serve
     assert mock_server.max_inflight["same"] == 1
 
 
+def test_a_queued_answer_starts_its_clock_only_when_it_is_sent(tmp_path, mock_server):
+    """Iván saw chats "Esperando… 200 s" that were only queued behind another one."""
+    cfg = cfg_for(tmp_path, mock_server, [P("x1", "same/slow"), P("x2", "same/ok")])
+    run, events = go(cfg, Flow("x", (Step("p1", ("x1", "x2"), "a"),)))
+    assert run.status == flows.OK
+    order = [(e["type"], e["target"]) for e in events if e["type"] in ("target_start", "target_done")]
+    assert order == [("target_start", "x1"), ("target_done", "x1"), ("target_start", "x2"), ("target_done", "x2")]
+
+
 # ------------------------------------------------------------------ failures
 
 def test_stop_on_error_does_not_send_later_steps(tmp_path, mock_server):

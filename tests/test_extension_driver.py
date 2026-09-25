@@ -32,15 +32,30 @@ def test_generic_detection_types_sends_and_reads_on_an_unknown_site():
     assert "login detectado" in lines[3]
 
 
-@needs_chromium
-@pytest.mark.skipif(shutil.which("openssl") is None, reason="needs openssl (a throwaway https certificate)")
-def test_add_a_site_with_the_real_extension_and_bridge():
+def run_real(script: str) -> list[str]:
+    """Run a tests/extension/*.mjs script (real extension + real bridge); its BIEN/FALLO lines."""
     with socket.socket() as sock:  # a free port for the bridge
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     env = {**os.environ, "WEBLLM_PYTHON": sys.executable, "WEBLLM_TEST_PORT": str(port)}
-    out = subprocess.run(["node", str(ROOT / "tests" / "extension" / "add_flow.mjs")],
+    out = subprocess.run(["node", str(ROOT / "tests" / "extension" / script)],
                          capture_output=True, text=True, timeout=300, env=env)
     lines = [line for line in out.stdout.splitlines() if line.startswith(("BIEN", "FALLO"))]
-    assert out.returncode == 0 and len(lines) == 9 and all(line.startswith("BIEN") for line in lines), (
-        out.stdout + out.stderr)
+    assert out.returncode == 0 and all(line.startswith("BIEN") for line in lines), out.stdout + out.stderr
+    return lines
+
+
+needs_openssl = pytest.mark.skipif(shutil.which("openssl") is None, reason="needs openssl (a throwaway https certificate)")
+
+
+@needs_chromium
+@needs_openssl
+def test_add_a_site_with_the_real_extension_and_bridge():
+    assert len(run_real("add_flow.mjs")) == 9
+
+
+@needs_chromium
+@needs_openssl
+def test_time_solving_a_verification_does_not_lose_the_answer():
+    """Iván's report: a verification made the app give up on chats and lose their late answers."""
+    assert len(run_real("captcha_flow.mjs")) == 14

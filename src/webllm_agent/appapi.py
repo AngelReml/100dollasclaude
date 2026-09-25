@@ -215,6 +215,8 @@ class AppApi:
                 "server_name": server.server.name if server else None,
                 "custom": p.custom,
                 "icon": bool(site and self._icon_path(site)),
+                # "challenge" / "popup": its chat is waiting for Iván right now (the question goes on after)
+                "waiting": self.bridge.waiting.get(site) if site else None,
             })
         local = [{"key": st.server.key, "name": st.server.name, "up": st.up, "installed": st.installed,
                   "models": len(st.models)}

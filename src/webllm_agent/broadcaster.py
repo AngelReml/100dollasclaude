@@ -24,7 +24,7 @@ import httpx
 
 from . import journal
 from .client import OK, TRANSPARENT_HEADERS, ChatResult, auth_headers, chat
-from .config import AppConfig, ProviderConfig, is_blocked_model
+from .config import JOB_HARD_CAP_S, AppConfig, ProviderConfig, is_blocked_model
 from .guard import Guard, GuardBlocked
 from .local import server_lock as local_lock
 
@@ -106,6 +106,15 @@ async def check_gateway(client: httpx.AsyncClient, base_url: str, api_key: str) 
         raise GatewayError(f"OmniRoute respondió HTTP {r.status_code} a /models.")
 
 
+def client_timeout(t: ProviderConfig) -> float:
+    """How long to wait for one answer. A chat in the browser can take much longer than its
+    time limit while Iván solves a verification: the bridge and the extension enforce the real
+    limits and always answer, so never hang up on them first (the answer would be lost)."""
+    if t.gateway == "bridge":
+        return max(t.timeout_s, JOB_HARD_CAP_S + 60)
+    return t.timeout_s
+
+
 async def _run_target(
     t: ProviderConfig,
     *,
@@ -139,7 +148,7 @@ async def _run_target(
             async with server:
                 res = await chat(client, base_url=base_url, api_key=key,
                                  model=t.remote_model or model if t.gateway == "local" else model,
-                                 prompt=prompt, timeout_s=timeout_s or t.timeout_s)
+                                 prompt=prompt, timeout_s=timeout_s or client_timeout(t))
             outcome.result = res
             if t.guarded:
                 notice = guard.report(t, res)

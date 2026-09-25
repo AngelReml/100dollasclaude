@@ -136,6 +136,14 @@
     "clipped": []
   },
   {
+    "name": "claro-1280-18-te-espera",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
     "name": "claro-1920-01-inicio",
     "wrappedFooters": 0,
     "pageOverflow": false,
@@ -281,6 +289,14 @@
   },
   {
     "name": "oscuro-1280-17-quitar-confirmar",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-18-te-espera",
     "wrappedFooters": 0,
     "pageOverflow": false,
     "mainOverflow": false,

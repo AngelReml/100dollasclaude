@@ -9,12 +9,21 @@
 <body>
 <!-- A chat page nobody wrote selectors for. ?copy=0 removes the copy button,
      ?editable=1 uses a contenteditable box and Enter instead of a send button,
-     ?login=1 shows a login wall instead of the chat, ?nobox=1 has no text box at all.
-     The same modes work as a path (/login/, /nobox/): "+ Añadir otra IA" keeps only the path. -->
+     ?login=1 shows a login wall instead of the chat, ?nobox=1 has no text box at all,
+     ?captcha=1 shows a slider verification after each message (except "pong") and only
+     answers once someone clicks "Resolver" in it, ?lento=1 writes a long answer slowly and,
+     like real chat sites, does not write while the page cannot be seen.
+     The same modes work as a path (/login/, /captcha/...): "+ Añadir otra IA" keeps only the path. -->
 <div id="app"></div>
 <script>
+// Tests can make the page "not seen", as Chrome reports it when the window is covered or
+// minimized (headless Chromium never does): window.__setCovered(true / false).
+let covered = false;
+const realHidden = Object.getOwnPropertyDescriptor(Document.prototype, "hidden").get;
+Object.defineProperty(document, "hidden", { configurable: true, get: () => covered || realHidden.call(document) });
+window.__setCovered = (v) => { covered = v; document.dispatchEvent(new Event("visibilitychange")); };
 const q = new URLSearchParams(location.search);
-for (const m of ["login", "nobox", "editable"]) if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
+for (const m of ["login", "nobox", "editable", "captcha", "lento"]) if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
 const app = document.getElementById("app");
 if (q.get("login") === "1") {
   app.innerHTML = '<h1>Log in to continue</h1><input type="email"><input type="password"><button>Sign in</button>';
@@ -40,9 +49,11 @@ if (q.get("login") === "1") {
     const answer = document.createElement("div");
     answer.className = "msg assistant";
     log.appendChild(answer);
-    const words = /pong/i.test(text) ? ["**pong**"] : ["hola", "qué", "tal"];
+    const slow = q.get("lento") === "1" && !/pong/i.test(text);
+    const words = /pong/i.test(text) ? ["**pong**"] : slow ? "esta respuesta tarda en escribirse del todo".split(" ") : ["hola", "qué", "tal"];
     let i = 0;
-    const tick = setInterval(() => {
+    const write = () => { const tick = setInterval(() => {
+      if (slow && document.hidden) return;
       answer.innerHTML = words.slice(0, ++i).join(" ").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       if (i >= words.length) {
         clearInterval(tick);
@@ -55,7 +66,17 @@ if (q.get("login") === "1") {
           answer.after(copy);
         }
       }
-    }, 400);
+    }, slow ? 900 : 400); };
+    if (q.get("captcha") === "1" && !/pong/i.test(text)) {
+      const box = document.createElement("div");
+      box.className = "captcha-box";
+      box.style.cssText = "width:320px;height:90px;border:1px solid #888;margin:12px 0;padding:8px";
+      box.innerHTML = 'Desliza para verificar <button id="solve">Resolver</button>';
+      document.body.appendChild(box);
+      document.getElementById("solve").onclick = () => { box.remove(); write(); };
+    } else {
+      write();
+    }
   };
   const send = document.getElementById("send");
   if (send) send.onclick = ask;

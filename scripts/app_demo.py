@@ -1,6 +1,6 @@
 """Run the real webllm server + app with stand-ins for Chrome and OmniRoute (development only).
 
-    python scripts/app_demo.py [--port 20199] [--data DIR] [--sin-chrome]
+    python scripts/app_demo.py [--port 20199] [--data DIR] [--sin-chrome] [--limite SEGUNDOS]
 
 Everything the app talks to is real (bridge, app API, chain engine, journal, guard) except:
 - a fake Chrome extension that answers each chat job with a canned Spanish answer
@@ -10,7 +10,9 @@ Everything the app talks to is real (bridge, app API, chain engine, journal, gua
 - a fake LM Studio with one chat model and one embedding model (left out by the app);
 - an "installed" Ollama that is off (nothing listens on its port);
 - "Añadir otra IA": the fake extension "gets" the permission 2.5 s later and walks through
-  the test steps; an address with "nochat" in it fails at "no text box" (to see the error).
+  the test steps; an address with "nochat" in it fails at "no text box" (to see the error);
+- a question with "(demo: verificación)" in it makes Qwen "wait for Iván" 8 s (a verification),
+  as extension 0.5.0 reports it, before answering.
 Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
 where Iván's Chrome and OmniRoute are not reachable. Open http://127.0.0.1:<port>/app/
 """
@@ -158,6 +160,10 @@ async def fake_extension(port: int) -> None:
                 if not logged_in.get(site, True):
                     asyncio.create_task(log_in_later(site))
                 return
+            if site == "qwen" and "(demo: verificación)" in job.get("prompt", ""):
+                for waiting in ["challenge"] * 8 + [None]:
+                    await ws.send_json({"type": "job_alive", "id": job["id"], "site": site, "waiting": waiting})
+                    await asyncio.sleep(1)
             await asyncio.sleep(0.4 if job.get("type") == "diagnose" else delays.get(site, 2.0))
             ok = logged_in.get(site, True)
             if job.get("type") == "diagnose":
@@ -181,7 +187,7 @@ async def fake_extension(port: int) -> None:
                 asyncio.create_task(answer(job))
 
 
-async def main(port: int, data: Path, chrome: bool = True) -> None:
+async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30) -> None:
     omni = web.AppRunner(fake_omniroute())
     await omni.setup()
     site = web.TCPSite(omni, "127.0.0.1", 0)
@@ -203,7 +209,7 @@ async def main(port: int, data: Path, chrome: bool = True) -> None:
                           {"key": "ollama", "name": "Ollama", "url": "http://127.0.0.1:9/v1", "start": ["ollama", "serve"]}],
     }), encoding="utf-8")
     cfg = load_config(data)
-    bridge = Bridge(cfg, TOKEN, timeout_s=30, human_wait_s=0, connect_wait_s=2, launcher=None,
+    bridge = Bridge(cfg, TOKEN, timeout_s=limit_s, human_wait_s=0, connect_wait_s=2, launcher=None,
                     log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
     bridge.app_api.omniroute_launcher = lambda: print("(demo) encender OmniRoute", flush=True)
     bridge.app_api.local.launcher = lambda cmd: print("(demo) encender", cmd, flush=True)
@@ -221,5 +227,7 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=20199)
     ap.add_argument("--data", type=Path, default=None)
     ap.add_argument("--sin-chrome", action="store_true", help="no fake extension: Chrome shows as not connected")
+    ap.add_argument("--limite", type=float, default=30, help="time limit for a chat's answer, in seconds")
     a = ap.parse_args()
-    asyncio.run(main(a.port, a.data or Path(tempfile.mkdtemp(prefix="webllm-demo-")), chrome=not a.sin_chrome))
+    asyncio.run(main(a.port, a.data or Path(tempfile.mkdtemp(prefix="webllm-demo-")), chrome=not a.sin_chrome,
+                     limit_s=a.limite))

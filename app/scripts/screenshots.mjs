@@ -45,7 +45,7 @@ async function shot(page, name) {
 }
 
 async function waitAnswers(page) {
-  await page.waitForFunction(() => !document.body.innerText.match(/Esperando…|En cola/), null, { timeout: 60000 });
+  await page.waitForFunction(() => !document.body.innerText.match(/Esperando…|En cola|Te espera/), null, { timeout: 60000 });
 }
 
 // "+ Añadir otra IA" (PLAN-v3 7b): a blocked address, a site that works, one that does not, and Quitar.
@@ -86,6 +86,17 @@ async function addAnAi(page, tag) {
   await shot(page, `${tag}-17-quitar-confirmar`);
   await card.getByRole("button", { name: "Sí, quitar" }).click();
   await card.waitFor({ state: "detached" });
+}
+
+// A chat waiting for Iván (a verification): it says so and the question goes on after.
+async function waitingForYou(page, tag) {
+  await page.goto(base + "#/preguntar");
+  await page.getByLabel("Tu pregunta").fill("¿Qué es la inflación? (demo: verificación)");
+  await page.getByRole("button", { name: /^Preguntar a/ }).click();
+  await page.getByText("pide una verificación").waitFor({ timeout: 15000 });
+  await page.waitForTimeout(2500);
+  await shot(page, `${tag}-18-te-espera`);
+  await waitAnswers(page);
 }
 
 async function run(theme, width, full) {
@@ -151,6 +162,7 @@ async function run(theme, width, full) {
     await page.getByText("Mensaje enviado").first().waitFor();
     await shot(page, `${tag}-10-historial-detalle`);
     await addAnAi(page, tag);
+    await waitingForYou(page, tag);
   }
   await browser.close();
 }

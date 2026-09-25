@@ -24,6 +24,9 @@ export interface Ai {
   custom: boolean;
   /** The site's own icon is available at iconUrl(name). */
   icon: boolean;
+  /** Its chat is waiting for Iván right now (a verification, a pop-up, or the webllm window is
+   *  covered/minimized so the page cannot write); the question goes on after. */
+  waiting: "challenge" | "popup" | "hidden" | null;
 }
 
 export interface AddStep {

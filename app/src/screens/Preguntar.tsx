@@ -1,5 +1,5 @@
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Copy, Forward, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
+import { Copy, Forward, Hand, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Ai } from "../api";
 import { go } from "../nav";
@@ -149,8 +149,31 @@ function PassMenu({
   );
 }
 
+/** While one chat waits for Iván (verification, pop-up), the others are hidden and wait too. */
+function waitingText(answer: TurnAnswer, ais: Ai[]): { mine: boolean; text: string } | null {
+  if (answer.phase !== "asking") return null;
+  const me = ais.find((a) => a.name === answer.target);
+  if (me?.waiting === "challenge")
+    return {
+      mine: true,
+      text: `${answer.label} pide una verificación. Resuélvela en la ventanita de webllm (ya la he puesto delante). Te espero hasta 5 minutos; después la respuesta llega sola, no hace falta volver a preguntar.`,
+    };
+  if (me?.waiting === "popup")
+    return { mine: true, text: `${answer.label} ha sacado una ventana. Respóndela en la ventanita de webllm y sigo yo solo.` };
+  if (me?.waiting === "hidden")
+    return {
+      mine: true,
+      text: `La ventanita de webllm está tapada o minimizada, y ${answer.label} no escribe la respuesta mientras no se vea. Déjala a la vista (pequeña en una esquina vale): la respuesta sigue sola.`,
+    };
+  const other = me?.kind === "chat" ? ais.find((a) => a.waiting && a.name !== answer.target) : undefined;
+  if (other?.waiting === "hidden") return { mine: false, text: "La ventanita de webllm está tapada o minimizada: déjala a la vista y sigue sola." };
+  if (other) return { mine: false, text: `Esperando a que termines con ${other.label} en la ventanita de webllm; después ${answer.label} sigue sola.` };
+  return null;
+}
+
 function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAnswer; now: number; onPass: (kind: "pasar" | "criticar", to: Ai) => void }) {
-  const { ask } = useStore();
+  const { ask, estado } = useStore();
+  const waiting = waitingText(answer, estado?.ais ?? []);
   const toast = useToast();
   const elapsed = answer.startedAt ? Math.max(0, Math.round((now - answer.startedAt) / 1000)) : 0;
   const retry = () => ask({ prompt: turn.prompt, to: [answer.target], title: `${turn.title} (otra vez)`, question: turn.question, from: turn.from });
@@ -172,17 +195,29 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
           {replaced && <p className="text-[15px] text-muted">en lugar de {answer.label}</p>}
         </div>
         {answer.phase === "waiting" && <Badge tone="neutral" icon={<span className="animate-dot h-2 w-2 rounded-full bg-current" />}>En cola</Badge>}
-        {answer.phase === "asking" && <WorkingBadge>Esperando… {elapsed} s</WorkingBadge>}
+        {answer.phase === "asking" &&
+          (waiting?.mine ? (
+            <Badge tone="warn" icon={<Hand size={16} aria-hidden />}>
+              Te espera · {elapsed} s
+            </Badge>
+          ) : (
+            <WorkingBadge>Esperando… {elapsed} s</WorkingBadge>
+          ))}
         {answer.phase === "done" && (
           <DoneBadge ok={answer.ok}>{answer.ok ? `Respondió en ${answer.seconds} s` : "No respondió"}</DoneBadge>
         )}
       </div>
       <div className="max-h-[560px] min-h-28 flex-1 overflow-y-auto px-5 py-4 text-[16px]">
-        {answer.phase !== "done" && (
-          <p className="text-ink-2">
-            {answer.phase === "waiting" ? `En cola: ${answer.label} contesta de una en una.` : `${answer.label} está preparando la respuesta…`}
-          </p>
-        )}
+        {answer.phase !== "done" &&
+          (waiting ? (
+            <p className={waiting.mine ? "rounded-xl bg-warn-bg px-4 py-3 font-semibold text-warn-ink" : "text-ink-2"} role="status">
+              {waiting.text}
+            </p>
+          ) : (
+            <p className="text-ink-2">
+              {answer.phase === "waiting" ? `En cola: le pregunto en cuanto termine la anterior.` : `${answer.label} está preparando la respuesta…`}
+            </p>
+          ))}
         {answer.phase === "done" && answer.ok && <Markdown text={answer.text} />}
         {answer.phase === "done" && !answer.ok && <ProblemBox code={answer.code} ai={answer.target} onRetry={retry} />}
       </div>
