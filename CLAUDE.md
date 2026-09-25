@@ -9,9 +9,8 @@ program in his folders through those chats.
 - **What to build next: `docs/PLAN-v3.md`** (Spanish): cross-model chains ("Mesa de IAs") and a
   real app with an ultra-intuitive, polished UI. Follow its phases, design rules and evidence rules.
 - **Next, in this order (Iván's feedback of 2026-09-25):** PLAN-v3 section "Lo que pidió Iván tras
-  probar la app" → ~~3b~~ and ~~7a~~ (done 2026-09-25, pending Iván's live test), then 7b (add an AI
-  by pasting its URL, optional per-origin permission), then phases 4, 5, 6, then 7c (pick the model
-  inside Qwen/z.ai).
+  probar la app" → ~~3b~~, ~~7a~~, ~~7b~~ and the lost-answer fix (done 2026-09-25, pending Iván's
+  live test), then phases 4, 5, 6, then 7c (pick the model inside Qwen/z.ai).
 
 ## Architecture (what exists and works, verified 2026-09-24)
 
@@ -26,12 +25,13 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 | Path | Role |
 |---|---|
 | `src/webllm_agent/bridge.py` | Local server: `/v1/chat/completions` + `/v1/models` (models `browser/<site>`), extension socket `/ext`, panel `/` + `/panel/*`, admin `/admin/*`, `/health`. Local-only middleware. Logs to `data/logs/bridge.log`. |
-| `extension/background.js` | Service worker: one small "webllm" window with one tab per site, job queue per site, tab rotation, pop-up / CAPTCHA / login / limit / overload detection, notifications. Messages: `job`, `diagnose` (reuses an open tab, never reloads it), `show` (0.4.0: bring the chat forward so Iván can log in). |
+| `extension/background.js` | Service worker: one small "webllm" window with one tab per site, job queue per site, tab rotation, pop-up / CAPTCHA / login / limit / overload detection, notifications. Messages: `job`, `diagnose` (reuses an open tab, never reloads it), `show` (0.4.0: bring the chat forward so Iván can log in), `add_site` (0.5.0). While a chat waits for Iván (`needsHuman`: challenge / popup / hidden = window covered) that time does not count against any job's limit (`jobClock`), that tab stays in front, and `job_alive` tells the bridge every 10 s. A job the bridge sends carries `site_config` {name, url} for sites added from the app. |
+| `extension/common.js`, `add.html`, `add.js` | Address rules shared with the server (`parseChatUrl`, `siteKey`, blocked hosts, `genericSite`), and the "Añadir … a webllm" page: `chrome.permissions.request` for that one origin (needs Iván's click), then `add_test` → open the site, find the box, `add_ready` (the bridge sends the "pong" test through the guard). |
 | `extension/driver.js` | Injected in the chat page (MAIN world): state, insert, send, capture (hooks the page's own copy button → exact markdown), HTML→markdown fallback, diagnose. |
 | `extension/sites.js` | Per-site selectors (qwen, deepseek, zai, meta). Qwen/DeepSeek/Meta selectors are first drafts. |
 | `src/webllm_agent/broadcaster.py` | `webllm ask`: one prompt to many targets, concurrent across upstreams, journal. `verify_run` checks chain + manifest + response/message files. |
 | `src/webllm_agent/flows.py` | Chain engine ("Mesa de IAs", PLAN-v3 phase 1): steps with `{{input}}` / `{{step}}` / `{{step.ai}}` placeholders (single pass), parallel when independent, one call at a time per upstream, `on_error` stop / wait / fallback, `error_code()`, journal per call + `flow_end`, `estimate_messages()`, templates (consejo, reparto, debate, cadena). `webllm cadena`. |
-| `src/webllm_agent/appapi.py` | The app's server side, mounted by the bridge: `/app/` (built app, token injected, strict CSP) and `/api/estado`, `/api/preguntar` (SSE; a one-step flow), `/api/historial[/<id>[/exportar]]`, `/api/reanudar`, `/api/comprobar` (reads a chat's login state, sends nothing), `/api/conectar` (same + `show` when there is no session; the app then polls `comprobar` every 3 s up to 3 min), `/api/encender-omniroute`, `/api/encender-local`. |
+| `src/webllm_agent/appapi.py` | The app's server side, mounted by the bridge: `/app/` (built app, token injected, strict CSP) and `/api/estado`, `/api/preguntar` (SSE; a one-step flow), `/api/historial[/<id>[/exportar]]`, `/api/reanudar`, `/api/comprobar` (reads a chat's login state, sends nothing), `/api/conectar` (same + `show` when there is no session; the app then polls `comprobar` every 3 s up to 3 min), `/api/encender-omniroute`, `/api/encender-local`, `/api/anadir` (+ `GET /api/anadir/<id>` progress), `/api/quitar`, `/api/icono/<key>`. Added sites live in `data/state/custom_ais.json` (+ `icons/`), never in `data/config.yaml` (in git). `estado` gives each AI `custom`, `icon`, `waiting`. |
 | `src/webllm_agent/local.py` | AIs "En tu PC" (PLAN-v3 7a): discovers LM Studio (:1234) / Ollama (:11434) / `local_servers` in config, lists `/v1/models` minus embeddings, remembers them in `data/state/local_models.json`, gateway `local` (no guard, one call at a time per server, the server's own model id), start command (`lms server start` / `ollama serve`). Providers are named `<server>:<model>`. |
 | `app/` | The app source (React 19 + Vite + TypeScript + Tailwind 4 + Radix + Lucide + Inter). Screens in `app/src/screens/`, design-system pieces in `app/src/ui/`, tokens in `app/src/styles.css` (all text pairs AA in light and dark). Built into `src/webllm_agent/static/app/` (committed). |
 | `src/webllm_agent/journal.py` | Append-only JSONL chained by sha256 (+ `run.json` against truncation). |
@@ -63,7 +63,7 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ```bash
 python -m pip install -e .
-python -m pytest -q          # 144 passing on 2026-09-25 (clean venv, no OmniRoute key)
+python -m pytest -q          # 166 passing on 2026-09-25 (clean venv, no OmniRoute key; the 3 real-Chromium tests need node, app/node_modules, Chromium, openssl)
 ```
 
 App (only for whoever programs it; Iván's PC never needs npm):
@@ -84,6 +84,12 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
 - `tests/test_local.py`: a fake LM Studio (models incl. an embedding one, concurrency counter).
 - `scripts/app_demo.py` also fakes LM Studio, an installed-but-off Ollama, and a Meta AI that
   "logs in" 6 s after `show` (to see "Conectar" turn green without a second click).
+- `tests/extension/` (`test_extension_driver.py` runs them): **the real extension in Chromium** with
+  the real bridge (`app_demo.py --sin-chrome`) and `fake_chat.html` served over https under
+  `*.test` names (`harness.mjs`): `generic_driver.mjs`, `add_flow.mjs` (add a site),
+  `captcha_flow.mjs` (a verification solved after 20 s with a 10 s limit; a covered window). Only
+  Chrome's permission prompt and window occlusion are simulated (headless never reports a covered
+  window, so the page is told `document.hidden`). Chromium must get `--no-proxy-server` here.
 - Watch out for `\b`, `\t` in Windows paths written from scripts: a literal backspace once ended up
   in this file. Check with `grep -P '[\x00-\x08]'`.
 - Live-only scripts (need Iván's PC): `tests/golden/golden.py`, `tests/aider_sandbox.py`,
@@ -96,6 +102,14 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   for a CAPTCHA/pop-up that Iván must answer.
 - **Capture via the page's own "copy" button** (hook `navigator.clipboard.writeText`) gives exact
   markdown; DOM→markdown is only a fallback. Don't click unknown buttons (could be "regenerate").
+- **Time waiting for Iván must never count as the chat being slow** (2026-09-25, his live report):
+  the answer limit ran while he solved a CAPTCHA, the app hung up at 7 min while the bridge waited 9,
+  rotation took the CAPTCHA tab away every 2 s, and a covered window stopped the page while the clock
+  ran; the late answer reached nobody. Keep every wait layer longer than the one below it, and keep
+  "waiting for Iván" out of the clocks.
+- **The chain engine asks the browser chats one at a time** (`upstream_key("browser/x") == "browser"`),
+  although the bridge/extension allow one per site in parallel with tab rotation. Parallel was never
+  tested on Iván's PC; change it only with a live test.
 - **Parallel jobs raced creating windows** → `webllmWindow()` shares one creation promise; ids live
   in `chrome.storage.local`.
 - **"Model is currently at capacity"** is not an account limit (`site_busy`, 503, no pause).

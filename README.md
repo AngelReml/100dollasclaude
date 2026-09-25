@@ -31,6 +31,7 @@ folder on your PC.
 | Chain engine ("Mesa de IAs") | `src/webllm_agent/flows.py`: steps that use earlier answers, 4 templates, `webllm cadena` | tests pass; live run pending (PLAN-v3 phase 1) |
 | App | `app/` (React + Vite + TS + Tailwind), built into `src/webllm_agent/static/app/`, served at `http://127.0.0.1:20130/app/` with its API (`src/webllm_agent/appapi.py`); opened by `WEBLLM.cmd` | Inicio, Preguntar, Historial + first-time guide; tests + screenshots in `docs/capturas/fase3/`; live test pending (PLAN-v3 phase 3) |
 | Local models | `src/webllm_agent/local.py`: LM Studio / Ollama models listed as "En tu PC" in the app, called directly (no OmniRoute, no account guard, one call at a time per program) | tests + fake LM Studio; live test pending (PLAN-v3 7a) |
+| Add a chat site by its address | App "Añadir otra IA" → extension 0.5.0 asks Chrome for permission on that one site, the bridge sends one guarded test message, the site is saved in `data/state/custom_ais.json` (never Claude/ChatGPT) | real extension + bridge in Chromium against a fake https chat site; live test pending (PLAN-v3 7b) |
 | Next | Add an AI by URL, Mesa de IAs screen, Programar, single icon | planned: `docs/PLAN-v3.md` 7b, phases 2, 4-6 |
 
 Providers are mapped in `data/config.yaml` (name → model id, in priority
