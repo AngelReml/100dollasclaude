@@ -28,7 +28,9 @@ folder on your PC.
 | Coding agent | [aider](https://aider.chat) 0.86.2 (isolated via `uv tool`), launched with `aider-omniroute.cmd` | working |
 | Broadcaster | `webllm ask` (this package) | working |
 | Chrome extension + bridge | `extension/` (MV3) + `src/webllm_agent/bridge.py` on `127.0.0.1:20130`: the user's Chrome chats as `browser/<site>` models | working (z.ai, DeepSeek verified) |
-| Next | Cross-model chains + real app | planned: `docs/PLAN-v3.md` |
+| Chain engine ("Mesa de IAs") | `src/webllm_agent/flows.py`: steps that use earlier answers, 4 templates, `webllm cadena` | tests pass; live run pending (PLAN-v3 phase 1) |
+| App | `app/` (React + Vite + TS + Tailwind), built into `src/webllm_agent/static/app/`, served at `http://127.0.0.1:20130/app/` with its API (`src/webllm_agent/appapi.py`); opened by `WEBLLM.cmd` | Inicio, Preguntar, Historial + first-time guide; tests + screenshots in `docs/capturas/fase3/`; live test pending (PLAN-v3 phase 3) |
+| Next | Mesa de IAs screen, Programar, single icon | planned: `docs/PLAN-v3.md` phases 2, 4-6 |
 
 Providers are mapped in `data/config.yaml` (name → model id, in priority
 order): `browser/*` models are the chat pages driven in the user's own Chrome
@@ -38,6 +40,7 @@ go through OmniRoute. Claude and ChatGPT/Codex are excluded and always refused.
 ## Commands
 
 ```bat
+WEBLLM.cmd                                :: starts everything and opens the app (chrome --app)
 "1 - INSTALAR (solo una vez).cmd"         :: starts everything, opens chrome://extensions, copies the extension path
 "2 - PROBAR TODO.cmd"                     :: real end-to-end check, BIEN / MAL per item (webllm probar)
 PREGUNTAR.cmd                             :: ask all AIs (or one)
@@ -45,6 +48,8 @@ PROGRAMAR.cmd                             :: drop a project folder on it; aider 
 REANUDAR.cmd                              :: lift pauses after fixing an account
 herramientas\webllm.cmd ask "prompt" --to todas|qwen|deepseek|zai-chat|meta|zai|groq|nemotron|<model-id>
 herramientas\webllm.cmd status | journal verify --all | puente diagnosticar <site>
+herramientas\webllm.cmd cadena prueba|consejo|reparto|debate|cadena|archivo [--gasto]
+herramientas\probar-cadena.cmd            :: real "Reparto + integración" with 2 Chrome chats + 1 API AI
 herramientas\start-omniroute.cmd / stop-omniroute.cmd / iniciar.cmd / aider-omniroute.cmd
 ```
 

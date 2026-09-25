@@ -296,3 +296,14 @@ def test_history_reads_old_ask_runs_and_flags_tampering(tmp_path, mock_server):
             _, hist, _ = await a.get("/api/historial")
             assert [r["lock"] for r in hist["runs"]] == [False, True]
     run(go())
+
+
+def test_the_compiled_app_is_in_the_repo():
+    """Iván's PC never runs npm: the built app must be committed (cd app && npm run build)."""
+    from webllm_agent.appapi import APP_DIR
+    index = (APP_DIR / "index.html").read_text(encoding="utf-8")
+    assert "__WEBLLM_TOKEN__" in index
+    scripts = [line for line in index.splitlines() if "<script" in line]
+    assert scripts and all('src="/app/assets/' in line for line in scripts)  # no inline code (CSP)
+    for name in [part.split('"')[0] for part in index.split("/app/assets/")[1:]]:
+        assert (APP_DIR / "assets" / name).is_file(), name

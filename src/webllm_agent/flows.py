@@ -338,9 +338,6 @@ async def run_flow(
     resolved = validate(cfg, flow)
     run_id = run_id or new_run_id()
     run_dir = cfg.paths.runs_dir / run_id
-    (run_dir / "messages").mkdir(parents=True, exist_ok=True)
-    (run_dir / "responses").mkdir(parents=True, exist_ok=True)
-    (run_dir / "flow.json").write_text(json.dumps(flow_to_dict(flow), indent=2, ensure_ascii=False), encoding="utf-8")
     jpath = run_dir / journal.JOURNAL_NAME
     step_ids = {s.id for s in flow.steps}
     deps = {s.id: dependencies(s, step_ids) for s in flow.steps}
@@ -349,12 +346,6 @@ async def run_flow(
     locks: dict[str, asyncio.Lock] = {}
     stopped = False
     counter = 0
-    notices: list[str] = []
-
-    await _emit(emit, {"type": "flow_start", "run_id": run_id, "name": flow.name, "template": flow.template,
-                       "steps": [{"id": s.id, "title": s.title or s.id, "to": list(s.to),
-                                  "labels": [_label(cfg, n) for n in s.to]} for s in flow.steps],
-                       "estimate": estimate_messages(cfg, flow)})
 
     def log_call(step: Step, message_file: str, message_sha: str, outcome: Outcome, attempt: str,
                  target: str) -> Answer:
@@ -393,14 +384,22 @@ async def run_flow(
 
     async with httpx.AsyncClient(transport=transport) as client:
         if any(p.gateway == "omniroute" for ps in resolved.values() for p in ps):
-            await check_gateway(client, cfg.base_url, api_key)
+            await check_gateway(client, cfg.base_url, api_key)  # before anything is written or sent
+        (run_dir / "messages").mkdir(parents=True, exist_ok=True)
+        (run_dir / "responses").mkdir(parents=True, exist_ok=True)
+        (run_dir / "flow.json").write_text(json.dumps(flow_to_dict(flow), indent=2, ensure_ascii=False),
+                                           encoding="utf-8")
+        await _emit(emit, {"type": "flow_start", "run_id": run_id, "name": flow.name, "template": flow.template,
+                           "steps": [{"id": s.id, "title": s.title or s.id, "to": list(s.to),
+                                      "labels": [_label(cfg, n) for n in s.to]} for s in flow.steps],
+                           "estimate": estimate_messages(cfg, flow)})
 
         async def call(step: Step, provider: ProviderConfig, message: str) -> Outcome:
             lock = locks.setdefault(upstream_key(provider.model), asyncio.Lock())
             async with lock:
                 return await _run_target(provider, prompt=message, client=client, cfg=cfg, api_key=api_key,
-                                         guard=guard, timeout_s=timeout_s, notify=notices.append,
-                                         bridge_key=bridge_key)
+                                         guard=guard, timeout_s=timeout_s, notify=lambda _m: None,
+                                         bridge_key=bridge_key)  # guard waits show as "esperando"
 
         async def ask(step: Step, target: str, message: str, message_file: str, message_sha: str) -> Answer:
             provider = resolved[target][0]

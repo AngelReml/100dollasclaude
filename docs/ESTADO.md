@@ -1,4 +1,4 @@
-# ESTADO — webllm-agent (24-sep-2026)
+# ESTADO — webllm-agent (25-sep-2026)
 
 > 🚧 **EN CONSTRUCCIÓN.**
 > - La pieza principal ya está hecha: **tu Chrome escribe en los chats de IA como si fueran una API**, y aider programa con ellos.
@@ -43,6 +43,26 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 25-sep-2026 (programado por Claude Code desde GitHub)
+
+1. **La app de webllm.** Doble clic en **`WEBLLM`**: se enciende todo y se abre una ventana propia.
+   - **Inicio:** un semáforo por cada pieza y cada IA, con el botón que arregla cada problema.
+   - **Preguntar:** escribes una vez, eliges a quién con un clic y ves las respuestas una al lado de otra. En cada respuesta tienes **Pásasela a…**, **Que la critique…** y **Copiar**.
+   - **Historial:** todo lo que has preguntado, con buscador, **candado verde** si nadie lo ha tocado y botón **Exportar**.
+   - **Guía de primera vez:** 3 pasos que se ponen en verde solos.
+   - Modo claro y oscuro (abajo a la izquierda). Capturas en `docs/capturas/fase3/`.
+2. **Cadenas de IAs (el motor de la futura "Mesa de IAs").** Doble clic en **`herramientas\probar-cadena`**:
+   - DeepSeek y z.ai (chat) hacen cada uno una parte de un encargo;
+   - z.ai por API lo une todo en un informe;
+   - al final te dice si el registro tiene el **candado verde**.
+   - Gasta 1 mensaje de cada chat. Antes de empezar te dice cuánto gastará y puedes cancelar.
+
+| Qué | Probado aquí (en la nube, con dobles de prueba) | Falta probarlo en tu PC |
+|---|---|---|
+| App: Inicio, Preguntar, Historial, guía | Sí: servidor de verdad con una extensión y un OmniRoute de mentira; 26 capturas revisadas; uso con teclado | Abrirla con `WEBLLM` y hacer una pregunta sin ayuda |
+| Cadenas | Sí: 39 tests, incluido "Reparto + integración" con 2 chats de mentira y 1 IA por API | `herramientas\probar-cadena` con tus chats de verdad |
+| Todo lo anterior sigue igual | 132 tests en verde | — |
+
 ## Novedades del 24-sep-2026 (tarde)
 
 - **El panel de pruebas está en http://127.0.0.1:20130.** `2 - PROBAR TODO` lo abre.
@@ -83,11 +103,14 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 
 - **Lo que usas:**
   - `LEEME - EMPIEZA AQUI.txt`: la guía corta.
-  - Los 5 archivos de doble clic, en la carpeta principal.
+  - `WEBLLM`: la app.
+  - Los otros archivos de doble clic, en la carpeta principal.
 - **Por dentro:**
   - `extension/`: la extensión de Chrome.
   - `src/webllm_agent/bridge.py`: el puente.
   - `src/webllm_agent/selftest.py`: PROBAR TODO.
+  - `src/webllm_agent/flows.py`: el motor de cadenas.
+  - `app/`: la app (lo que se compila va a `src/webllm_agent/static/app/`).
   - `herramientas\`: los comandos avanzados.
 - **Configuración y registros:**
   - `data/config.yaml`: nombres, orden, límites.

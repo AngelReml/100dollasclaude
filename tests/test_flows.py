@@ -211,6 +211,7 @@ def test_gateway_down_fails_before_anything_is_written_or_sent(tmp_path):
     cfg = make_config(tmp_path, "http://127.0.0.1:9/v1", [P("a", "a/ok")])
     with pytest.raises(GatewayError):
         go(cfg, Flow("x", (Step("s1", ("a",), "q"),)))
+    assert list(cfg.paths.runs_dir.iterdir()) == []
 
 
 # ------------------------------------------------------------------ journal

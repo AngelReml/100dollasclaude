@@ -2,6 +2,20 @@
 
 Fecha: 24-sep-2026. Hecho con la skill `experto-cowork-operativo`. Es un **plan**: todavía no hay código de esto.
 
+## Cómo va (25-sep-2026)
+
+| Fase | Estado | Qué falta |
+|---|---|---|
+| **1. Motor de cadenas** | **Hecho y probado con tests** (39 tests: plantillas, paralelo, reintentos, respaldo, candado). `webllm cadena` y `herramientas\probar-cadena.cmd` | La ejecución de verdad con tus chats: la haces tú con `probar-cadena` |
+| 2. API de la app + eventos en directo | **En parte:** lo que necesitan Inicio, Preguntar e Historial (13 tests) | Rutas de cadenas para la Mesa y los eventos de una cadena larga |
+| **3. App: Inicio, Preguntar, Historial** | **Hecho**, con guía de primera vez, modo claro y oscuro, capturas en `docs/capturas/fase3/` y revisión automática sin fallos | Tu prueba sin ayuda: doble clic en `WEBLLM` y una pregunta a todas |
+| 4-6 | Sin empezar | — |
+
+Diferencias con el plan, dichas claras:
+- **Logos:** cada IA lleva un círculo de su color con su inicial, no el logo oficial.
+- **Piezas del diseño todavía sin hacer**, porque ninguna pantalla de la fase 3 las usa: la `Línea de tiempo` (el avance de cada IA se ve en su tarjeta) y la `Ventana de confirmación`. Llegan con las fases 4 y 5.
+- **Capturas de la guía:** son reales, de la página de extensiones de Chromium en español. Tu Chrome puede variar un poco.
+
 ## Veredicto
 
 **Combinación.** Se construye como código en este mismo proyecto:
