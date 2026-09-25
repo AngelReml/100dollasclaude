@@ -25,13 +25,16 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 | `extension/background.js` | Service worker: one small "webllm" window with one tab per site, job queue per site, tab rotation, pop-up / CAPTCHA / login / limit / overload detection, notifications. |
 | `extension/driver.js` | Injected in the chat page (MAIN world): state, insert, send, capture (hooks the page's own copy button → exact markdown), HTML→markdown fallback, diagnose. |
 | `extension/sites.js` | Per-site selectors (qwen, deepseek, zai, meta). Qwen/DeepSeek/Meta selectors are first drafts. |
-| `src/webllm_agent/broadcaster.py` | `webllm ask`: one prompt to many targets, concurrent across upstreams, journal. |
+| `src/webllm_agent/broadcaster.py` | `webllm ask`: one prompt to many targets, concurrent across upstreams, journal. `verify_run` checks chain + manifest + response/message files. |
+| `src/webllm_agent/flows.py` | Chain engine ("Mesa de IAs", PLAN-v3 phase 1): steps with `{{input}}` / `{{step}}` / `{{step.ai}}` placeholders (single pass), parallel when independent, one call at a time per upstream, `on_error` stop / wait / fallback, `error_code()`, journal per call + `flow_end`, `estimate_messages()`, templates (consejo, reparto, debate, cadena). `webllm cadena`. |
+| `src/webllm_agent/appapi.py` | The app's server side, mounted by the bridge: `/app/` (built app, token injected, strict CSP) and `/api/estado`, `/api/preguntar` (SSE; a one-step flow), `/api/historial[/<id>[/exportar]]`, `/api/reanudar`, `/api/comprobar` (reads a chat's login state, sends nothing), `/api/encender-omniroute`. |
+| `app/` | The app source (React 19 + Vite + TypeScript + Tailwind 4 + Radix + Lucide + Inter). Screens in `app/src/screens/`, design-system pieces in `app/src/ui/`, tokens in `app/src/styles.css` (all text pairs AA in light and dark). Built into `src/webllm_agent/static/app/` (committed). |
 | `src/webllm_agent/journal.py` | Append-only JSONL chained by sha256 (+ `run.json` against truncation). |
 | `src/webllm_agent/guard.py` | Account guard: 1 in flight, spacing, daily cap, cooldowns persisted in `data/state/*.json`. |
 | `src/webllm_agent/selftest.py`, `panel.html` | "Probar todo" checks (events) + the current test panel page. |
 | `src/webllm_agent/config.py`, `data/config.yaml` | Providers (name → model, kind `browser`/`api`, gateway `bridge`/`omniroute`), guard limits. |
 | `src/webllm_agent/client.py` | Async OpenAI-compatible client; sends OmniRoute no-cache/no-memory/no-compression headers. |
-| Root `*.cmd` | Iván's double-click entry points (Spanish). Helpers in `herramientas/`. `ACTUALIZAR.cmd` = git pull + reinstall + restart. |
+| Root `*.cmd` | Iván's double-click entry points (Spanish). `WEBLLM.cmd` opens the app (`chrome --app=http://127.0.0.1:20130/app/`). Helpers in `herramientas/` (`probar-cadena.cmd` = real chain test). `ACTUALIZAR.cmd` = git pull + reinstall + restart. |
 | `legacy/` | Retired v1 Playwright/Claude code. Do not revive. |
 
 ## Hard rules (non-negotiable)
@@ -55,12 +58,24 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ```bash
 python -m pip install -e .
-python -m pytest -q          # 80 passing on 2026-09-25 (clean venv, no OmniRoute key)
+python -m pytest -q          # 132 passing on 2026-09-25 (clean venv, no OmniRoute key)
 ```
+
+App (only for whoever programs it; Iván's PC never needs npm):
+
+```bash
+cd app && npm ci && npm run build        # type-check + build into src/webllm_agent/static/app/ (commit it)
+python scripts/app_demo.py --port 20199  # real bridge + app, fake Chrome extension + fake OmniRoute
+node app/scripts/screenshots.mjs docs/capturas/<fase> 20199   # light/dark x 1280/1920 + layout checks
+```
+
+`screenshots.mjs` fails loudly on horizontal overflow, clipped text, text under 15 px and answer
+footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look at the images too.
 
 - `tests/conftest.py`: mock OpenAI-compatible HTTP server (behaviour chosen by model id suffix).
 - `tests/test_bridge.py`: a **fake extension over a real WebSocket** + bridge in-process. Use the same
-  pattern for any new bridge/app/chain feature.
+  pattern for any new bridge/app/chain feature (`tests/test_flows.py`, `tests/test_appapi.py` do).
+- The mock server also has `r503` and `flaky` (503 once, then OK) for retry paths.
 - Live-only scripts (need Iván's PC): `tests/golden/golden.py`, `tests/aider_sandbox.py`,
   `tests/bridge_aider_check.py`, `webllm probar`.
 

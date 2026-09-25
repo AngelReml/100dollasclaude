@@ -2,6 +2,7 @@
 
 Subcommands:
     ask "<prompt>" --to todas|<name>|<model-id>   send to all providers or one
+    cadena prueba|consejo|reparto|debate|cadena|archivo ...   run a chain of AIs
     journal verify [RUN_ID] [--all]               check the hash chain of runs
     status                                        providers, models, guard state
     guard clear <name>                            lift a cooldown after fixing a session
@@ -24,7 +25,9 @@ from ..broadcaster import (
 )
 from ..bridge import SITES, call_admin, load_token
 from ..bridge import serve as serve_bridge
+from .. import flows
 from ..config import AppConfig, ConfigError, load_config
+from ..flows import FlowError
 from ..guard import Guard
 from ..omniroute import OmniRouteKeyMissing, load_api_key
 
@@ -66,6 +69,25 @@ def _build_parser() -> argparse.ArgumentParser:
     pu.add_argument("sitio", nargs="?", help="qwen | deepseek | zai | meta")
 
     sub.add_parser("probar", help="Check everything for real and say BIEN / MAL per item")
+
+    ca = sub.add_parser("cadena", help="Run a chain of AIs where later steps use earlier answers")
+    ca.add_argument("plantilla", choices=["prueba", "consejo", "reparto", "debate", "cadena", "archivo"],
+                    help="prueba = example 'Reparto + integración' with 2 Chrome chats and 1 API AI")
+    ca.add_argument("--pregunta", help="consejo / debate: the question")
+    ca.add_argument("--ias", help="consejo: comma-separated AI names (default: every Chrome chat)")
+    ca.add_argument("--juez", help="consejo: the judge (default: the first API AI)")
+    ca.add_argument("--objetivo", help="reparto: the overall goal")
+    ca.add_argument("--encargo", action="append", default=[], metavar="IA=TEXTO", help="reparto: one task per AI")
+    ca.add_argument("--integra", help="reparto: the AI that joins the parts (default: the first API AI)")
+    ca.add_argument("--a", help="debate: the AI that answers and corrects")
+    ca.add_argument("--b", help="debate: the AI that looks for flaws")
+    ca.add_argument("--vueltas", type=int, default=1, help="debate: rounds (1-5)")
+    ca.add_argument("--entrada", help="cadena: the starting text")
+    ca.add_argument("--eslabon", action="append", default=[], metavar="IA=INSTRUCCION",
+                    help="cadena: one link per AI, in order")
+    ca.add_argument("--ruta", type=Path, help="archivo: a chain saved as JSON")
+    ca.add_argument("--gasto", action="store_true", help="only show how many messages each AI would get")
+    ca.add_argument("--si", action="store_true", help="do not ask before sending")
     return p
 
 
@@ -184,6 +206,122 @@ def _cmd_puente(cfg: AppConfig, args: argparse.Namespace) -> int:
     return 0 if code == 200 else 1
 
 
+PROVEN_CHATS = ("zai-chat", "deepseek")
+
+
+def _pairs(items: list[str], what: str) -> list[tuple[str, str]]:
+    out = []
+    for item in items:
+        ai, sep, text = item.partition("=")
+        if not sep or not ai.strip() or not text.strip():
+            raise FlowError(f"Cada {what} va así: nombre-de-IA=texto (me llegó «{item}»).")
+        out.append((ai.strip(), text.strip()))
+    return out
+
+
+def _build_flow(cfg: AppConfig, args: argparse.Namespace) -> flows.Flow:
+    chats = [p.name for p in cfg.enabled_providers if p.kind == "browser"]
+    apis = [p.name for p in cfg.enabled_providers if p.kind == "api"]
+    if args.plantilla in ("prueba", "consejo", "reparto") and not (args.juez or args.integra) and not apis:
+        raise FlowError("No hay ninguna IA por API activada para unir o juzgar (mira data/config.yaml).")
+    if args.plantilla == "prueba":
+        # Chats Iván has already seen answer in his Chrome (docs/ESTADO.md, 24-sep-2026) go first.
+        chats.sort(key=lambda name: name not in PROVEN_CHATS)
+        if len(chats) < 2:
+            raise FlowError("La prueba necesita 2 chats de Chrome activados en data/config.yaml.")
+        return flows.split_and_merge(cfg, "Comparar el café y el té para alguien que quiere dormir mejor. "
+                                          "Respuestas cortas: máximo 120 palabras por parte.", [
+            (chats[0], "Qué efectos tiene el café en el sueño y cuánto es razonable tomar."),
+            (chats[1], "Qué efectos tiene el té (verde y negro) en el sueño y cuánto es razonable tomar."),
+        ], apis[0])
+    if args.plantilla == "consejo":
+        council = [x.strip() for x in args.ias.split(",")] if args.ias else chats
+        if not args.pregunta or len(council) < 2:
+            raise FlowError("Consejo: pon --pregunta y al menos 2 IAs en --ias.")
+        return flows.council_and_judge(cfg, args.pregunta, council, args.juez or apis[0])
+    if args.plantilla == "reparto":
+        if not args.objetivo or len(args.encargo) < 2:
+            raise FlowError("Reparto: pon --objetivo y al menos 2 --encargo IA=texto.")
+        return flows.split_and_merge(cfg, args.objetivo, _pairs(args.encargo, "encargo"), args.integra or apis[0])
+    if args.plantilla == "debate":
+        if not (args.pregunta and args.a and args.b):
+            raise FlowError("Debate: pon --pregunta, --a y --b.")
+        return flows.debate(cfg, args.pregunta, args.a, args.b, args.vueltas)
+    if args.plantilla == "cadena":
+        if not args.entrada or not args.eslabon:
+            raise FlowError("Cadena: pon --entrada y al menos un --eslabon IA=instrucción.")
+        return flows.chain(cfg, args.entrada, _pairs(args.eslabon, "eslabón"))
+    if not args.ruta:
+        raise FlowError("Archivo: pon --ruta con el archivo .json de la cadena.")
+    return flows.load_flow(args.ruta)
+
+
+def _print_event(ev: dict) -> None:
+    kind = ev["type"]
+    if kind == "step_start":
+        print(f"\n>> {ev['title']}", flush=True)
+    elif kind == "target_start":
+        print(f"   {ev['label']} está escribiendo...", flush=True)
+    elif kind == "target_wait":
+        print(f"   {ev['label']} falló ({ev['error']}). Espero {ev['seconds']:.0f} s y lo reintento una vez.", flush=True)
+    elif kind == "target_fallback":
+        print(f"   {ev['label']} falló ({ev['error']}). Se lo pido a {ev['provider_label']}.", flush=True)
+    elif kind == "target_done":
+        if ev["ok"]:
+            who = ev["provider_label"] if ev["provider"] == ev["target"] else f"{ev['provider_label']} (en lugar de {ev['label']})"
+            print(f"   [OK] {who} respondió en {ev['seconds']} s", flush=True)
+        else:
+            print(f"   [FALLO] {ev['label']}: {ev['error']}", flush=True)
+        for notice in ev.get("notices") or []:
+            print(f"   >> {notice}", flush=True)
+    elif kind == "step_done" and ev["status"] == "skipped":
+        print(f"   (paso «{ev['step']}» sin hacer: la cadena se paró antes)", flush=True)
+
+
+def _cmd_cadena(cfg: AppConfig, args: argparse.Namespace) -> int:
+    try:
+        flow = _build_flow(cfg, args)
+        estimate = flows.estimate_messages(cfg, flow)
+    except FlowError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    label = {p.name: p.display for p in cfg.providers.values()}
+    spend = ", ".join(f"{label.get(n, n)} {c}" for n, c in estimate["normal"].items())
+    print(f"Cadena «{flow.name}», {len(flow.steps)} pasos. Mensajes que gastará: {spend}.")
+    extra = {n: c - estimate["normal"].get(n, 0) for n, c in estimate["worst"].items()
+             if c > estimate["normal"].get(n, 0)}
+    if extra:
+        print("Si algo falla, como mucho: " + ", ".join(f"{label.get(n, n)} +{c}" for n, c in extra.items()) + ".")
+    if args.gasto:
+        return 0
+    if not args.si and sys.stdin.isatty():
+        if input("Pulsa Enter para empezar (o escribe n y Enter para cancelar): ").strip().lower() in ("n", "no"):
+            print("Cancelado. No se ha enviado nada.")
+            return 0
+    try:
+        api_key = load_api_key()
+    except OmniRouteKeyMissing:
+        api_key = ""
+    bridge_key = load_token(cfg.paths.state_dir)
+    try:
+        run = asyncio.run(flows.run_flow(cfg, flow, api_key=api_key, guard=_guard(cfg), bridge_key=bridge_key,
+                                         emit=_print_event))
+    except (FlowError, GatewayError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
+    last = run.steps[flow.steps[-1].id]
+    print()
+    if last.answers:
+        print("=" * 30 + f" RESULTADO FINAL ({flow.steps[-1].title or flow.steps[-1].id}) " + "=" * 30)
+        print(flows.combined_answer(cfg, last).rstrip())
+    verdict = {"ok": "todo bien", "partial": "terminada, pero alguna IA no respondió",
+               "stopped": "PARADA: un paso se quedó sin ninguna respuesta"}[run.status]
+    print(f"\nCadena {verdict}.")
+    print(f"Registro: data/runs/{run.run_id}/  ·  Candado: "
+          + ("VERDE (nadie lo ha tocado)" if run.verified else "ROJO (el registro no cuadra)"))
+    return 0 if run.status == "ok" and run.verified else 1
+
+
 def _cmd_status(cfg: AppConfig) -> int:
     state = _guard(cfg).status()
     bridge_state = Guard(cfg.paths.state_dir / "bridge_guard.json", cfg.guard).status()
@@ -249,6 +387,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_config(cfg)
     if args.command == "puente":
         return _cmd_puente(cfg, args)
+    if args.command == "cadena":
+        return _cmd_cadena(cfg, args)
     if args.command == "probar":
         from ..selftest import run as run_selftest
         return run_selftest(cfg)

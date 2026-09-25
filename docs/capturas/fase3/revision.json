@@ -1,0 +1,210 @@
+[
+  {
+    "name": "claro-1280-01-guia-paso1",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-02-guia-paso2",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-03-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-04-preguntar-vacio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-05-preguntar-en-curso",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-06-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-07-pasar-dialogo",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-08-pasar-respuesta",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1280-10-historial-detalle",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1920-03-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1920-06-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "claro-1920-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-01-guia-paso1",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-02-guia-paso2",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-03-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-04-preguntar-vacio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-05-preguntar-en-curso",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-06-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-07-pasar-dialogo",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-08-pasar-respuesta",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1280-10-historial-detalle",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1920-03-inicio",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1920-06-preguntar-respuestas",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  },
+  {
+    "name": "oscuro-1920-09-historial",
+    "wrappedFooters": 0,
+    "pageOverflow": false,
+    "mainOverflow": false,
+    "smallText": [],
+    "clipped": []
+  }
+]

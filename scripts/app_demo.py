@@ -1,0 +1,143 @@
+"""Run the real webllm server + app with stand-ins for Chrome and OmniRoute (development only).
+
+    python scripts/app_demo.py [--port 20199] [--data DIR]
+
+Everything the app talks to is real (bridge, app API, chain engine, journal, guard) except:
+- a fake Chrome extension that answers each chat job with a canned Spanish answer
+  (Meta AI answers "no hay sesión" so the error boxes can be seen);
+- a fake OmniRoute that answers the API models.
+Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
+where Iván's Chrome and OmniRoute are not reachable. Open http://127.0.0.1:<port>/app/
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+import yaml
+from aiohttp import ClientSession, web
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from webllm_agent.bridge import Bridge  # noqa: E402
+from webllm_agent.config import load_config  # noqa: E402
+
+TOKEN = "demo-token"
+
+ANSWERS = {
+    "qwen": ("La **inflación** es cuando las cosas cuestan cada vez más dinero.\n\n"
+             "- Si hoy un bocadillo cuesta 3 €, dentro de un año puede costar 3,20 €.\n"
+             "- Con el mismo dinero compras **menos cosas**.\n"
+             "- Pasa cuando hay mucho dinero circulando o cuando producir cuesta más.\n\n"
+             "Un poco de inflación (2 % al año) es normal; mucha es un problema."),
+    "deepseek": ("Imagina que tienes **10 €** de paga y cada semana compras chuches.\n\n"
+                 "1. Hoy te dan 10 chuches.\n2. El año que viene, con los mismos 10 €, solo 9.\n\n"
+                 "Eso es la inflación: **los precios suben y tu dinero vale menos**. "
+                 "Los bancos centrales intentan que suba poco y despacio."),
+    "zai": ("Piensa en la inflación como en un globo que se hincha: los precios suben poco a poco.\n\n"
+            "| Año | Precio del pan |\n|---|---|\n| 2024 | 1,00 € |\n| 2025 | 1,03 € |\n| 2026 | 1,06 € |\n\n"
+            "Por eso tus ahorros \"encogen\" si están quietos en una hucha."),
+}
+API_ANSWERS = {
+    "zai": "**Respuesta corta:** la inflación es la subida general de los precios. Si sube un 3 %, "
+           "lo que costaba 100 € pasa a costar 103 €.",
+    "groq": "La inflación mide cuánto suben los precios de media en un país durante un año. "
+            "Se calcula con una *cesta* de productos típicos (comida, luz, transporte…).",
+    "nemotron": "Inflación = los precios suben ⇒ el dinero compra menos. Ejemplo: un helado de 2 € "
+                "que al año siguiente cuesta 2,10 €.",
+}
+
+
+def fake_omniroute() -> web.Application:
+    async def health(request):
+        return web.json_response({"ok": True})
+
+    async def models(request):
+        return web.json_response({"object": "list", "data": [{"id": m} for m in ("zai/glm-4.7-flash", "groq/x", "nr/x")]})
+
+    async def chat(request):
+        body = await request.json()
+        model = body["model"]
+        await asyncio.sleep(1.2 if model.startswith("groq") else 2.5)
+        prompt = body["messages"][-1]["content"]
+        key = "zai" if model.startswith("zai") else "groq" if model.startswith("groq") else "nemotron"
+        text = API_ANSWERS[key]
+        if "critica" in prompt.lower() or "Otra IA" in prompt or "ojo crítico" in prompt:
+            text = ("**Mi opinión:** la respuesta es correcta y clara. Le añadiría que un poco de inflación "
+                    "es normal (alrededor del 2 %) y que lo peligroso es cuando sube muy deprisa.")
+        return web.json_response({"id": "x", "object": "chat.completion", "model": model,
+                                  "choices": [{"index": 0, "message": {"role": "assistant", "content": text}}]})
+
+    app = web.Application()
+    app.router.add_get("/api/health", health)
+    app.router.add_get("/v1/models", models)
+    app.router.add_post("/v1/chat/completions", chat)
+    return app
+
+
+async def fake_extension(port: int) -> None:
+    delays = {"qwen": 3.0, "deepseek": 5.0, "zai": 4.0, "meta": 1.0}
+    async with ClientSession() as s:
+        while True:
+            try:
+                ws = await s.ws_connect(f"http://127.0.0.1:{port}/ext?token={TOKEN}")
+                break
+            except OSError:
+                await asyncio.sleep(0.3)
+
+        async def answer(job):
+            site = job["site"]
+            await asyncio.sleep(delays.get(site, 2.0))
+            if job.get("type") == "diagnose":
+                state = {"input": site != "meta", "loginWall": site == "meta", "challenge": None}
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": json.dumps({"state": state})})
+            elif site == "meta":
+                await ws.send_json({"type": "result", "id": job["id"], "ok": False, "error": "login_required"})
+            else:
+                text = ANSWERS.get(site, "Respuesta de prueba.")
+                if "Otra IA" in job["prompt"] or "ojo crítico" in job["prompt"]:
+                    text = ("Está bien explicada. Yo añadiría un ejemplo con **sueldos**: si los precios suben un 5 % "
+                            "y tu sueldo solo un 2 %, en realidad eres un 3 % más pobre.")
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": text, "via": "copy-button"})
+
+        async for msg in ws:
+            job = json.loads(msg.data)
+            if job.get("type") in ("job", "diagnose"):
+                asyncio.create_task(answer(job))
+
+
+async def main(port: int, data: Path) -> None:
+    omni = web.AppRunner(fake_omniroute())
+    await omni.setup()
+    site = web.TCPSite(omni, "127.0.0.1", 0)
+    await site.start()
+    omni_port = site._server.sockets[0].getsockname()[1]
+    data.mkdir(parents=True, exist_ok=True)
+    (data / "config.yaml").write_text(yaml.safe_dump({
+        "omniroute": {"base_url": f"http://127.0.0.1:{omni_port}/v1"},
+        "bridge": {"port": port},
+        "guard": {"min_spacing_s": 0, "daily_cap": 150, "cooldown_hours": 6},
+    }), encoding="utf-8")
+    cfg = load_config(data)
+    bridge = Bridge(cfg, TOKEN, timeout_s=30, human_wait_s=0, connect_wait_s=2, launcher=None,
+                    log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
+    bridge.app_api.omniroute_launcher = lambda: print("(demo) encender OmniRoute", flush=True)
+    runner = web.AppRunner(bridge.app())
+    await runner.setup()
+    await web.TCPSite(runner, "127.0.0.1", port).start()
+    asyncio.create_task(fake_extension(port))
+    print(f"App de demostración: http://127.0.0.1:{port}/app/   (datos en {data})", flush=True)
+    await asyncio.Event().wait()
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=20199)
+    ap.add_argument("--data", type=Path, default=None)
+    a = ap.parse_args()
+    asyncio.run(main(a.port, a.data or Path(tempfile.mkdtemp(prefix="webllm-demo-"))))

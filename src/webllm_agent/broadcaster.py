@@ -217,7 +217,7 @@ def _safe(name: str) -> str:
 
 
 def verify_run(run_dir: Path) -> journal.VerifyResult:
-    """Chain check + manifest (truncation) + response files match their hashes."""
+    """Chain check + manifest (truncation) + response and message files match their hashes."""
     jpath = run_dir / journal.JOURNAL_NAME
     if not jpath.exists():
         return journal.VerifyResult(False, 0, None, "journal.jsonl not found")
@@ -232,10 +232,11 @@ def verify_run(run_dir: Path) -> journal.VerifyResult:
             return journal.VerifyResult(False, len(lines), min(len(lines), int(m.get("lines", 0))) + 1,
                                         "journal does not match run.json (lines removed or appended)")
     for n, line in enumerate(lines, start=1):
-        if line.get("response_file"):
-            f = run_dir / line["response_file"]
-            if not f.exists() or journal.sha256_text(f.read_bytes().decode("utf-8")) != line["response_sha256"]:
-                return journal.VerifyResult(False, len(lines), n, f"{line['response_file']} does not match response_sha256")
+        for name_key, sha_key in (("response_file", "response_sha256"), ("message_file", "prompt_sha256")):
+            if line.get(name_key):
+                f = run_dir / line[name_key]
+                if not f.exists() or journal.sha256_text(f.read_bytes().decode("utf-8")) != line[sha_key]:
+                    return journal.VerifyResult(False, len(lines), n, f"{line[name_key]} does not match {sha_key}")
     return res
 
 
