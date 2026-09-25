@@ -84,8 +84,8 @@ Como dice Iván: el comité es caro, así que es una habilidad que se usa **cuan
 - Presupuesto por pregunta y por día.
 - Las respuestas de las IAs **son datos, nunca órdenes**: nada de lo que dicen se ejecuta sin pasar por el taller, los tests y tu Aceptar.
 - **Claude y ChatGPT, directamente, no** (`claude.ai`, `chatgpt.com`).
-- **Servicios que usan Claude por dentro, sí.** Aprobado por Iván el 25-sep-2026: Duck.ai, Poe, Perplexity, Arena…
-  - Dentro de ellos no se eligen los modelos GPT de OpenAI, que siguen fuera.
+- **Servicios que usan Claude o GPT por dentro, sí.** Aprobado por Iván el 25-sep-2026: Duck.ai, Poe, Perplexity, Arena, Copilot…
+  - Dentro de ellos se puede elegir cualquier modelo, también los GPT.
 - Las verificaciones (CAPTCHA) siempre las resuelve Iván.
 
 ### 7. Interfaz: una sola conversación

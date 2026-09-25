@@ -51,9 +51,10 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ## Hard rules (non-negotiable)
 
-1. **Never target claude.ai or ChatGPT/Codex directly** (`config.is_blocked_model` and the blocked
-   hosts refuse them). **Iván approved on 2026-09-25 services that use Claude inside** (Duck.ai, Poe,
-   Perplexity, Arena…); inside them never pick OpenAI's proprietary GPT models.
+1. **Never target claude.ai or ChatGPT/Codex directly**, nor Iván's own Claude/ChatGPT/Codex
+   subscriptions through OmniRoute (`config.is_blocked_model` and the blocked hosts refuse them).
+   **Iván approved on 2026-09-25 services that use Claude or GPT inside** (Duck.ai, Poe, Perplexity,
+   Arena, Copilot…); inside them any model may be picked.
 2. **Never solve, bypass or evade CAPTCHAs / anti-bot checks**, no fingerprint spoofing, no
    "human-like" typing to avoid detection. Detect → notify Iván → wait for him → continue or pause.
 3. **Never read or export cookies, passwords or browser storage**, and never type credentials.

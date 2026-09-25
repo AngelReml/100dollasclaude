@@ -36,6 +36,24 @@
 | D15 | **Primeras skills:** el Comité (de webllm) y tu **prompt-forge** (tu SKILL.md). Después, experto-cowork y "experto GPT" | Suposición: confírmala o cámbiala |
 | D16 | **Seguir tú una conversación directamente en la web queda registrado** (modo observador, sección 3) | Petición de Iván: de 8 respuestas te gusta una y quieres seguir hablando con esa IA en su propia web |
 | D17 | **Webs que se reparan solas** ante cambios de diseño o webs nuevas raras, en 4 capas y sin saltarse nunca un bloqueo anti-bot (sección 3) | Petición de Iván + la crítica número 1 de todas: la fragilidad de la extensión |
+| D18 | **Interfaz ultraintuitiva = la estándar de los chats de IA** (ChatGPT, Claude): conversaciones a la izquierda, selector de modelo arriba, caja de texto abajo con adjuntar, respuesta que se escribe en directo, tarjeta Permitir/Denegar. **webllm no inventa pantallas ni botones nuevos en la conversación**: todo lo suyo entra por piezas que ese estándar ya tiene (sección "La cara") | Petición de Iván. Refuerza D1: el diseño de Open WebUI sigue el de ChatGPT, así que lo que ya sabes usar funciona igual |
+| D19 | **Claude y GPT por dentro de otros servicios, aprobados** (Duck.ai, Poe, Perplexity, Arena, Copilot…), y dentro de ellos se puede elegir cualquier modelo. **Siguen fuera:** `claude.ai` y `chatgpt.com` directos, y tus suscripciones de Claude, ChatGPT o Codex a través de OmniRoute | Decisión de Iván (25-sep-2026). Da al Comité una familia más (OpenAI), y el jurado es mejor con familias distintas |
+
+### La cara (D18): cómo se ve todo lo de webllm sin salir del estándar
+
+| Lo de webllm | Dónde aparece | Igual que en |
+|---|---|---|
+| Elegir IA, modelo o "Automático" | El selector de modelo de arriba, con nombres claros en español y agrupados: "Qwen 3.8 (web)", "GLM-4.7 rápido (API)", "webllm · Automático" | El selector de modelo de ChatGPT o Claude |
+| El Comité | Un "modelo" más: "webllm · Comité". Escribes la idea y la respuesta es el documento de fusión | Elegir un modelo "que piensa más" |
+| El progreso del Comité (roles, veredictos, recuento) | El bloque plegable de razonamiento, encima de la respuesta | El "Pensando…" plegable de ChatGPT o Claude |
+| Una web te espera (verificación, ventana tapada) o se acabó una cuota | Una línea dentro de ese mismo bloque, en español: qué pasó y qué hacer | Los avisos dentro de la respuesta |
+| Acciones (GitHub, tu terminal) | La tarjeta Permitir/Denegar | La aprobación de herramientas de Claude |
+| Skills (Comité, prompt-forge) | La lista de skills de Open WebUI | Las skills de Claude |
+| Conectar tus cuentas de chats web | El panel de webllm (la app actual), abierto desde un enlace, como si fuera "Ajustes → Conectores" | Los conectores en Ajustes |
+
+- **En español.** Si la traducción de Open WebUI no convence, se corrige; se comprueba en F1.
+- **Lo que no uses no se ve.** Las funciones que no se usan se desactivan en la administración de Open WebUI, y los modelos que no quieres ver se ocultan.
+- **Cuando haya duda de diseño, gana lo que hacen ChatGPT y Claude**, no una idea nueva.
 
 ---
 
@@ -115,7 +133,7 @@ Sirve para **evaluar ideas**.
 - **Tiempo:**
   - los chats web van hoy de uno en uno, así que 3 chats × 2 turnos ≈ 3 a 6 minutos;
   - las APIs van en paralelo y tardan segundos;
-  - si en la fase 1 se confirma que los chats pueden ir a la vez, baja.
+  - si en F5 se confirma que dos chats pueden ir a la vez, baja.
 
 ### Lo que necesita por dentro
 
@@ -228,21 +246,24 @@ Cada fase tiene:
   6. Tu servidor MCP local de terminal funciona a través de `mcpo`.
   7. Se importa tu SKILL.md de prompt-forge y se usa.
   8. Desde el móvil con datos (no wifi), por Tailscale Serve, se chatea.
-- **Probado aquí:** las comprobaciones 1 a 5, con Open WebUI instalado en la nube (pip, Python 3.11) contra el webllm de demostración. Con la salida de cada comprobación.
+  9. La interfaz sale en español, y un aviso de webllm (texto de razonamiento) se ve en el bloque plegable, encima de la respuesta.
+  10. **Prueba sin guía:** sin instrucciones, haces 6 cosas: empezar una conversación, elegir un modelo, adjuntar un archivo, parar una respuesta, encontrar una conversación antigua y aprobar una herramienta. Se apunta cuáles te salen a la primera.
+- **Probado aquí:** las comprobaciones 1 a 5 y 9, con Open WebUI instalado en la nube (pip, Python 3.11) contra el webllm de demostración. Con la salida de cada comprobación y capturas.
 - **En tu PC:**
   - instalar Open WebUI Desktop (`winget install OpenWebUI.OpenWebUI` o el instalador);
-  - las comprobaciones 6 a 8;
+  - las comprobaciones 6 a 8 y 10;
   - una guía paso a paso con capturas.
 - **Salida:**
-  - si pasan 7 u 8 comprobaciones, queda Open WebUI;
-  - si pasan menos, se prueba LibreChat con la misma lista; si tampoco, Plan C (la app propia).
+  - queda Open WebUI si pasan la 1, la 2, la 3 y la 10 (con las 6 cosas a la primera, o con lo que falle arreglado cambiando nombres u ocultando funciones), y de las demás falla como mucho una;
+  - si no, se prueba LibreChat con la misma lista; si tampoco, Plan C (la app propia, con el mismo diseño estándar).
   - La decisión, con la lista rellena, se apunta en `docs/ESTADO.md`.
 
 ### F2 — webllm como pasarela única
 
 - **Puerta:** F1 decidida.
 - **Qué:**
-  - `/v1/models` lista cada fuente y cada modelo con su **ficha** (herramientas, contexto, velocidad, coste, para qué sirve) y las skills de webllm ("webllm · Comité", "webllm · Automático").
+  - `/v1/models` lista cada fuente y cada modelo con su **ficha** (herramientas, contexto, velocidad, coste, para qué sirve) y las skills de webllm ("webllm · Comité", "webllm · Automático"), con nombres claros en español y agrupados (D18).
+  - Los avisos de webllm (una web te espera, una cuota agotada) van en el bloque de razonamiento de la respuesta.
   - Las APIs pasan sus herramientas tal cual.
   - Señales de vida en las respuestas largas.
   - Se agrupa por el identificador de conversación.
@@ -252,6 +273,7 @@ Cada fase tiene:
 - **Probado aquí:**
   - tests de la lista de modelos y de sus fichas;
   - streaming con señales de vida;
+  - un aviso de "te espera" llega como texto de razonamiento, no mezclado con la respuesta;
   - Parar cancela un trabajo en curso (extensión falsa);
   - ninguna clave en el disco del proyecto (test que busca claves en el repositorio).
 - **En tu PC:** en Open WebUI eliges una IA web, una por API y una de tu PC, y las tres responden; "Parar" corta una respuesta.
@@ -304,11 +326,13 @@ Cada fase tiene:
   - recuento impar;
   - fusión por lista;
   - plan y coste con "adelante";
-  - documento en el chat y en el vault.
+  - progreso en el bloque plegable de razonamiento (D18);
+  - documento en el chat y en el vault;
+  - dos chats web a la vez, desactivado por defecto: hoy van de uno en uno y `CLAUDE.md` pide una prueba en vivo antes de cambiarlo.
 - **Probado aquí:**
   - tests con la extensión falsa y la API falsa: rol bien confirmado; rol mal confirmado → reintento → reserva; veredicto mal formateado; empate imposible; inyección en el problema ("olvida tu rol") sin efecto; la fusión no recibe nombres de IA;
   - Chromium con la extensión de verdad: dos turnos en el mismo chat de la web de prueba.
-- **En tu PC:** un Comité real con 5 participantes sobre una idea tuya.
+- **En tu PC:** un Comité real con 5 participantes sobre una idea tuya. Después, el mismo Comité con dos chats a la vez: si sale bien 3 veces seguidas, se deja activado.
 - **Salida:** documento de fusión completo con sus 8 apartados, recuento impar, anexo con los 5 veredictos y candado verde.
 
 ### F6 — Elegir modelo y "Automático" bien afinado
@@ -382,6 +406,7 @@ Cada fase tiene:
 6. Gemini Flash (API)
 7. Duck.ai · Claude Haiku (web)
 8. z.ai chat (web)
+9. Duck.ai o Copilot · GPT (web): el modelo GPT que ofrezcan, comprobado en F6 (D19)
 
 **Lista de fusión ("la más potente disponible"):**
 1. GLM-5.2 (API)
@@ -410,7 +435,7 @@ Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla d
 ## 7. Contrato de ejecución
 
 - **Las reglas duras de `CLAUDE.md`, siempre:**
-  - Claude y ChatGPT directos fuera; Claude indirecto aprobado; nunca los GPT dentro de agregadores;
+  - Claude y ChatGPT directos fuera; Claude y GPT por dentro de otros servicios, aprobados (D19);
   - las verificaciones las resuelve Iván;
   - ni contraseñas ni cookies;
   - secretos fuera de git;
@@ -432,17 +457,19 @@ Estas listas se basan en pruebas públicas de septiembre de 2026 y en la tabla d
 |---|---|
 | Las webs cambian y la extensión se rompe | D3: el núcleo no depende de ellas. D17: auto-reparación en 4 capas y comprobación diaria. Si nada funciona, "Copiar diagnóstico" y arreglo con su test |
 | El modo observador registra algo que no querías | Solo webs con permiso; solo pestañas que tú marcas; nunca campos de contraseña; un botón para dejar de observar |
-| Open WebUI cambia algo que usamos | Se fija la versión que pasó F1; se actualiza solo tras repetir la lista de 8 |
-| El Comité tarda (chats web de uno en uno) | APIs en paralelo; se prueba el paralelo de los chats en F1; 3 participantes para lo urgente |
+| Open WebUI cambia algo que usamos | Se fija la versión que pasó F1; se actualiza solo tras repetir la lista de 10 |
+| Open WebUI trae demasiadas opciones y abruma | D18: se desactiva lo que no se usa; la prueba sin guía de F1 lo mide |
+| El Comité tarda (chats web de uno en uno) | APIs en paralelo; se prueban dos chats a la vez en F5; 3 participantes para lo urgente |
 | Cuentas: más mensajes = más verificaciones y más riesgo de bloqueo | Coste visible y "adelante"; límites por fuente; Comité con parte por API |
 | Cuotas gratis que desaparecen (ya pasó 4 veces este año) | Las fichas guardan la fecha de la última comprobación; si una API falla por cuota, se pasa a la reserva sin romper nada |
 | Inyección entre IAs y en herramientas | Datos marcados; formatos cerrados; analizador estricto; aprobación siempre; test de inyección en cada fase que toca herramientas |
 | Conflictos de memoria | D5: un solo escritor, sin leer nunca de Drive |
-| Un agente de código rompe algo | Worktree, modo simulación, pedir permiso para editar y ejecutar, tests, Deshacer; aislamiento decidido con prueba en F8 |
+| Un agente de código rompe algo | Worktree, modo simulación, pedir permiso para editar y ejecutar, tests, Deshacer; aislamiento decidido con prueba en F9 |
 
 ## 9. Lo que NO se hace
 
 - Construir desde cero una interfaz tipo Claude (salvo el Plan C).
+- Pantallas o botones propios de webllm dentro de la conversación que no existan en ChatGPT o Claude (D18).
 - Un enrutador que aprende solo.
 - Leer o escribir en Drive en los dos sentidos.
 - Dar permisos de escritura en GitHub a webs de terceros (el conector de Mistral).

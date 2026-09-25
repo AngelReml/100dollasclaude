@@ -176,7 +176,7 @@ Actualizado el mismo día con las decisiones de Iván:
 - **Agentes que hacen tareas, no chats:** MiniMax Agent, Manus y Genspark. No encajan en pregunta-respuesta, actúan por su cuenta en la web y abren otro frente de riesgo.
 - **OpenRouter Chat:** su web deja elegir GPT y Claude. Sus modelos gratis se añaden mejor **por API**, vía OmniRoute, que es más rápido y no gasta cuentas web. Son buenos candidatos a jurado.
 - **Siguen fuera:**
-  - ChatGPT, directo o solo con GPT por dentro: Copilot;
+  - ChatGPT directo (`chatgpt.com`). Copilot, que lleva GPT por dentro, queda aprobado desde el 25-sep-2026 (PLAN-v5, D19);
   - Claude directo (`claude.ai`);
   - Brave Leo, porque no se puede manejar;
   - Sakana Fugu, que es solo API y de pago.
