@@ -86,6 +86,9 @@ class ProviderConfig:
     relogin_hint: str = ""
     # Name shown to Iván (default: DEFAULT_LABELS, else the provider name).
     label: str = ""
+    # gateway "local" only: the server's own address and the model id it knows.
+    base_url: str = ""
+    remote_model: str = ""
 
     @property
     def guarded(self) -> bool:
@@ -94,6 +97,22 @@ class ProviderConfig:
     @property
     def display(self) -> str:
         return self.label or DEFAULT_LABELS.get(self.name, self.name)
+
+
+@dataclass(frozen=True)
+class LocalServer:
+    """An AI program on this PC with an OpenAI-style API (see local.py)."""
+
+    key: str
+    name: str
+    url: str
+    start: tuple[str, ...] = ()  # command that starts it; default: found for LM Studio / Ollama
+
+
+DEFAULT_LOCAL_SERVERS = (
+    LocalServer("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1"),
+    LocalServer("ollama", "Ollama", "http://127.0.0.1:11434/v1"),
+)
 
 
 @dataclass(frozen=True)
@@ -118,6 +137,8 @@ class AppConfig:
     blocked_model_substrings: tuple[str, ...] = ()
     # Model ids that belong to guarded web providers even when passed raw to --to.
     web_model_prefixes: tuple[str, ...] = ()
+    # AI programs on this PC whose models show as "En tu PC" (load_config adds LM Studio and Ollama).
+    local_servers: tuple[LocalServer, ...] = ()
 
     def provider(self, name: str) -> ProviderConfig:
         return self.providers[name]
@@ -191,6 +212,26 @@ def _coerce_providers(raw: Any) -> dict[str, ProviderConfig]:
     return out
 
 
+def _coerce_local_servers(raw: Any) -> tuple[LocalServer, ...]:
+    servers = {s.key: s for s in DEFAULT_LOCAL_SERVERS}
+    if raw is None:
+        return tuple(servers.values())
+    if not isinstance(raw, list):
+        raise ConfigError("'local_servers' must be a list of {key, name, url, start}")
+    for spec in raw:
+        if not isinstance(spec, dict) or not spec.get("key"):
+            raise ConfigError("each local server needs a 'key'")
+        key = str(spec["key"])
+        if spec.get("enabled") is False:  # e.g. {key: ollama, enabled: false}
+            servers.pop(key, None)
+            continue
+        if not spec.get("url"):
+            raise ConfigError(f"local server {key!r} needs a 'url'")
+        servers[key] = LocalServer(key=key, name=str(spec.get("name") or key), url=str(spec["url"]).rstrip("/"),
+                                   start=_as_tuple(spec.get("start")))
+    return tuple(servers.values())
+
+
 def is_blocked_model(cfg: AppConfig, model: str) -> bool:
     """True when the model id is excluded (see AppConfig.blocked_model_*)."""
     m = model.strip().lower()
@@ -238,6 +279,7 @@ def load_config(data_dir: Path | None = None) -> AppConfig:
         blocked_model_prefixes=_as_tuple(merged.get("blocked_model_prefixes")),
         blocked_model_substrings=tuple(s.lower() for s in _as_tuple(merged.get("blocked_model_substrings"))),
         web_model_prefixes=_as_tuple(merged.get("web_model_prefixes")),
+        local_servers=_coerce_local_servers(merged.get("local_servers")),
     )
 
 

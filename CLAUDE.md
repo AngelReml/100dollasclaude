@@ -9,9 +9,9 @@ program in his folders through those chats.
 - **What to build next: `docs/PLAN-v3.md`** (Spanish): cross-model chains ("Mesa de IAs") and a
   real app with an ultra-intuitive, polished UI. Follow its phases, design rules and evidence rules.
 - **Next, in this order (Iván's feedback of 2026-09-25):** PLAN-v3 section "Lo que pidió Iván tras
-  probar la app" → 3b (one "Conectar" button instead of Abrir/Comprobar, optional guide, AI picker
-  as a grouped dropdown), 7a (local models: LM Studio / Ollama), 7b (add an AI by pasting its URL,
-  optional per-origin permission), then phases 4, 5, 6, then 7c (pick the model inside Qwen/z.ai).
+  probar la app" → ~~3b~~ and ~~7a~~ (done 2026-09-25, pending Iván's live test), then 7b (add an AI
+  by pasting its URL, optional per-origin permission), then phases 4, 5, 6, then 7c (pick the model
+  inside Qwen/z.ai).
 
 ## Architecture (what exists and works, verified 2026-09-24)
 
@@ -26,12 +26,13 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 | Path | Role |
 |---|---|
 | `src/webllm_agent/bridge.py` | Local server: `/v1/chat/completions` + `/v1/models` (models `browser/<site>`), extension socket `/ext`, panel `/` + `/panel/*`, admin `/admin/*`, `/health`. Local-only middleware. Logs to `data/logs/bridge.log`. |
-| `extension/background.js` | Service worker: one small "webllm" window with one tab per site, job queue per site, tab rotation, pop-up / CAPTCHA / login / limit / overload detection, notifications. |
+| `extension/background.js` | Service worker: one small "webllm" window with one tab per site, job queue per site, tab rotation, pop-up / CAPTCHA / login / limit / overload detection, notifications. Messages: `job`, `diagnose` (reuses an open tab, never reloads it), `show` (0.4.0: bring the chat forward so Iván can log in). |
 | `extension/driver.js` | Injected in the chat page (MAIN world): state, insert, send, capture (hooks the page's own copy button → exact markdown), HTML→markdown fallback, diagnose. |
 | `extension/sites.js` | Per-site selectors (qwen, deepseek, zai, meta). Qwen/DeepSeek/Meta selectors are first drafts. |
 | `src/webllm_agent/broadcaster.py` | `webllm ask`: one prompt to many targets, concurrent across upstreams, journal. `verify_run` checks chain + manifest + response/message files. |
 | `src/webllm_agent/flows.py` | Chain engine ("Mesa de IAs", PLAN-v3 phase 1): steps with `{{input}}` / `{{step}}` / `{{step.ai}}` placeholders (single pass), parallel when independent, one call at a time per upstream, `on_error` stop / wait / fallback, `error_code()`, journal per call + `flow_end`, `estimate_messages()`, templates (consejo, reparto, debate, cadena). `webllm cadena`. |
-| `src/webllm_agent/appapi.py` | The app's server side, mounted by the bridge: `/app/` (built app, token injected, strict CSP) and `/api/estado`, `/api/preguntar` (SSE; a one-step flow), `/api/historial[/<id>[/exportar]]`, `/api/reanudar`, `/api/comprobar` (reads a chat's login state, sends nothing), `/api/encender-omniroute`. |
+| `src/webllm_agent/appapi.py` | The app's server side, mounted by the bridge: `/app/` (built app, token injected, strict CSP) and `/api/estado`, `/api/preguntar` (SSE; a one-step flow), `/api/historial[/<id>[/exportar]]`, `/api/reanudar`, `/api/comprobar` (reads a chat's login state, sends nothing), `/api/conectar` (same + `show` when there is no session; the app then polls `comprobar` every 3 s up to 3 min), `/api/encender-omniroute`, `/api/encender-local`. |
+| `src/webllm_agent/local.py` | AIs "En tu PC" (PLAN-v3 7a): discovers LM Studio (:1234) / Ollama (:11434) / `local_servers` in config, lists `/v1/models` minus embeddings, remembers them in `data/state/local_models.json`, gateway `local` (no guard, one call at a time per server, the server's own model id), start command (`lms server start` / `ollama serve`). Providers are named `<server>:<model>`. |
 | `app/` | The app source (React 19 + Vite + TypeScript + Tailwind 4 + Radix + Lucide + Inter). Screens in `app/src/screens/`, design-system pieces in `app/src/ui/`, tokens in `app/src/styles.css` (all text pairs AA in light and dark). Built into `src/webllm_agent/static/app/` (committed). |
 | `src/webllm_agent/journal.py` | Append-only JSONL chained by sha256 (+ `run.json` against truncation). |
 | `src/webllm_agent/guard.py` | Account guard: 1 in flight, spacing, daily cap, cooldowns persisted in `data/state/*.json`. |
@@ -62,7 +63,7 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ```bash
 python -m pip install -e .
-python -m pytest -q          # 132 passing on 2026-09-25 (clean venv, no OmniRoute key)
+python -m pytest -q          # 144 passing on 2026-09-25 (clean venv, no OmniRoute key)
 ```
 
 App (only for whoever programs it; Iván's PC never needs npm):
@@ -80,6 +81,11 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
 - `tests/test_bridge.py`: a **fake extension over a real WebSocket** + bridge in-process. Use the same
   pattern for any new bridge/app/chain feature (`tests/test_flows.py`, `tests/test_appapi.py` do).
 - The mock server also has `r503` and `flaky` (503 once, then OK) for retry paths.
+- `tests/test_local.py`: a fake LM Studio (models incl. an embedding one, concurrency counter).
+- `scripts/app_demo.py` also fakes LM Studio, an installed-but-off Ollama, and a Meta AI that
+  "logs in" 6 s after `show` (to see "Conectar" turn green without a second click).
+- Watch out for `\b`, `\t` in Windows paths written from scripts: a literal backspace once ended up
+  in this file. Check with `grep -P '[\x00-\x08]'`.
 - Live-only scripts (need Iván's PC): `tests/golden/golden.py`, `tests/aider_sandbox.py`,
   `tests/bridge_aider_check.py`, `webllm probar`.
 
@@ -98,13 +104,13 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
 - Windows: `.cmd` files need CRLF and ASCII text; background servers must be started detached
   (e.g. `start` / WMI), and never capture the pipes of a process that keeps running.
 - **LM Studio on Iván's PC (checked 2026-09-25):** server on `http://127.0.0.1:1234/v1` (running),
-  CLI `%USERPROFILE%\.lmstudioin\lms.exe` (`lms server status|start`, `lms ls`); `/v1/models` also
+  CLI `%USERPROFILE%\.lmstudio\bin\lms.exe` (`lms server status|start`, `lms ls`); `/v1/models` also
   lists embedding models (ids with `embed`) that cannot chat; `qwen2.5-1.5b-instruct` answered a real
   chat call in 8.6 s. Ollama is installed but its server (`:11434`) was off.
 - **"Abrir" vs "Comprobar":** `window.open(url)` from the app opens a normal tab and tells the app
   nothing; only the extension's webllm window + a session check changes the state. Iván read that as
-  "Abrir does not connect" — use one "Conectar" flow that opens the chat in the webllm window and
-  polls until the session is there.
+  "Abrir does not connect". Fixed with one "Conectar" (`app/src/ui/Connect.tsx`): never open chat
+  pages with `window.open` from the app.
 - The PC's Python is 3.10 (`C:\Program Files\Python310`); aider 0.86.2 is isolated via `uv tool`
   (`~/.local/bin/aider.exe`); OmniRoute 3.8.50 lives in `..\omnirouter` (outside this repo).
 

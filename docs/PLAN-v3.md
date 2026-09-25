@@ -9,7 +9,9 @@ Fecha: 24-sep-2026. Hecho con la skill `experto-cowork-operativo`. Es un **plan*
 | **1. Motor de cadenas** | **Hecho y probado con tests** (39 tests: plantillas, paralelo, reintentos, respaldo, candado). `webllm cadena` y `herramientas\probar-cadena.cmd` | La ejecución de verdad con tus chats: la haces tú con `probar-cadena` |
 | 2. API de la app + eventos en directo | **En parte:** lo que necesitan Inicio, Preguntar e Historial (13 tests) | Rutas de cadenas para la Mesa y los eventos de una cadena larga |
 | **3. App: Inicio, Preguntar, Historial** | **Hecho**, con guía de primera vez, modo claro y oscuro, capturas en `docs/capturas/fase3/` y revisión automática sin fallos | Tu prueba sin ayuda: doble clic en `WEBLLM` y una pregunta a todas |
-| 4-6 | Sin empezar | — |
+| **3b. Arreglos tras tu prueba** | **Hecho** (25-sep, tarde): botón único **Conectar** que se pone en verde solo, guía que solo sale si falta algo, IAs en un desplegable agrupado. Capturas en `docs/capturas/3b-7a/` | Pulsar ↻ en la extensión (pasa a 0.4.0) y probar **Conectar** con un chat sin sesión |
+| **7a. Modelos de tu PC** | **Hecho**: LM Studio y Ollama salen solos en "En tu PC", sin los modelos de embeddings, con botón **Encender** si están apagados. Una pregunta a la vez por programa. 9 tests con un LM Studio de mentira | Ver en la app la respuesta de tu `qwen2.5-1.5b-instruct` |
+| 7b, 4-6, 7c | Sin empezar (siguiente: 7b) | — |
 
 Diferencias con el plan, dichas claras:
 - **Logos:** cada IA lleva un círculo de su color con su inicial, no el logo oficial.

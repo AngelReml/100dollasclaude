@@ -43,6 +43,31 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 25-sep-2026, tarde (lo que pediste tras probar la app)
+
+1. **Un solo botón, "Conectar", por cada chat.**
+   - Abre el chat en la ventanita de webllm y, si no tienes la sesión abierta, la trae al frente.
+   - Entras ahí con tu cuenta y la app lo ve sola: mira cada 3 segundos, hasta 3 minutos, y se pone en verde sin que vuelvas a pulsar.
+   - No envía ningún mensaje.
+2. **La guía de primera vez ya no sale** si Chrome está conectado y tienes algún chat listo. Para verla: Inicio → **Ver la guía otra vez**.
+3. **Las IAs, en un desplegable.** En Preguntar hay un solo botón, "IAs: N elegidas":
+   - al abrirlo salen agrupadas en *Chats en tu Chrome*, *IAs por API* y *En tu PC*;
+   - arriba tienes atajos: *Todas las listas*, *Solo las que no gastan cuenta* y *Ninguna*;
+   - recuerda tu última elección.
+4. **Los modelos de tu PC (LM Studio y Ollama).**
+   - Salen solos en el grupo *En tu PC*, por ejemplo "LM Studio · qwen2.5-1.5b-instruct". Los modelos de "embeddings" no salen, porque no sirven para chatear.
+   - No gastan ninguna cuenta.
+   - Si el programa está apagado, tienes el botón **Encender LM Studio** (o **Encender Ollama**).
+
+**Una vez, después de ACTUALIZAR:** la extensión cambia a la versión 0.4.0. Abre `chrome://extensions` y pulsa la flecha ↻ en "webllm puente". `ACTUALIZAR` te lo recuerda.
+
+| Qué | Probado aquí (con dobles de prueba) | Falta probarlo en tu PC |
+|---|---|---|
+| Conectar | Sí: la extensión de mentira "entra" 6 s después y el círculo se pone verde solo; 3 tests | Pulsar Conectar en un chat sin sesión y entrar |
+| Desplegable de IAs | Sí: capturas y uso completo con teclado | — |
+| LM Studio / Ollama | Sí: un LM Studio de mentira, 9 tests; un Ollama "instalado pero apagado" sale en gris | Ver la respuesta de tu `qwen2.5-1.5b-instruct` en la app |
+| Todo lo demás | 144 tests en verde | — |
+
 ## Novedades del 25-sep-2026 (programado por Claude Code desde GitHub)
 
 1. **La app de webllm.** Doble clic en **`WEBLLM`**: se enciende todo y se abre una ventana propia.

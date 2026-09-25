@@ -1,7 +1,7 @@
 // Turns a failure code (src/webllm_agent/flows.py: error_code) into what Iván reads:
 // what happened + what to do + the button that fixes it.
 
-export type FixAction = "reanudar" | "abrir" | "guia" | "encender" | "reintentar" | "comprobar";
+export type FixAction = "reanudar" | "conectar" | "guia" | "encender" | "encender_local" | "reintentar";
 
 export interface Problem {
   title: string;
@@ -9,15 +9,28 @@ export interface Problem {
   actions: FixAction[];
 }
 
-export function problemFor(code: string, label: string, kind: "chat" | "api" = "chat"): Problem {
+export function problemFor(code: string, label: string, kind: "chat" | "api" | "local" = "chat", server = ""): Problem {
   // A chat that hits its message limit is paused by the bridge; an API limit is only temporary.
   if (code === "rate_limited" && kind === "chat") code = "paused";
+  if (kind === "local" && (code === "unreachable" || code === "timeout")) {
+    return code === "unreachable"
+      ? {
+          title: `${server || "El programa de IA de tu PC"} está apagado`,
+          text: "Enciéndelo y vuelve a pedírselo. No gasta ninguna cuenta: funciona en tu PC.",
+          actions: ["encender_local", "reintentar"],
+        }
+      : {
+          title: `${label} tardó demasiado`,
+          text: "Los modelos de tu PC pueden ir lentos la primera vez (se están cargando). Vuelve a intentarlo.",
+          actions: ["reintentar"],
+        };
+  }
   switch (code) {
     case "login_required":
       return {
         title: `${label} no tiene la sesión abierta`,
-        text: `Entra en ${label} con tu cuenta (o con una nueva) y vuelve a pedírselo.`,
-        actions: ["abrir", "reintentar"],
+        text: `Pulsa Conectar y entra con tu cuenta (o con una nueva) en la ventana que se abre. Luego vuelve a pedírselo.`,
+        actions: ["conectar", "reintentar"],
       };
     case "paused":
     case "cooldown":

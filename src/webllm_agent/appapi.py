@@ -7,7 +7,8 @@
     GET  /api/historial/<id>, /api/historial/<id>/exportar
     POST /api/reanudar     lift an AI's protective pause
     POST /api/comprobar    open a chat page and report whether there is a session (sends nothing)
-    POST /api/encender-omniroute
+    POST /api/conectar     same, and bring the webllm window forward so Iván can log in
+    POST /api/encender-omniroute, /api/encender-local (LM Studio / Ollama)
 
 Only answers on this PC (the bridge's local-only middleware) and only with the bridge token,
 which the app receives inside its HTML. Answers are untrusted text: the app renders them as
@@ -28,8 +29,9 @@ from aiohttp import web
 
 from . import flows
 from .broadcaster import GatewayError, verify_run
-from .config import PROJECT_ROOT, ProviderConfig
+from .config import PROJECT_ROOT, AppConfig, ProviderConfig
 from .guard import Guard
+from .local import LocalModels, label_for
 from .omniroute import load_api_key
 
 if TYPE_CHECKING:
@@ -73,6 +75,8 @@ class AppApi:
         self.omniroute_launcher = omniroute_launcher
         self.app_dir = app_dir
         self.recent: dict[str, tuple[str, str, float]] = {}  # AI name -> (state, detail, when)
+        self.show_wait_s = 8.0  # an extension older than 0.4.0 never answers "show"
+        self.local = LocalModels()
         self._last_omni_start = -1e9
 
     @property
@@ -89,7 +93,9 @@ class AppApi:
         app.router.add_get("/api/historial/{run_id}/exportar", self.exportar)
         app.router.add_post("/api/reanudar", self.reanudar)
         app.router.add_post("/api/comprobar", self.comprobar)
+        app.router.add_post("/api/conectar", self.conectar)
         app.router.add_post("/api/encender-omniroute", self.encender_omniroute)
+        app.router.add_post("/api/encender-local", self.encender_local)
 
     # ---------------------------------------------------------------- helpers
 
@@ -104,6 +110,11 @@ class AppApi:
 
     def _unauthorized(self) -> web.Response:
         return self._fail(401, "Esta ventana está caducada: ciérrala y vuelve a abrir webllm.", "unauthorized")
+
+    async def _cfg(self, force: bool = False) -> AppConfig:
+        """The configured AIs plus the models found in the programs on this PC."""
+        await self.local.refresh(self.cfg, force)
+        return self.local.with_providers(self.cfg)
 
     def _guard_for(self, p: ProviderConfig) -> tuple[Guard, str]:
         site = site_of(p)
@@ -157,13 +168,14 @@ class AppApi:
         if not self._authorized(request):
             return self._unauthorized()
         chrome = self.bridge.connected.is_set()
-        omni = await self._omniroute_up()
+        omni, cfg = await asyncio.gather(self._omniroute_up(), self._cfg())
         now = time.time()
         ais = []
-        for p in self.cfg.enabled_providers:
+        for p in cfg.enabled_providers:
             guard, key = self._guard_for(p)
             st = guard.status().get(key, {})
             site = site_of(p)
+            server = self.local.status_of(p.model.split("/", 1)[0]) if p.gateway == "local" else None
             state, detail, until = "lista", "", None
             recent = self.recent.get(p.name)
             if recent and now - recent[2] > RECENT_S:
@@ -172,19 +184,26 @@ class AppApi:
                 state, detail, until = "en_pausa", st.get("cooldown_reason", ""), st["cooldown_until"]
             elif site and not chrome:
                 state = "sin_chrome"
-            elif not site and not omni:
+            elif p.gateway == "omniroute" and not omni:
+                state = "apagada"
+            elif server is not None and not server.up:
                 state = "apagada"
             elif recent:
                 state, detail = recent[0], recent[1]
             today = time.strftime("%Y-%m-%d")
             ais.append({
-                "name": p.name, "label": p.display, "kind": "chat" if site else "api",
+                "name": p.name, "label": p.display, "kind": "chat" if site else "local" if server else "api",
                 "state": state, "detail": detail, "until": until,
                 "url": SITE_URLS.get(site or ""), "today": st.get("count_today", 0) if st.get("day") == today else 0,
-                "cap": self.cfg.guard.daily_cap if (site or p.guarded) else None,
+                "cap": cfg.guard.daily_cap if (site or p.guarded) else None,
+                "server": server.server.key if server else None,
+                "server_name": server.server.name if server else None,
             })
+        local = [{"key": st.server.key, "name": st.server.name, "up": st.up, "installed": st.installed,
+                  "models": len(st.models)}
+                 for st in self.local._statuses if st.up or st.installed or st.models]
         return web.json_response({"chrome": chrome, "omniroute": omni, "extension_path": str(PROJECT_ROOT / "extension"),
-                                  "ais": ais})
+                                  "ais": ais, "local_servers": local})
 
     # ------------------------------------------------------------------- ask
 
@@ -204,19 +223,20 @@ class AppApi:
             return self._fail(400, "La pregunta es demasiado larga.", "too_long")
         if not names:
             return self._fail(400, "Elige al menos una IA.", "no_target")
-        unknown = [n for n in names if n not in self.cfg.providers or not self.cfg.providers[n].enabled]
+        cfg = await self._cfg()
+        unknown = [n for n in names if n not in cfg.providers or not cfg.providers[n].enabled]
         if unknown:
             return self._fail(400, f"No conozco esta IA: {', '.join(unknown)}.", "unknown_target")
         skipped = []
-        if any(site_of(self.cfg.providers[n]) is None for n in names) and not await self._omniroute_up():
-            skipped = [n for n in names if site_of(self.cfg.providers[n]) is None]
+        if any(cfg.providers[n].gateway == "omniroute" for n in names) and not await self._omniroute_up():
+            skipped = [n for n in names if cfg.providers[n].gateway == "omniroute"]
             names = [n for n in names if n not in skipped]
             if not names:
                 return self._fail(503, "El servicio de las IAs por API (OmniRoute) está apagado.", "unreachable")
         flow = flows.Flow(name=title, template="pregunta", inputs={"pregunta": prompt}, steps=(
             flows.Step(id="respuestas", title="Respuestas", to=tuple(dict.fromkeys(names)), message="{{pregunta}}"),))
         try:
-            flows.validate(self.cfg, flow)
+            flows.validate(cfg, flow)
         except flows.FlowError as exc:
             return self._fail(400, str(exc), "invalid")
 
@@ -248,7 +268,7 @@ class AppApi:
         try:
             for n in skipped:
                 await send({"type": "target_done", "step": "respuestas", "target": n, "provider": n,
-                            "label": self.cfg.providers[n].display, "provider_label": self.cfg.providers[n].display,
+                            "label": cfg.providers[n].display, "provider_label": cfg.providers[n].display,
                             "ok": False, "text": "", "seconds": 0, "code": "unreachable", "notices": [],
                             "error": "El servicio de las IAs por API (OmniRoute) está apagado."})
             try:
@@ -257,7 +277,7 @@ class AppApi:
                 api_key = ""
             guard = Guard(self.cfg.paths.state_dir / "guard.json", self.cfg.guard)
             try:
-                await flows.run_flow(self.cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
+                await flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
                                      emit=send)
             except GatewayError as exc:
                 await send({"type": "error", "code": "unreachable", "error": str(exc)})
@@ -286,7 +306,8 @@ class AppApi:
                 lines.append(json.loads(raw))
             except json.JSONDecodeError:
                 continue
-        label = {p.name: p.display for p in self.cfg.providers.values()}
+        known = {p.name: p.display for p in self.local.with_providers(self.cfg).providers.values()}
+        label = _Labels(known)
 
         def read(rel: str | None) -> str:
             if not rel:
@@ -416,17 +437,15 @@ class AppApi:
         self.recent.pop(name, None)
         return web.json_response({"ok": True, "cleared": cleared})
 
-    async def comprobar(self, request: web.Request) -> web.Response:
-        """Open the chat page in the webllm window and read its state (no message is sent)."""
-        if not self._authorized(request):
-            return self._unauthorized()
+    async def _chat_site(self, request: web.Request) -> tuple[str, str | None]:
         name = str((await request.json()).get("ia", ""))
         p = self.cfg.providers.get(name)
-        site = site_of(p) if p else None
-        if site is None:
-            return self._fail(404, f"«{name}» no es un chat de Chrome.", "unknown_target")
+        return name, site_of(p) if p else None
+
+    async def _session(self, name: str, site: str) -> str:
+        """Open the chat in the webllm window (an open tab is reused, never reloaded) and read its state."""
         if not await self.bridge._ensure_extension():
-            return web.json_response({"session": "sin_chrome"})
+            return "sin_chrome"
         res = await self.bridge._send_to_extension({"type": "diagnose", "site": site}, 90)
         try:
             state = json.loads(res.get("text") or "{}").get("state") or {}
@@ -444,7 +463,35 @@ class AppApi:
             self.recent.pop(name, None)
         elif session == "sin_sesion":
             self.recent[name] = ("sin_sesion", "", time.time())
-        return web.json_response({"session": session})
+        return session
+
+    async def comprobar(self, request: web.Request) -> web.Response:
+        """Read whether a chat has a session (sends nothing). The app polls this while Iván logs in."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        name, site = await self._chat_site(request)
+        if site is None:
+            return self._fail(404, f"«{name}» no es un chat de Chrome.", "unknown_target")
+        return web.json_response({"session": await self._session(name, site)})
+
+    async def conectar(self, request: web.Request) -> web.Response:
+        """Open the chat in the webllm window; if there is no session, bring that window to the front.
+
+        Bringing a window forward is allowed here because Iván has to type his login in it
+        (same rule as a verification). ``shown`` is False when the extension could not do it
+        (for example an extension older than 0.4.0).
+        """
+        if not self._authorized(request):
+            return self._unauthorized()
+        name, site = await self._chat_site(request)
+        if site is None:
+            return self._fail(404, f"«{name}» no es un chat de Chrome.", "unknown_target")
+        session = await self._session(name, site)
+        shown = False
+        if session in ("sin_sesion", "verificacion", "desconocido"):
+            res = await self.bridge._send_to_extension({"type": "show", "site": site}, self.show_wait_s)
+            shown = bool(res.get("ok"))
+        return web.json_response({"session": session, "shown": shown})
 
     async def encender_omniroute(self, request: web.Request) -> web.Response:
         if not self._authorized(request):
@@ -460,6 +507,30 @@ class AppApi:
             except OSError as exc:
                 return self._fail(500, f"No pude encender OmniRoute: {exc}", "launch_failed")
         return web.json_response({"ok": True, "already": False})
+
+
+    async def encender_local(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        key = str((await request.json()).get("server", ""))
+        await self.local.refresh(self.cfg, force=True)
+        st = self.local.status_of(key)
+        if st is not None and st.up:
+            return web.json_response({"ok": True, "already": True})
+        result = self.local.start(self.cfg, key)
+        if result == "not_installed":
+            name = st.server.name if st else key
+            return self._fail(404, f"No encuentro {name} instalado en este PC.", "not_installed")
+        return web.json_response({"ok": True, "already": False})
+
+
+class _Labels(dict):
+    """Provider name -> human name; local AIs no longer listed still read well."""
+
+    def get(self, key, default=None):  # type: ignore[override]
+        if key in self:
+            return self[key]
+        return label_for(key) if isinstance(key, str) and ":" in key else default
 
 
 __all__ = ["AppApi", "APP_DIR", "SITE_URLS", "site_of"]

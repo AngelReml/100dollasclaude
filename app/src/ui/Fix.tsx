@@ -1,19 +1,21 @@
-import { CircleAlert, ExternalLink, LifeBuoy, Play, Power, RotateCcw, SearchCheck } from "lucide-react";
+import { CircleAlert, LifeBuoy, Play, Power, RotateCcw } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { api, ApiError } from "../api";
 import { problemFor, type FixAction } from "../fix";
 import { useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { Button } from "./Button";
+import { ConnectButton } from "./Connect";
 import { useToast } from "./Toast";
 
 /** The buttons that fix a problem with one AI (or with the pieces it needs). */
 export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai: string; onRetry?: () => void }) {
-  const { estado, refresh, labelOf } = useStore();
+  const { refresh, labelOf, estado } = useStore();
+  const info = estado?.ais.find((a) => a.name === ai);
+  const serverName = info?.server_name ?? "el programa";
   const toast = useToast();
   const openGuide = useOpenGuide();
   const [busy, setBusy] = useState<FixAction | null>(null);
-  const info = estado?.ais.find((a) => a.name === ai);
   const label = labelOf(ai);
 
   const run = async (action: FixAction) => {
@@ -25,18 +27,9 @@ export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai:
       } else if (action === "encender") {
         const r = await api.encenderOmniroute();
         toast(r.already ? "Ya estaba encendido." : "Encendiendo las IAs por API… tarda unos segundos.");
-      } else if (action === "comprobar") {
-        const r = await api.comprobar(ai);
-        const text = {
-          lista: `${label}: sesión abierta, lista para usar.`,
-          sin_sesion: `${label}: no hay sesión. Entra con tu cuenta en la ventanita de webllm.`,
-          verificacion: `${label} pide una verificación: resuélvela en la ventanita de webllm.`,
-          sin_chrome: "Chrome no está conectado.",
-          desconocido: `No pude ver cómo está ${label}. Vuelve a probar.`,
-        }[r.session];
-        toast(text, r.session === "lista" ? "ok" : "bad");
-      } else if (action === "abrir" && info?.url) {
-        window.open(info.url, "_blank", "noopener");
+      } else if (action === "encender_local" && info?.server) {
+        const r = await api.encenderLocal(info.server);
+        toast(r.already ? `${serverName} ya estaba encendido.` : `Encendiendo ${serverName}… tarda unos segundos.`);
       } else if (action === "guia") {
         openGuide();
       } else if (action === "reintentar") {
@@ -53,19 +46,21 @@ export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai:
   const buttons: Record<FixAction, { text: string; icon: ReactElement } | null> = {
     reanudar: { text: "Reanudar", icon: <Play size={18} aria-hidden /> },
     encender: { text: "Encender", icon: <Power size={18} aria-hidden /> },
-    comprobar: { text: "Comprobar", icon: <SearchCheck size={18} aria-hidden /> },
-    abrir: info?.url ? { text: `Abrir ${label} para entrar`, icon: <ExternalLink size={18} aria-hidden /> } : null,
+    conectar: null, // its own component: it keeps looking until the session is there
+    encender_local: info?.server ? { text: `Encender ${serverName}`, icon: <Power size={18} aria-hidden /> } : null,
     guia: { text: "Cómo arreglarlo", icon: <LifeBuoy size={18} aria-hidden /> },
     reintentar: onRetry ? { text: "Reintentar", icon: <RotateCcw size={18} aria-hidden /> } : null,
   };
   const shown = actions.filter((a) => buttons[a]);
-  if (!shown.length) return null;
+  const connect = actions.includes("conectar");
+  if (!shown.length && !connect) return null;
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-start gap-2">
+      {connect && <ConnectButton ai={ai} />}
       {shown.map((a, i) => (
         <Button
           key={a}
-          variant={i === 0 ? "soft" : "secondary"}
+          variant={i === 0 && !connect ? "soft" : "secondary"}
           icon={buttons[a]!.icon}
           onClick={() => run(a)}
           disabled={busy !== null}
@@ -80,8 +75,8 @@ export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai:
 /** What happened + what to do + the button that fixes it. */
 export function ProblemBox({ code, ai, onRetry }: { code: string; ai: string; onRetry?: () => void }) {
   const { labelOf, estado } = useStore();
-  const kind = estado?.ais.find((a) => a.name === ai)?.kind ?? "chat";
-  const p = problemFor(code, labelOf(ai), kind);
+  const info = estado?.ais.find((a) => a.name === ai);
+  const p = problemFor(code, labelOf(ai), info?.kind ?? "chat", info?.server_name ?? "");
   return (
     <div className="rounded-xl bg-bad-bg p-4 text-bad-ink" role="alert">
       <div className="flex items-start gap-2.5">

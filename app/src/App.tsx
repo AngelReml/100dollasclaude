@@ -1,15 +1,16 @@
 import { History, House, Laptop, MessageSquare, Moon, Sun } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { GuideContext, useRoute } from "./nav";
 import { Bienvenida, GUIDE_DONE_KEY } from "./screens/Bienvenida";
 import { Historial } from "./screens/Historial";
 import { Inicio } from "./screens/Inicio";
 import { Preguntar } from "./screens/Preguntar";
-import { StoreProvider } from "./state";
+import { StoreProvider, useStore } from "./state";
 import { ToastProvider } from "./ui/Toast";
 
 type Theme = "sistema" | "claro" | "oscuro";
 const THEME_KEY = "webllm.tema";
+const GUIDE_GRACE_MS = 8000;
 
 function readSetting(key: string): string | null {
   try {
@@ -93,7 +94,20 @@ function Logo() {
 
 function Shell() {
   const route = useRoute();
-  const [guide, setGuide] = useState(() => readSetting(GUIDE_DONE_KEY) !== "1");
+  const { estado } = useStore();
+  const [guide, setGuide] = useState(false);
+  const decided = useRef(false);
+  const openedAt = useRef(Date.now());
+  // The guide only opens by itself when something is missing: Chrome not connected or no chat ready.
+  // WEBLLM opens this window while Chrome is still starting, so give the extension a few seconds
+  // to connect before deciding (the status is polled every 4 s).
+  useEffect(() => {
+    if (decided.current || !estado) return;
+    const ready = estado.chrome && estado.ais.some((a) => a.kind === "chat" && a.state === "lista");
+    if (!ready && Date.now() - openedAt.current < GUIDE_GRACE_MS) return;
+    decided.current = true;
+    if (!ready && readSetting(GUIDE_DONE_KEY) !== "1") setGuide(true);
+  }, [estado]);
   const screen = route[0] ?? "";
   const current = NAV.find((n) => n.path === screen) ? screen : "";
   return (

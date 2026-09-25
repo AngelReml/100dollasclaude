@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import secrets
 from dataclasses import dataclass, field
@@ -25,6 +26,7 @@ from . import journal
 from .client import OK, TRANSPARENT_HEADERS, ChatResult, auth_headers, chat
 from .config import AppConfig, ProviderConfig, is_blocked_model
 from .guard import Guard, GuardBlocked
+from .local import server_lock as local_lock
 
 SKIPPED = "skipped"
 
@@ -116,7 +118,12 @@ async def _run_target(
     notify: Callable[[str], None],
     bridge_key: str | None = None,
 ) -> Outcome:
-    base_url, key = (cfg.bridge_url, bridge_key or "") if t.gateway == "bridge" else (cfg.base_url, api_key)
+    if t.gateway == "bridge":
+        base_url, key = cfg.bridge_url, bridge_key or ""
+    elif t.gateway == "local":
+        base_url, key = t.base_url, ""
+    else:
+        base_url, key = cfg.base_url, api_key
     permit = None
     if t.guarded:
         try:
@@ -124,11 +131,15 @@ async def _run_target(
         except GuardBlocked as blocked:
             return Outcome(t, ChatResult(SKIPPED, model=t.model, error=blocked.reason), [blocked.message_es])
     outcome = Outcome(t, ChatResult(SKIPPED, model=t.model))
+    # A program on this PC answers one question at a time, whoever asks.
+    server = local_lock(upstream_key(t.model)) if t.gateway == "local" else contextlib.nullcontext()
     try:
         for model in (t.model, *t.fallback_models):
             outcome.tried_models.append(model)
-            res = await chat(client, base_url=base_url, api_key=key, model=model,
-                             prompt=prompt, timeout_s=timeout_s or t.timeout_s)
+            async with server:
+                res = await chat(client, base_url=base_url, api_key=key,
+                                 model=t.remote_model or model if t.gateway == "local" else model,
+                                 prompt=prompt, timeout_s=timeout_s or t.timeout_s)
             outcome.result = res
             if t.guarded:
                 notice = guard.report(t, res)

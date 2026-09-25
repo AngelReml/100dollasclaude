@@ -329,7 +329,22 @@ async function handleDiagnose(msg) {
   }
 }
 
+// "Conectar" in the app: bring the chat's tab forward so you can log in there.
+// Only used when the page has no session (you must type in it), never for jobs.
+async function handleShow(msg) {
+  try {
+    const tabId = await siteTab(msg.site);
+    const tab = await chrome.tabs.get(tabId);
+    await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+    await chrome.tabs.update(tabId, { active: true });
+    sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "show" });
+  } catch (e) {
+    sendToBridge({ type: "result", id: msg.id, ok: false, error: "extension_error", detail: String(e && e.message || e) });
+  }
+}
+
 function onMessage(msg) {
   if (msg.type === "job") handleJob(msg);
   else if (msg.type === "diagnose") handleDiagnose(msg);
+  else if (msg.type === "show") handleShow(msg);
 }

@@ -1,4 +1,4 @@
-import { Check, Globe, Server } from "lucide-react";
+import { Cpu, Globe, Server } from "lucide-react";
 import type { AiState } from "../api";
 
 // Each AI gets its own color and monogram (white letters: >= 4.9:1 on every color).
@@ -12,15 +12,28 @@ const COLORS: Record<string, [string, string]> = {
   nemotron: ["#4d7c0f", "#ffffff"],
 };
 
+// Local models take their server's color (name "lmstudio:<model>", "ollama:<model>").
+const SERVER_COLORS: Record<string, [string, string]> = {
+  lmstudio: ["#6d28d9", "#ffffff"],
+  ollama: ["#0f766e", "#ffffff"],
+};
+
+function colorsFor(name: string): [string, string] {
+  const server = name.includes(":") ? name.split(":", 1)[0] : "";
+  return COLORS[name] ?? SERVER_COLORS[server] ?? ["#5f5f58", "#ffffff"];
+}
+
 function monogram(label: string) {
-  const clean = label.replace(/\(.*\)/, "").trim();
+  if (/^LM Studio/i.test(label)) return "LM";
+  if (/^Ollama/i.test(label)) return "OL";
+  const clean = label.split(" · ")[0].replace(/\(.*\)/, "").trim();
   if (/^z\.ai/i.test(clean)) return "Z";
   const words = clean.split(/\s+/).filter(Boolean);
   return words.length > 1 ? (words[0][0] + words[1][0]).toUpperCase() : clean.slice(0, 1).toUpperCase();
 }
 
 export function AiAvatar({ name, label, size = 36 }: { name: string; label: string; size?: number }) {
-  const [bg, ink] = COLORS[name] ?? ["#5f5f58", "#ffffff"];
+  const [bg, ink] = colorsFor(name);
   return (
     <span
       aria-hidden
@@ -32,16 +45,23 @@ export function AiAvatar({ name, label, size = 36 }: { name: string; label: stri
   );
 }
 
-export function KindLabel({ kind }: { kind: "chat" | "api" }) {
+export const KIND_TEXT: Record<"chat" | "api" | "local", string> = {
+  chat: "Chat en tu Chrome",
+  api: "Por API",
+  local: "En tu PC",
+};
+
+export function KindLabel({ kind }: { kind: "chat" | "api" | "local" }) {
+  const Icon = kind === "chat" ? Globe : kind === "api" ? Server : Cpu;
   return (
     <span className="inline-flex items-center gap-1 whitespace-nowrap text-[15px] text-muted">
-      {kind === "chat" ? <Globe size={15} aria-hidden /> : <Server size={15} aria-hidden />}
-      {kind === "chat" ? "Chat en tu Chrome" : "Por API"}
+      <Icon size={15} aria-hidden />
+      {KIND_TEXT[kind]}
     </span>
   );
 }
 
-const DOT: Record<AiState, string> = {
+export const DOT: Record<AiState, string> = {
   lista: "var(--ok-dot)",
   saturada: "var(--warn-dot)",
   en_pausa: "var(--pause-dot)",
@@ -49,48 +69,3 @@ const DOT: Record<AiState, string> = {
   sin_chrome: "var(--bad-dot)",
   apagada: "var(--bad-dot)",
 };
-
-/** A toggle chip to choose who gets the question. */
-export function AiToggle({
-  name,
-  label,
-  state,
-  selected,
-  onToggle,
-}: {
-  name: string;
-  label: string;
-  state: AiState;
-  selected: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={selected}
-      onClick={onToggle}
-      className={
-        "group inline-flex min-h-11 items-center gap-2 rounded-xl border py-1.5 pl-1.5 pr-3 text-[15px] font-semibold " +
-        "cursor-pointer transition-colors duration-150 " +
-        (selected
-          ? "border-accent bg-accent-soft text-accent-soft-ink"
-          : "border-line-strong bg-surface text-ink-2 hover:bg-surface-2")
-      }
-    >
-      <AiAvatar name={name} label={label} size={30} />
-      {label}
-      <span className="h-2.5 w-2.5 rounded-full" style={{ background: DOT[state] }} aria-hidden />
-      <span className="sr-only">{state === "lista" ? "(conectada)" : "(con problemas)"}</span>
-      <span
-        aria-hidden
-        className={
-          "ml-0.5 flex h-5 w-5 items-center justify-center rounded-md border " +
-          (selected ? "border-accent bg-accent text-accent-ink" : "border-line-strong")
-        }
-      >
-        {selected && <Check size={14} strokeWidth={3} />}
-      </span>
-    </button>
-  );
-}

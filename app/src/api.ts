@@ -3,18 +3,31 @@
 
 const TOKEN = document.querySelector<HTMLMetaElement>('meta[name="webllm-token"]')?.content ?? "";
 
+export type Session = "lista" | "sin_sesion" | "verificacion" | "sin_chrome" | "desconocido";
+
 export type AiState = "lista" | "en_pausa" | "sin_chrome" | "apagada" | "sin_sesion" | "saturada";
 
 export interface Ai {
   name: string;
   label: string;
-  kind: "chat" | "api";
+  kind: "chat" | "api" | "local";
   state: AiState;
   detail: string;
   until: number | null;
   url: string | null;
   today: number;
   cap: number | null;
+  /** Local AIs only: the program on this PC that runs it. */
+  server: string | null;
+  server_name: string | null;
+}
+
+export interface LocalServer {
+  key: string;
+  name: string;
+  up: boolean;
+  installed: boolean;
+  models: number;
 }
 
 export interface Estado {
@@ -22,6 +35,7 @@ export interface Estado {
   omniroute: boolean;
   extension_path: string;
   ais: Ai[];
+  local_servers: LocalServer[];
 }
 
 export interface HistoryAnswer {
@@ -128,9 +142,10 @@ const post = <T>(path: string, body: unknown) => call<T>(path, { method: "POST",
 export const api = {
   estado: () => call<Estado>("/api/estado"),
   reanudar: (ia: string) => post<{ ok: boolean; cleared: boolean }>("/api/reanudar", { ia }),
-  comprobar: (ia: string) =>
-    post<{ session: "lista" | "sin_sesion" | "verificacion" | "sin_chrome" | "desconocido" }>("/api/comprobar", { ia }),
+  comprobar: (ia: string) => post<{ session: Session }>("/api/comprobar", { ia }),
+  conectar: (ia: string) => post<{ session: Session; shown: boolean }>("/api/conectar", { ia }),
   encenderOmniroute: () => post<{ ok: boolean; already: boolean }>("/api/encender-omniroute", {}),
+  encenderLocal: (server: string) => post<{ ok: boolean; already: boolean }>("/api/encender-local", { server }),
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),
   exportUrl: (id: string) => `/api/historial/${encodeURIComponent(id)}/exportar?token=${encodeURIComponent(TOKEN)}`,

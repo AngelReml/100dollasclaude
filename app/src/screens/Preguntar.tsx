@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Ai } from "../api";
 import { go } from "../nav";
 import { useStore, type Turn, type TurnAnswer } from "../state";
-import { AiAvatar, AiToggle } from "../ui/Ai";
+import { AiAvatar } from "../ui/Ai";
+import { AiPicker } from "../ui/AiPicker";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
@@ -20,6 +21,17 @@ const EXAMPLES = [
   "Dame 5 ideas de nombre para una cafetería pequeña de barrio y di por qué funciona cada una.",
   "Quiero aprender inglés en 3 meses. ¿Clases o una app? Dame un plan semana a semana.",
 ];
+
+const PICKED_KEY = "webllm.elegidas";
+
+function readPicked(): string[] | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(PICKED_KEY) ?? "null");
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : null;
+  } catch {
+    return null;
+  }
+}
 
 const short = (text: string, n = 240) => (text.length > n ? `${text.slice(0, n).trimEnd()}…` : text);
 
@@ -233,19 +245,28 @@ export function Preguntar() {
   const { estado, turns, ask } = useStore();
   const toast = useToast();
   const [text, setText] = useState("");
-  const [picked, setPicked] = useState<string[] | null>(null);
+  const [picked, setPickedState] = useState<string[] | null>(readPicked);
   const [pass, setPass] = useState<Parameters<typeof PassDialog>[0]["pass"]>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const ais = estado?.ais ?? [];
-  // First time the list arrives: every AI that is ready is ticked.
-  const selected = useMemo(() => picked ?? ais.filter((a) => a.state === "lista").map((a) => a.name), [picked, ais]);
+  // The last choice is remembered; the first time, every AI that is ready is ticked.
+  const selected = useMemo(() => {
+    const names = ais.map((a) => a.name);
+    return picked ? picked.filter((n) => names.includes(n)) : ais.filter((a) => a.state === "lista").map((a) => a.name);
+  }, [picked, ais]);
+  const setPicked = (names: string[]) => {
+    setPickedState(names);
+    try {
+      localStorage.setItem(PICKED_KEY, JSON.stringify(names));
+    } catch {
+      // not remembered: the default choice comes back next time
+    }
+  };
   const running = turns.some((t) => t.running);
   const now = useNow(running);
 
   useEffect(() => box.current?.focus(), []);
 
-  const toggle = (name: string) =>
-    setPicked((selected.includes(name) ? selected.filter((n) => n !== name) : [...selected, name]));
   const chats = ais.filter((a) => a.kind === "chat" && selected.includes(a.name)).length;
 
   const send = (prompt = text) => {
@@ -284,27 +305,15 @@ export function Preguntar() {
           placeholder="Escribe aquí lo que quieras preguntar…"
           className="w-full resize-y rounded-xl border border-line-strong bg-surface p-3.5 text-[17px] leading-relaxed text-ink placeholder:text-muted focus:border-accent focus:outline-none"
         />
-        <div className="mt-4">
-          <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-            <p className="text-[17px] font-semibold">¿A quién?</p>
-            <button type="button" className="cursor-pointer text-[15px] font-semibold text-accent-soft-ink underline underline-offset-2 dark:text-accent" onClick={() => setPicked(ais.map((a) => a.name))}>
-              A todas
-            </button>
-            <button type="button" className="cursor-pointer text-[15px] font-semibold text-accent-soft-ink underline underline-offset-2 dark:text-accent" onClick={() => setPicked([])}>
-              A ninguna
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2" role="group" aria-label="IAs que recibirán la pregunta">
-            {ais.map((a) => (
-              <AiToggle key={a.name} name={a.name} label={a.label} state={a.state} selected={selected.includes(a.name)} onToggle={() => toggle(a.name)} />
-            ))}
-          </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <p className="text-[17px] font-semibold">¿A quién?</p>
+          <AiPicker ais={ais} selected={selected} onChange={setPicked} />
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[15px] text-muted">
             {chats > 0
-              ? `Gasta 1 mensaje de cada chat elegido (${chats}). Las IAs por API no gastan tus chats.`
-              : "Las IAs por API no gastan mensajes de tus chats."}{" "}
+              ? `Gasta 1 mensaje de cada chat elegido (${chats}). Las IAs por API y las de tu PC no gastan tus chats.`
+              : "No gasta mensajes de tus chats."}{" "}
             Atajo: Ctrl + Enter.
           </p>
           <Button variant="primary" size="lg" icon={<Send size={20} aria-hidden />} onClick={() => send()} disabled={!text.trim() || !selected.length}>

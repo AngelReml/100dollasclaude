@@ -56,44 +56,51 @@ async function run(theme, width, full) {
   const page = await ctx.newPage();
   const tag = `${theme === "oscuro" ? "oscuro" : "claro"}-${width}`;
 
+  // With Chrome connected and chats ready, the guide must NOT open by itself.
   await page.goto(base);
-  if (full) {
-    await page.getByText("Bienvenido a webllm").waitFor();
-    await shot(page, `${tag}-01-guia-paso1`);
-    await page.getByRole("button", { name: "Siguiente" }).click();
-    for (const ai of ["qwen", "meta"]) {
-      await page.locator(`[data-ai="${ai}"]`).getByRole("button", { name: "Comprobar" }).click();
-    }
-    await page.getByText("Sesión abierta").first().waitFor();
-    await page.getByText("Sin sesión").first().waitFor();
-    await shot(page, `${tag}-02-guia-paso2`);
-  }
-  await page.getByRole("button", { name: "Saltar la guía" }).click();
-
-  await page.goto(base + "#/");
   await page.getByText("Tus IAs").waitFor();
-  await shot(page, `${tag}-03-inicio`);
+  await page.waitForTimeout(1500);
+  if (await page.getByText("Bienvenido a webllm").count()) report.push({ name: `${tag}-guia`, clipped: ["la guía se abrió sola con todo listo"], smallText: [] });
+  await shot(page, `${tag}-01-inicio`);
+
+  if (full) {
+    await page.getByRole("button", { name: "Ver la guía otra vez" }).click();
+    await page.getByText("Bienvenido a webllm").waitFor();
+    await page.getByRole("button", { name: "Siguiente" }).click();
+    await page.locator('[data-ai="meta"]').getByRole("button", { name: "Conectar" }).click();
+    if (await page.getByText("Esperando a que entres").waitFor({ timeout: 5000 }).then(() => true, () => false)) {
+      await shot(page, `${tag}-02-guia-conectar-esperando`);
+    }
+    await page.locator('[data-ai="meta"]').getByText("Conectada").waitFor({ timeout: 30000 });
+    await shot(page, `${tag}-03-guia-conectada-sola`);
+    await page.getByRole("button", { name: "Saltar la guía" }).click();
+  }
 
   await page.goto(base + "#/preguntar");
   await page.getByText("¿A quién?").waitFor();
-  if (full) await shot(page, `${tag}-04-preguntar-vacio`);
+  if (full) {
+    await shot(page, `${tag}-04-preguntar-vacio`);
+    await page.getByRole("button", { name: /^IAs: / }).click();
+    await page.getByRole("menuitemcheckbox").first().waitFor();
+    await shot(page, `${tag}-05-elegir-ias`);
+    await page.keyboard.press("Escape");
+  }
   await page.getByRole("button", { name: "Probar este ejemplo" }).first().click();
   if (full) {
     await page.waitForTimeout(1800);
-    await shot(page, `${tag}-05-preguntar-en-curso`);
+    await shot(page, `${tag}-06-preguntar-en-curso`);
   }
   await waitAnswers(page);
-  await shot(page, `${tag}-06-preguntar-respuestas`);
+  await shot(page, `${tag}-07-preguntar-respuestas`);
 
   if (full) {
     await page.getByRole("button", { name: "Pásasela a…" }).first().click();
     await page.getByRole("menuitem", { name: /DeepSeek/ }).click();
     await page.getByText("Este es el mensaje que recibirá").waitFor();
-    await shot(page, `${tag}-07-pasar-dialogo`);
+    await shot(page, `${tag}-08-pasar-dialogo`);
     await page.getByRole("button", { name: /^Enviar a/ }).click();
     await page.waitForTimeout(500);
     await waitAnswers(page);
-    await shot(page, `${tag}-08-pasar-respuesta`);
   }
 
   await page.goto(base + "#/historial");
@@ -112,7 +119,7 @@ for (const theme of ["claro", "oscuro"]) {
   await run(theme, 1920, false);
 }
 writeFileSync(`${out}/revision.json`, JSON.stringify(report, null, 2));
-const bad = report.filter((r) => r.pageOverflow || r.mainOverflow || r.wrappedFooters || r.smallText.length || r.clipped.length);
+const bad = report.filter((r) => r.pageOverflow || r.mainOverflow || r.wrappedFooters || r.smallText?.length || r.clipped?.length);
 console.log(`${report.length} capturas; con problemas: ${bad.length}`);
 for (const b of bad) console.log(JSON.stringify(b));
 if (bad.length) process.exitCode = 1;

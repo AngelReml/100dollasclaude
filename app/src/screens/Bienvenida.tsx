@@ -1,10 +1,10 @@
-import { Check, CircleCheck, ClipboardCopy, ExternalLink, Loader2, SearchCheck, Send } from "lucide-react";
+import { Check, CircleCheck, ClipboardCopy, Loader2, Send } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { api } from "../api";
 import { go } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar } from "../ui/Ai";
 import { Button } from "../ui/Button";
+import { ConnectButton } from "../ui/Connect";
 import { Modal } from "../ui/Modal";
 import { Badge, DoneBadge, WorkingBadge } from "../ui/Status";
 import { useToast } from "../ui/Toast";
@@ -12,8 +12,6 @@ import stepToggle from "../assets/guia-modo-desarrollador.png";
 import stepLoad from "../assets/guia-cargar-descomprimida.png";
 
 export const GUIDE_DONE_KEY = "webllm.guia-hecha";
-
-type Session = "lista" | "sin_sesion" | "verificacion" | "sin_chrome" | "desconocido" | "mirando";
 
 function CopyLine({ text }: { text: string }) {
   const toast = useToast();
@@ -68,7 +66,7 @@ function Done({ children }: { children: ReactNode }) {
 export function Bienvenida({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { estado, ask, turns } = useStore();
   const [step, setStep] = useState(0);
-  const [sessions, setSessions] = useState<Record<string, Session>>({});
+  const [connected, setConnected] = useState<Record<string, boolean>>({});
   const [question, setQuestion] = useState("¿Qué tiempo suele hacer en Madrid en octubre? Respóndeme en 3 frases.");
   const [turnId, setTurnId] = useState<string | null>(null);
 
@@ -76,7 +74,7 @@ export function Bienvenida({ open, onClose }: { open: boolean; onClose: () => vo
   const turn = turns.find((t) => t.id === turnId);
   const done = [
     !!estado?.chrome,
-    Object.values(sessions).includes("lista"),
+    Object.values(connected).some(Boolean),
     !!turn?.answers.some((a) => a.phase === "done" && a.ok),
   ];
 
@@ -87,24 +85,6 @@ export function Bienvenida({ open, onClose }: { open: boolean; onClose: () => vo
       // private window: the guide will show again next time, which is harmless
     }
     onClose();
-  };
-
-  const check = async (name: string) => {
-    setSessions((s) => ({ ...s, [name]: "mirando" }));
-    try {
-      const r = await api.comprobar(name);
-      setSessions((s) => ({ ...s, [name]: r.session }));
-    } catch {
-      setSessions((s) => ({ ...s, [name]: "desconocido" }));
-    }
-  };
-
-  const sessionBadge = (s: Session | undefined) => {
-    if (!s) return null;
-    if (s === "mirando") return <WorkingBadge>Mirando…</WorkingBadge>;
-    if (s === "lista") return <DoneBadge ok>Sesión abierta</DoneBadge>;
-    const words = { sin_sesion: "Sin sesión", verificacion: "Pide verificación", sin_chrome: "Falta Chrome", desconocido: "No se pudo ver" };
-    return <DoneBadge ok={false}>{words[s]}</DoneBadge>;
   };
 
   return (
@@ -146,7 +126,8 @@ export function Bienvenida({ open, onClose }: { open: boolean; onClose: () => vo
       {step === 1 && (
         <div className="flex flex-col gap-4">
           <p className="text-ink-2">
-            Entra con tu cuenta en cada chat que quieras usar y pulsa <b>Comprobar</b>. No se envía ningún mensaje. Con uno basta para empezar.
+            Pulsa <b>Conectar</b> en cada chat que quieras usar. Se abre en la ventanita de webllm: si te pide entrar, entra ahí con tu cuenta y
+            este paso se pone en verde solo. No se envía ningún mensaje. Con un chat basta para empezar.
           </p>
           {!estado?.chrome && <p className="font-semibold text-bad-ink">Primero termina el paso 1: Chrome todavía no está conectado.</p>}
           <div className="flex flex-col gap-2">
@@ -154,15 +135,9 @@ export function Bienvenida({ open, onClose }: { open: boolean; onClose: () => vo
               <div key={a.name} data-ai={a.name} className="flex flex-wrap items-center gap-3 rounded-xl border border-line px-4 py-3">
                 <AiAvatar name={a.name} label={a.label} size={34} />
                 <span className="flex-1 text-[17px] font-semibold">{a.label}</span>
-                {sessionBadge(sessions[a.name])}
-                {a.url && (
-                  <Button variant="secondary" icon={<ExternalLink size={17} aria-hidden />} onClick={() => window.open(a.url!, "_blank", "noopener")}>
-                    Abrir
-                  </Button>
-                )}
-                <Button variant="soft" icon={<SearchCheck size={17} aria-hidden />} onClick={() => check(a.name)} disabled={sessions[a.name] === "mirando"}>
-                  Comprobar
-                </Button>
+                <div className="flex basis-full justify-end sm:basis-auto">
+                  <ConnectButton ai={a.name} onConnected={() => setConnected((c) => ({ ...c, [a.name]: true }))} />
+                </div>
               </div>
             ))}
           </div>
@@ -212,7 +187,7 @@ export function Bienvenida({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
       )}
 
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
+      <div className="sticky bottom-[-24px] -mx-6 -mb-6 mt-8 flex flex-wrap items-center justify-between gap-2 rounded-b-2xl border-t border-line bg-surface px-6 py-4">
         <Button variant="ghost" onClick={finish}>
           Saltar la guía
         </Button>
