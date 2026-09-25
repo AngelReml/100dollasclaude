@@ -8,6 +8,10 @@ program in his folders through those chats.
 - Current state and how Iván uses it: `docs/ESTADO.md` (Spanish).
 - **What to build next: `docs/PLAN-v3.md`** (Spanish): cross-model chains ("Mesa de IAs") and a
   real app with an ultra-intuitive, polished UI. Follow its phases, design rules and evidence rules.
+- **Next, in this order (Iván's feedback of 2026-09-25):** PLAN-v3 section "Lo que pidió Iván tras
+  probar la app" → 3b (one "Conectar" button instead of Abrir/Comprobar, optional guide, AI picker
+  as a grouped dropdown), 7a (local models: LM Studio / Ollama), 7b (add an AI by pasting its URL,
+  optional per-origin permission), then phases 4, 5, 6, then 7c (pick the model inside Qwen/z.ai).
 
 ## Architecture (what exists and works, verified 2026-09-24)
 
@@ -93,6 +97,14 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   (ignore elements without real size/opacity).
 - Windows: `.cmd` files need CRLF and ASCII text; background servers must be started detached
   (e.g. `start` / WMI), and never capture the pipes of a process that keeps running.
+- **LM Studio on Iván's PC (checked 2026-09-25):** server on `http://127.0.0.1:1234/v1` (running),
+  CLI `%USERPROFILE%\.lmstudioin\lms.exe` (`lms server status|start`, `lms ls`); `/v1/models` also
+  lists embedding models (ids with `embed`) that cannot chat; `qwen2.5-1.5b-instruct` answered a real
+  chat call in 8.6 s. Ollama is installed but its server (`:11434`) was off.
+- **"Abrir" vs "Comprobar":** `window.open(url)` from the app opens a normal tab and tells the app
+  nothing; only the extension's webllm window + a session check changes the state. Iván read that as
+  "Abrir does not connect" — use one "Conectar" flow that opens the chat in the webllm window and
+  polls until the session is there.
 - The PC's Python is 3.10 (`C:\Program Files\Python310`); aider 0.86.2 is isolated via `uv tool`
   (`~/.local/bin/aider.exe`); OmniRoute 3.8.50 lives in `..\omnirouter` (outside this repo).
 

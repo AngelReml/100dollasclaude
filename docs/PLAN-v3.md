@@ -16,6 +16,95 @@ Diferencias con el plan, dichas claras:
 - **Piezas del diseño todavía sin hacer**, porque ninguna pantalla de la fase 3 las usa: la `Línea de tiempo` (el avance de cada IA se ve en su tarjeta) y la `Ventana de confirmación`. Llegan con las fases 4 y 5.
 - **Capturas de la guía:** son reales, de la página de extensiones de Chromium en español. Tu Chrome puede variar un poco.
 
+## Lo que pidió Iván tras probar la app (25-sep-2026) — va ANTES de la fase 4
+
+Iván ha probado la app en su PC: le gusta, "limpia y preciosa". El orden de trabajo pasa a ser:
+**3b → 7a → 7b → 4 → 5 → 6 → 7c.**
+
+### 3b. Arreglos de lo que ha probado
+
+1. **"Abrir" no conecta, y "Comprobar" sí (fallo real).**
+   - **Causa**, en `Bienvenida.tsx` y `ui/Fix.tsx`:
+     - "Abrir" hace `window.open(url)`, que abre la web en una pestaña normal y no avisa a la app de nada;
+     - el estado solo cambia al pulsar "Comprobar", que abre el chat en la ventanita de webllm.
+   - **Arreglo:** un solo botón, **"Conectar"**, por cada chat. Al pulsarlo:
+     - abre ese chat en la ventanita de webllm (vía la extensión, como hace `/api/comprobar`);
+     - si no hay sesión, trae esa ventanita al frente para que Iván entre ahí;
+     - vuelve a mirar sola cada 3 s, hasta 3 min, y el círculo se pone verde sin más clics.
+   - Se quita el `window.open` a la pestaña normal.
+   - **Prueba:** un test con la extensión de mentira pasando de `sin_sesion` a `lista`, y una captura con el verde sin segundo clic.
+2. **La guía de primera vez le sobra.**
+   - No se abre sola si Chrome ya está conectado y hay al menos un chat listo.
+   - Hay un botón **"Saltar"** visible en cada paso.
+   - Se puede volver a ver desde Ajustes ("Ver la guía otra vez").
+3. **Las IAs, en un desplegable.** En vez de la fila de chips, un único botón **"IAs: 3 elegidas ▾"** que abre una lista con casillas:
+   - agrupada en **"Chats en tu Chrome"**, **"IAs por API"** y **"En tu PC"** (locales, ver 7a);
+   - cada IA con su logo, su semáforo y el motivo corto si no está lista;
+   - con atajos arriba: "Todas las listas", "Solo las que no gastan cuenta", "Ninguna";
+   - recuerda la última elección y se maneja con teclado (Radix `Popover` / `DropdownMenu`);
+   - es el mismo componente que usarán las tarjetas de la Mesa (fase 4).
+
+### 7a. Modelos locales (LM Studio y Ollama)
+
+- **Verificado en el PC de Iván el 25-sep-2026:**
+  - el servidor de LM Studio **está encendido** en `http://127.0.0.1:1234/v1`;
+  - la CLI está en `%USERPROFILE%\.lmstudio\bin\lms.exe` y `lms server status` dice "running on port 1234";
+  - `GET /v1/models` devuelve `qwen2.5-1.5b-instruct` más dos modelos de embeddings;
+  - una llamada real a `/v1/chat/completions` con `qwen2.5-1.5b-instruct` respondió en 8,6 s, carga incluida.
+- **Ollama** está instalado, pero su servidor (`http://127.0.0.1:11434/v1`) estaba apagado.
+- **Qué se construye:**
+  1. Una nueva "puerta" `local` en `config.py`, junto a `omniroute` y `bridge`.
+     - Descubre sola los servidores locales conocidos: LM Studio en :1234 y Ollama en :11434, más los que Iván añada en Ajustes.
+     - Lista sus modelos con `GET /v1/models` y **quita los de embeddings** (ids con `embed`).
+     - Cada modelo es una IA del grupo **"En tu PC"**, con el nombre "LM Studio · qwen2.5-1.5b-instruct".
+  2. **Sin guardián de cuentas**, porque no hay cuenta. Sí una llamada a la vez por servidor, porque el PC es uno, y un tiempo de espera largo.
+  3. **Si el servidor está apagado**, se usa el patrón "qué pasó + botón":
+     - "LM Studio está apagado · [Encender LM Studio]", que ejecuta `lms server start`;
+     - para Ollama, `ollama serve`, lanzado sin atarse al proceso.
+  4. Van directas a su servidor, sin pasar por OmniRoute.
+- **Prueba:**
+  - tests con el servidor de mentira haciendo de LM Studio: lista de modelos, filtro de embeddings y servidor apagado;
+  - en vivo, Iván ve en la app la respuesta de su modelo de LM Studio.
+
+### 7b. Añadir una IA nueva pegando su dirección
+
+**Lo que ve Iván:**
+- En el desplegable de IAs, y en Ajustes, hay **"+ Añadir otra IA"**. Pega la dirección de un chat (por ejemplo `https://chat.mistral.ai`) y pulsa **"Probar"**.
+- La app le va contando en humano lo que encuentra: "Abriendo la web… Caja de texto: encontrada… Enviando una prueba… Respuesta leída ✔".
+- Si funciona, la IA queda añadida con su nombre y su icono (el de la web), y ya puede usarla en Preguntar y en la Mesa.
+
+**Cómo se hace:**
+1. **Bloqueos (regla dura).**
+   - Se rechazan `claude.ai`, `anthropic.com`, `chatgpt.com`, `chat.openai.com`, `openai.com` y cualquier dirección que no sea `https`.
+   - Mensaje: "Esta IA está fuera de webllm por decisión tuya".
+2. **Permiso mínimo.**
+   - El manifiesto gana `optional_host_permissions: ["https://*/*"]`, pero **no se concede nada por adelantado**.
+   - Al añadir una web, la extensión abre su propia página `add.html?url=…` con un botón **"Permitir y probar"**.
+   - Ese botón pide a Chrome permiso solo para ese dominio (`chrome.permissions.request`). Chrome enseña su propio aviso e Iván pulsa "Permitir".
+3. **Prueba automática de la web**, con la detección genérica que ya tiene `driver.js`:
+   - busca la caja de texto, el botón de enviar (o Enter), el botón de copiar o, si no lo hay, el texto de la respuesta, y el botón de parar;
+   - envía "Responde solo con la palabra: pong";
+   - si la respuesta capturada contiene "pong", la guarda.
+   - Si sale el login o una verificación, se aplica la regla de siempre: Iván entra o la resuelve en esa ventanita y pulsa "Probar otra vez". Nunca se salta un CAPTCHA.
+4. **Guardado.**
+   - La extensión guarda la configuración de la web en `chrome.storage.local`, junto a las de `sites.js`.
+   - El servidor añade la IA a `data/config.yaml` (`kind: browser`, `gateway: bridge`, `model: browser/<nombre>`, `url`).
+   - `SITES` en `bridge.py` deja de ser una lista fija y se lee de la configuración.
+   - El guardián de cuentas se aplica solo.
+5. **Honestidad si una web no se deja.** Se dice exactamente qué falló ("no encontré la caja de texto", "no hay botón de copiar: leeré el texto de la página") y, si nada funciona: "Esta web no se deja manejar todavía · [Enviar diagnóstico]". No se promete que cualquier web funcione: se prueba y se dice.
+
+**Prueba:**
+- tests del registro dinámico de IAs, del bloqueo de dominios y del guardado;
+- una página de chat de prueba servida en local para la detección genérica;
+- en vivo, Iván añade una web nueva y le hace una pregunta.
+
+### 7c. Elegir el modelo dentro de Qwen y z.ai
+
+Esto lo pidió Iván el 24-sep. La extensión ya lee qué modelo respondió (`modelLabel`); falta **elegirlo**:
+- La extensión lee las opciones del menú de modelos de la web y, antes de enviar, elige la que Iván haya marcado.
+- En la app sale un segundo desplegable, "Modelo", al lado de esa IA.
+- Si el modelo potente llega a su límite, la web suele cambiar de modelo sola. Iván lo vio el 24-sep: "gastó los tokens de un modelo, cambió de modelo y respondió". La app lo enseña: "Respondió con X porque Y estaba agotado".
+
 ## Veredicto
 
 **Combinación.** Se construye como código en este mismo proyecto:
