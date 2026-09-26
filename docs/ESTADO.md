@@ -69,7 +69,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   - 30 pruebas del Comité; rompiendo a propósito cada protección, su prueba falla;
   - la extensión de verdad en Chromium, **5 de 5**; con la anterior, cada caso falla;
   - **el Open WebUI de verdad, 5 de 5**;
-  - todas juntas: **__TOTAL__**.
+  - todas juntas: **332 pasan** (con Chromium y Open WebUI de verdad).
 - **Falta tu PC:** un Comité real de 5 sobre una idea tuya. Después, 3 veces con «Dos chats web a la vez». Guía en `docs/F7-comite.md`.
 
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F6: webs que se reparan solas, y seguir tú en la web)

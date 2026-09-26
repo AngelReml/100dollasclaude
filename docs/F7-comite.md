@@ -5,6 +5,7 @@
 - **La extensión de verdad en Chromium: 5 de 5** en «seguir en la misma conversación». Con la extensión anterior, cada caso falla.
 - **El Open WebUI de verdad: 5 de 5.**
 - **93 capturas de la app, sin problemas.**
+- **Todas las pruebas del proyecto juntas: 332 pasan**, ninguna falla (18 min, con Chromium y Open WebUI de verdad).
 
 Falta lo que solo se ve en tu PC: un Comité real de 5 sobre una idea tuya. Después, el mismo con dos chats web a la vez: si sale bien 3 veces seguidas, se deja encendido.
 
