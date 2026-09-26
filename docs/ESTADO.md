@@ -219,7 +219,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   - "Te espera" se ve sin abrir nada.
 - **Los resultados y tu guía paso a paso están en `docs/F1-cara.md`.** Resumen de la guía:
   1. instala Open WebUI Desktop;
-  2. activa "Enable API Keys" en Administración → Ajustes → General;
+  2. activa «Claves de la API» en Administración → Ajustes → Autenticación;
   3. crea una clave;
   4. doble clic en `herramientas\poner-en-openwebui.cmd`.
 - **Aún no:**

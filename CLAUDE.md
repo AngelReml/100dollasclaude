@@ -165,6 +165,10 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   the client goes (`handler_cancellation=True`; production `run_app` does not), and awaiting a task
   propagates that cancellation into it. The gateway awaits its work through `asyncio.shield` and tells the
   bridge/extension first. Tests that pass only because of handler cancellation prove nothing about Iván's PC.
+- **Every step in Iván's guides must be read in Open WebUI's own code, not assumed** (27-sep, his live report): the
+  API-keys switch is in Administración → Ajustes → **Autenticación** («Claves de la API»), not General; the key is in
+  Ajustes → Cuenta → «Claves de la API» → Secretos: Mostrar (only once the switch is on). The frontend's `.js.map` files
+  in the open-webui package carry the Svelte sources and the es-ES texts: grep them.
 - **Open WebUI sends the whole conversation**: anything matched in a prompt (the demo's "(demo: N minutos)")
   must look at the last question only. A streamed error is `data: {"error": …}` with no `choices`; Open
   WebUI shows it, so the pipe must pass it on (and drop only lines that are not JSON).

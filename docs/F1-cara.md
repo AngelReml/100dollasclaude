@@ -54,8 +54,9 @@ Capturas: `docs/capturas/f1/` (del 01 al 10).
 
 1. **Instala Open WebUI Desktop:** `winget install OpenWebUI.OpenWebUI` en una ventana de comandos, o su instalador (github.com/open-webui/desktop).
 2. **Ábrelo y crea tu usuario.** El primero que se crea es el administrador.
-3. **Activa las claves de API:** tu nombre (abajo a la izquierda) → **Administración** → **Ajustes** → **General** → activa **"Enable API Keys"**. Esa opción sale en inglés: Open WebUI no la tiene traducida. Guarda.
-4. **Crea la clave:** tu nombre → **Ajustes** → **Cuenta** → **Claves de la API** → **Crear Nueva Clave**. Cópiala.
+3. **Activa las claves de API:** tu nombre (abajo a la izquierda) → **Administración** → **Ajustes** → **Autenticación** → activa **«Claves de la API»** («Permite que los usuarios creen claves API…»). Deja apagadas las restricciones que salen debajo. Guarda.
+4. **Crea la clave:** tu nombre → **Ajustes** → **Cuenta** → apartado **«Claves de la API»** → en **«Secretos»** pulsa **Mostrar** → **Crear Nueva Clave**. Copia la **«Clave API»** (empieza por `sk-`), no el «JSON Web Token».
+   - El apartado solo aparece después del paso 3. (Comprobado en el código de Open WebUI 0.11.4, 27-sep-2026: antes esta guía decía «General → Enable API Keys», y no era ahí.)
 5. Con **webllm abierto**, doble clic en **`herramientas\poner-en-openwebui.cmd`**, pega la clave y pulsa Enter.
    - Encuentra Open WebUI solo (la aplicación de escritorio usa `http://localhost:8080`).
    - Debe terminar en "Listo".

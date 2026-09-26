@@ -23,7 +23,8 @@ What it does (running it again updates everything, nothing is duplicated):
 9. every webllm model gets Open WebUI's tools as they are ("function_calling: native"): webllm decides which tools
    an AI may even see and checks every request (acciones.yaml, PLAN-v5 F9); the old "legacy" mode would have
    Open WebUI choose the tool itself, around webllm.
-The Open WebUI key: Open WebUI → Ajustes → Cuenta → Claves de API → Crear (an administrator's key).
+The Open WebUI key (0.11.4): Administración → Ajustes → Autenticación → «Claves de la API» on; then Ajustes → Cuenta →
+«Claves de la API» → Secretos: Mostrar → Crear Nueva Clave (an administrator's key, sk-…).
 Without --webllm-token it reads webllm's own key from data/state/bridge_token on this PC.
 
 Connectors (PLAN-v5 F9), added to the ones Open WebUI already has (by their id, nothing duplicated):
@@ -95,8 +96,8 @@ class OpenWebUI:
         if missing_ok and r.status_code == 404:
             return None
         if r.status_code == 401:
-            raise SystemExit("Open WebUI no acepta la clave: créala de nuevo en Ajustes → Cuenta → Claves de API "
-                             "(con tu usuario administrador) y vuelve a ejecutar esto.")
+            raise SystemExit("Open WebUI no acepta la clave: créala de nuevo en Ajustes → Cuenta → Claves de la API → "
+                             "Mostrar → Crear Nueva Clave (con tu usuario administrador; empieza por sk-) y vuelve a ejecutar esto.")
         r.raise_for_status()
         return r.json() if r.content else None
 
@@ -223,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
     if a.clave.strip().startswith(("github_pat_", "ghp_", "gho_", "ghu_", "ghs_")):  # never printed back
         print("Eso que has pegado es tu token de GitHub, no la clave de Open WebUI. No se ha enviado a ningún sitio.\n"
-              "Primero va la clave de Open WebUI (en Open WebUI: tu nombre → Ajustes → Cuenta → Claves de la API);\n"
+              "Primero va la clave de Open WebUI (en Open WebUI: tu nombre → Ajustes → Cuenta → Claves de la API → Mostrar; empieza por sk-);\n"
               "el token de GitHub se pide justo después.")
         return 1
     github_token = None

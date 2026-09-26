@@ -1,7 +1,7 @@
 @echo off
 rem Pone webllm dentro de Open WebUI (PLAN-v5 F1): tus IAs de webllm como modelos de Open WebUI.
-rem Antes: en Open WebUI, Administracion - Ajustes - General - "Enable API Keys" activado,
-rem y luego tu usuario - Ajustes - Cuenta - Claves de la API - Crear Nueva Clave.
+rem Antes: en Open WebUI, Administracion - Ajustes - Autenticacion - "Claves de la API" activado,
+rem y luego tu usuario - Ajustes - Cuenta - Claves de la API - Mostrar - Crear Nueva Clave (sk-...).
 cd /d "%~dp0.."
 set "CLAVE="
 set /p "CLAVE=Pega aqui tu clave de Open WebUI y pulsa Enter: "
