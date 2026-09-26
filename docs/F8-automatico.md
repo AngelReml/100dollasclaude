@@ -1,9 +1,9 @@
 # F8 — «Automático» (26-sep-2026)
 
 **Resultado en la nube: hecho y probado.**
-- **50 pruebas de «Automático».** Rompiendo a propósito cada protección, su prueba falla.
+- **52 pruebas de «Automático».** Rompiendo a propósito cada protección, su prueba falla.
 - **El Open WebUI de verdad: __OWUI__.**
-- **__CAPTURAS__ capturas de la app, sin problemas.**
+- **103 capturas de la app, sin problemas** (entre ellas «Automático», tu prueba, las fichas y el Historial).
 - **Todas las pruebas del proyecto juntas: __TOTAL__.**
 
 Falta lo que solo se ve en tu PC:
@@ -129,6 +129,9 @@ En la app: **Inicio → Automático → «Probar con tus preguntas»**.
 | Un PDF nunca va por API; una imagen solo a una IA que ve imágenes | **Bien** | aquí |
 | **La primera línea**: con y sin streaming, antes de las primeras palabras de una API que escribe en directo, y delante de un error | **Bien** | aquí |
 | **La IA nunca ve las primeras líneas de «Automático»** en la conversación, y el registro guarda sus palabras, no las de webllm | **Bien** | aquí |
+| …tampoco una IA que eliges tú más tarde en esa misma conversación | **Bien** | aquí |
+| El Comité dice por qué deja fuera una API que puede entrenar; con «Permitir» vuelve a entrar | **Bien** | aquí |
+| Una IA que falló hace 2 minutos (saturada) se salta y se dice; pasados 15 minutos vuelve | **Bien** | aquí |
 | **Si la elegida falla, no se pregunta a otra** | **Bien** | aquí |
 | Una idea → plan del Comité (nada enviado); «cancela» va al Comité; otra pregunta descarta el plan | **Bien** | aquí |
 | Nadie disponible: no se envía nada y dice qué hacer | **Bien** | aquí |
@@ -143,10 +146,11 @@ En la app: **Inicio → Automático → «Probar con tus preguntas»**.
 
 Rompiendo a propósito una protección, su prueba falla:
 - sin la regla de privacidad;
+- sin quitar la primera línea antes de que la conversación vuelva a una IA;
 - con un PDF enviado por API;
 - con una palabra pesando más que un archivo;
 - sin la primera línea en el streaming de una API, en un error o sin streaming;
-- con la IA viendo la primera línea.
+- con la primera línea llegando a la IA (fallan 2 pruebas).
 
 ## Lo que encontré y arreglé por el camino
 
@@ -156,6 +160,9 @@ Rompiendo a propósito una protección, su prueba falla:
 4. **Un «no» escrito sin comillas en el archivo se leía como «falso».** El lector ya lo entiende.
 5. **Un botón decía «Usar nvidia/z-ai/glm-5.2».** Ahora dice «Encender», y debajo cómo se llama en OmniRoute.
 6. **El aviso de mensajes del día decía «el Comité»** también cuando preguntaba «Automático». Ahora habla de quien pregunta.
+7. **La primera línea de «Automático» le habría llegado a otra IA:** si cambias de modelo a mitad de una conversación, la IA nueva recibía esas líneas en el historial. Ahora ninguna IA las ve, y una prueba lo comprueba.
+8. **El plan del Comité decía que Nemotron «no es privada»,** una frase pensada para webs que publican lo que escribes. Ahora dice lo que pasa de verdad: «puede usar lo que escribes para entrenar: solo entra si lo permites en su ficha».
+9. **En el Historial no se veía qué había elegido «Automático».** Ahora sale encima de la respuesta, con el porqué.
 
 ## Decisiones (y por qué)
 

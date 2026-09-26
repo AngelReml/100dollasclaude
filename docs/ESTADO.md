@@ -61,7 +61,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   - en el selector, Nemotron se llama ahora «Nemotron (API, no privada)».
 - **«Probar con tus preguntas»:** 10 preguntas tuyas, qué elegiría para cada una (sin enviar nada), y tú marcas Bien o Mal. La meta es 9 de 10.
 - **Probado aquí:**
-  - 50 pruebas de «Automático»;
+  - 52 pruebas de «Automático»;
   - el Open WebUI de verdad: __OWUI__;
   - todas juntas: **__TOTAL__**.
 - **Falta tu PC:** encender las APIs de la tabla y tus 10 preguntas. Guía en `docs/F8-automatico.md`.

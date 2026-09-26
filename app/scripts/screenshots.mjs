@@ -335,6 +335,16 @@ async function automatico(page, tag) {
   await glm.getByRole("button", { name: "Apagar" }).click();
   await glm.getByText("Sin configurar").waitFor({ timeout: 15000 });
   await page.keyboard.press("Escape");
+  // a question to "webllm · Automático" (as Open WebUI sends it): its record says what it chose and why
+  const r = await fetch(`http://127.0.0.1:${port}/gw/v1/chat/completions`, { method: "POST",
+    headers: { Authorization: "Bearer demo-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "automatico", stream: false, messages: [{ role: "user", content: "Hazme un script en Python que sume dos números" }],
+                           webllm: { chat_id: `capturas-auto-${tag}` } }) });
+  const runId = r.headers.get("x-webllm-run");
+  await r.json();
+  await page.goto(`${base}#/historial/${runId}`);
+  await page.locator("[data-automatico]").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-49-automatico-historial`);
 }
 
 async function run(theme, width, full) {

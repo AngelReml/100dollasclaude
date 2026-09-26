@@ -75,7 +75,7 @@ async def handle(gw: "Gateway", request: web.Request, body: dict[str, Any]) -> w
         return await gw._finish_text(reply, automatico.nobody_text(choice))
     journal = {"tipo": choice.reading.type, "por_que": choice.reading.why_text(), "paso": choice.reading.step,
                "eligio": choice.provider.name, "saltadas": [list(x) for x in choice.skipped]}
-    forward = {**body, "model": choice.provider.name, "messages": automatico.without_route_lines(messages)}
+    forward = {**body, "model": choice.provider.name}  # the gateway keeps Automático's first lines away from the AI
     return await gw.answer(request, forward, route={"line": line, "journal": journal})
 
 

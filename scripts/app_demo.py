@@ -205,6 +205,9 @@ def fake_omniroute(data: Path | None = None) -> web.Application:
             return web.json_response({"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. "
                                                 "Add 10 credits to unlock 1000 free model requests per day"}}, status=429)
         text = API_ANSWERS[key]
+        if "script" in prompt.lower():  # a code question (Automático sends them to an API of its code list)
+            text = ("Aquí tienes:\n\n```python\na = float(input(\"Primer número: \"))\nb = float(input(\"Segundo número: \"))\n"
+                    "print(\"La suma es\", a + b)\n```\n\nGuárdalo como `suma.py` y ejecútalo con `python suma.py`.")
         if "critica" in prompt.lower() or "Otra IA" in prompt or "ojo crítico" in prompt:
             text = ("**Mi opinión:** la respuesta es correcta y clara. Le añadiría que un poco de inflación "
                     "es normal (alrededor del 2 %) y que lo peligroso es cuando sube muy deprisa.")

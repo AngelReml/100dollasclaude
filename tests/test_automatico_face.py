@@ -322,3 +322,36 @@ def test_the_history_says_what_automatico_chose_and_why(tmp_path):
             _, d, _ = await app.get(f"/api/historial/{run_id_of(headers)}")
             assert d["automatico"] is None
     run(go())
+
+
+def test_an_ai_picked_by_ivan_later_in_the_conversation_never_sees_automaticos_lines(tmp_path):
+    async def go():
+        async with Committee(tmp_path, api_scripts={GROQ: lambda t: "Hecho."}) as app:
+            _, lines, _ = await gw(app, body("Hazme un script en Python"))
+            answer = content(lines)
+            assert answer.startswith("**Automático**")
+            later = {"model": "groq", "stream": True, "messages": [
+                {"role": "user", "content": "Hazme un script en Python"}, {"role": "assistant", "content": answer},
+                {"role": "user", "content": "Gracias"}], "webllm": {"chat_id": "c-1", "message_id": "m-3"}}
+            await gw(app, later)
+            sent = app.api.calls(GROQ)[-1]["messages"]
+            assert [m["content"] for m in sent] == ["Hazme un script en Python", "Hecho.", "Gracias"]
+    run(go())
+
+
+def test_the_committee_says_why_an_api_that_may_train_stays_out(tmp_path):
+    """F8 changed F7: Nemotron (OpenRouter's free models may keep what you write) no longer takes part on its own."""
+    async def go():
+        async with Committee(tmp_path) as app:
+            app.bridge.app_api._refresh_api_models()  # the cards' privacy, as load_config applies it on Iván's PC
+            _, lines, _ = await gw(app, {"model": "comite", "stream": True, "webllm": {"chat_id": "c-9"},
+                                         "messages": [{"role": "user", "content": "¿Merece la pena montar una tienda?"}]})
+            plan = content(lines)
+            assert "Nemotron (puede usar lo que escribes para entrenar: solo entra si lo permites en su ficha)" in plan
+            assert "| Nemotron |" not in plan
+            automatico.set_private(app.cfg.paths, "nemotron", True)  # "Permitir"
+            app.bridge.app_api._refresh_api_models()
+            _, lines, _ = await gw(app, {"model": "comite", "stream": True, "webllm": {"chat_id": "c-10"},
+                                         "messages": [{"role": "user", "content": "¿Merece la pena montar una tienda?"}]})
+            assert "| Nemotron |" in content(lines)
+    run(go())

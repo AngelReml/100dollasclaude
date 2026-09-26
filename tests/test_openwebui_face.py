@@ -92,6 +92,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                              timeout=600, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
                                                "WEBLLM_DATA": str(tmp_path / "demo"), "OUT": str(tmp_path / "capturas")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 10 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         wait_port(mcp_port, 30)
         out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f2_checks.mjs")], capture_output=True, text=True,
@@ -99,6 +100,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_DATA": str(tmp_path / "demo"), "OUT": str(tmp_path / "capturas-f2"),
                                                "MCP_URL": f"http://127.0.0.1:{mcp_port}/mcp"})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 8 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F5 (6): the same Open WebUI and webllm, with the memory on in a vault folder of this test.
         (tmp_path / "vault").mkdir()
@@ -107,6 +109,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
                                                "VAULT": str(tmp_path / "vault"), "OUT": str(tmp_path / "capturas-f5")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 6 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F6 (5): «Continuar en la web» under a web chat's answer (not an API's); what Iván wrote by hand in the web
         # (the demo's fake Chrome writes one turn) goes with his next question, and the answer says so.
@@ -115,6 +118,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
                                                "OUT": str(tmp_path / "capturas-f6")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 5 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F7 (5): "webllm · Comité": the plan (nothing sent), "adelante", the progress in the thinking block, the fusion
         # document with its 8 sections, the green lock, and the vault's copy with the annex (the memory is on since F5).
@@ -123,6 +127,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
                                                "VAULT": str(tmp_path / "vault"), "OUT": str(tmp_path / "capturas-f7")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 5 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F8 (4): "webllm · Automático": in the selector and never what a new chat opens with; a code question gets the
         # chosen AI's answer with the first line saying which and why (and the record keeps it); the next question goes
@@ -132,6 +137,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
                                                "OUT": str(tmp_path / "capturas-f8")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 4 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F4 (6): the same Open WebUI, now pointed at a webllm with the REAL extension in Chromium and the
         # extended test chat page: the chat's models in the selector, a file whole, a switch that changes the mode.
@@ -140,6 +146,7 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_PYTHON": sys.executable, "WEBLLM_TEST_PORT": str(free_port()),
                                                "OUT": str(tmp_path / "capturas-f4")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 6 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
     finally:
         for p in procs:

@@ -232,7 +232,8 @@ def make_plan(cfg: "AppConfig", problem: str, *, number: int, think: bool, paral
             missing.append((p.display, "está apagada"))
             continue
         if not eligible_for_auto(p) or is_blocked_model(cfg, p.model):
-            missing.append((p.display, "no es privada: solo entra si la eliges tú"))
+            missing.append((p.display, "puede usar lo que escribes para entrenar: solo entra si lo permites en su ficha"
+                            if p.gateway == "omniroute" else "no es privada: solo entra si la eliges tú"))
             continue
         why = ready(p, 4 if site else 2)  # worst case: role repeated and verdict rewritten
         if why:

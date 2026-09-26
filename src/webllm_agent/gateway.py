@@ -387,6 +387,12 @@ class Gateway:
         if ext.get("task") and p.gateway == "bridge":
             raise RequestError(400, "task_for_web_chat", problem_text("task_for_web_chat", p.display))
         messages = body.get("messages") if isinstance(body.get("messages"), list) else []
+        # Automático's first lines are webllm's notes, not an AI's words: no AI gets them, also when Iván picks
+        # another AI later in the same conversation (PLAN-v5 F8)
+        clean = automatico.without_route_lines(messages)
+        if clean != messages:
+            messages = clean
+            body["messages"] = messages  # the direct path (APIs, this PC) sends the body's messages
         chat_id = str(ext.get("chat_id") or "")[:100]
         # what Iván wrote himself in a web chat's page, going on from this conversation (observer mode, PLAN-v5 F6):
         # it goes with the question, where it happened, to whichever AI answers (it is not in Open WebUI's messages)
