@@ -304,6 +304,39 @@ async function comite(page, tag) {
   await shot(page, `${tag}-44-comite-historial`);
 }
 
+async function automatico(page, tag) {
+  await page.goto(base);
+  const card = page.locator('[data-card="automatico"]');
+  await card.getByText("Si preguntas ahora").waitFor({ timeout: 15000 });
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-45-automatico`);
+  // Iván's test: what it would choose for each question (nothing is sent), marked right or wrong
+  await card.getByRole("button", { name: "Probar con tus preguntas" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Ver qué elegiría" }).click();
+  await dialog.getByText("Marca cada una").waitFor({ timeout: 15000 });
+  for (let i = 0; i < 3; i++) await dialog.getByRole("radio", { name: "Bien" }).nth(i).click();
+  await dialog.getByRole("radio", { name: "Mal" }).nth(3).click();
+  await shot(page, `${tag}-46-automatico-prueba`);
+  await dialog.getByRole("button", { name: "Guardar la prueba" }).click();
+  await dialog.waitFor({ state: "detached" });
+  // the API cards: OmniRoute's own list, one turned on with its test call and turned off again
+  await card.getByRole("button", { name: "Las IAs por API" }).click();
+  await dialog.getByRole("button", { name: "Buscar en OmniRoute" }).click();
+  const use = dialog.getByRole("button", { name: "Encender nvidia/z-ai/glm-5.2" });
+  await use.waitFor({ timeout: 15000 });
+  if (await dialog.getByText("claude").count()) report.push({ name: `${tag}-apis`, clipped: ["ofrece un modelo prohibido"], smallText: [] });
+  await shot(page, `${tag}-47-automatico-apis`);
+  await use.click();
+  const glm = dialog.locator('[data-ficha="glm-5.2"]');
+  await glm.getByText("Encendida (nvidia/z-ai/glm-5.2)").waitFor({ timeout: 20000 });
+  await glm.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-48-automatico-api-encendida`);
+  await glm.getByRole("button", { name: "Apagar" }).click();
+  await glm.getByText("Sin configurar").waitFor({ timeout: 15000 });
+  await page.keyboard.press("Escape");
+}
+
 async function run(theme, width, full) {
   const height = width === 1920 ? 1080 : 800;
   const browser = await chromium.launch({ executablePath: exe });
@@ -379,6 +412,7 @@ async function run(theme, width, full) {
     await memoria(page, tag);
     await reparacion(page, tag);
     await comite(page, tag);
+    await automatico(page, tag);
   }
   await browser.close();
 }

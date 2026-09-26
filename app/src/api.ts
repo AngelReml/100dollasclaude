@@ -347,6 +347,67 @@ export interface Comite {
   preview_error?: string;
 }
 
+/** PLAN-v5 F8: "Automático" (its written rules, its table as it is now, Iván's test) and the cards of the AIs by API. */
+export interface AutoRow {
+  key: string;
+  label: string;
+  state: "lista" | "no" | "comite";
+  why: string;
+  added: boolean;
+  api?: boolean;
+}
+export interface AutoType {
+  key: string;
+  name: string;
+  rows: AutoRow[];
+  now: string | null;
+}
+export type Privacidad = "no_entrena" | "sin_comprobar" | "entrena_salvo_que_lo_apagues" | "puede_entrenar";
+export interface ApiCard {
+  key: string;
+  name: string;
+  proveedor: string;
+  web: string;
+  familia: string;
+  hace: string;
+  contexto: string;
+  imagenes: "si" | "no" | "desconocido";
+  herramientas: string;
+  limites: string;
+  pide: string;
+  fuente: string;
+  privacidad: { estado: Privacidad; detalle: string; como_evitarlo: string; privada_por_defecto: boolean };
+  configurada: boolean;
+  model: string | null;
+  desde_omniroute: boolean;
+  cuando?: string | null;
+  privada: boolean | null;
+  decidido_por_ti: boolean;
+}
+export interface AutoTest {
+  texto: string;
+  tipo: string;
+  elegida: string;
+  bien: boolean | null;
+  cuando?: string;
+}
+export interface AutoTry {
+  texto: string;
+  tipo: string;
+  por_que: string;
+  elegida: string;
+  saltadas: [string, string][];
+  linea: string;
+}
+export interface Automatico {
+  checked: string;
+  fuente: string;
+  reglas: string[];
+  tipos: AutoType[];
+  fichas: ApiCard[];
+  pruebas: AutoTest[];
+}
+
 export const api = {
   estado: () => call<Estado>("/api/estado"),
   reanudar: (ia: string) => post<{ ok: boolean; cleared: boolean }>("/api/reanudar", { ia }),
@@ -386,6 +447,15 @@ export const api = {
   comite: () => call<Comite>("/api/comite"),
   guardarComite: (body: { number?: 3 | 5; think?: boolean; parallel_web?: boolean; roles?: ComiteRole[]; reset_roles?: boolean }) =>
     post<Comite>("/api/comite", body),
+  automatico: () => call<Automatico>("/api/automatico"),
+  /** What Automático would choose for each question: nothing is sent to any AI. */
+  probarAutomatico: (preguntas: string[]) => post<{ resultados: AutoTry[] }>("/api/automatico/probar", { preguntas }),
+  guardarPruebas: (preguntas: AutoTest[]) => post<{ preguntas: AutoTest[] }>("/api/automatico/pruebas", { preguntas }),
+  omnirouteModelos: () => call<{ modelos: Record<string, string[]>; total: number }>("/api/apis/omniroute"),
+  usarApi: (key: string, model: string) => post<Automatico>("/api/apis/usar", { key, model }),
+  quitarApi: (key: string) => post<Automatico>("/api/apis/quitar", { key }),
+  /** true = Automático and the Committee may use it on their own; null = what its card says. */
+  privacidadApi: (key: string, permitir: boolean | null) => post<Automatico>("/api/apis/privacidad", { key, permitir }),
   memoria: () => call<Memoria>("/api/memoria"),
   guardarMemoria: (dir: string, enabled: boolean) => post<Memoria>("/api/memoria", { dir, enabled }),
   /** "Reescribir todo": every conversation and answer written again from the journal (hand edits there are lost). */

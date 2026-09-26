@@ -4,6 +4,7 @@ import { api, ApiError, type Ai } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
+import { AutomaticoCard } from "../ui/Automatico";
 import { ComiteCard } from "../ui/Comite";
 import { MemoriaCard } from "../ui/Memoria";
 import { ObservingBanner } from "../ui/Observando";
@@ -239,6 +240,10 @@ export function Inicio() {
           <section className="mb-10">
             <SectionTitle>Evaluar una idea</SectionTitle>
             <ComiteCard />
+          </section>
+          <section className="mb-10">
+            <SectionTitle>Que webllm elija la IA</SectionTitle>
+            <AutomaticoCard />
           </section>
           <section className="mb-10">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

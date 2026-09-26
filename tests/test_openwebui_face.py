@@ -3,7 +3,7 @@ the checks on the real screen: tests/openwebui/f1_checks.mjs (10), then f2_check
 tool, tests/openwebui/mcp_hora.py, used by an AI through webllm only after "Allow"; Open WebUI's
 "Detener" stops a web chat's long answer; a web chat, an API and a model on this PC all answer),
 then f5_checks.mjs (6: the memory in Obsidian, written while it happens, in the Open WebUI folder's name, each
-answer in its own file identical to the record), then f6_checks.mjs (5: «Continuar en la web»), then f7_checks.mjs (5: the Committee), then f4_checks.mjs (6, with the real extension: the chat's models,
+answer in its own file identical to the record), then f6_checks.mjs (5: «Continuar en la web»), then f7_checks.mjs (5: the Committee), then f8_checks.mjs (4: «Automático»), then f4_checks.mjs (6, with the real extension: the chat's models,
 a whole file, a switch that changes the mode). Skipped unless
 WEBLLM_OPENWEBUI_PY points at a Python that has Open WebUI (it is 7 GB: `uv venv -p 3.11 .venv &&
 uv pip install open-webui`; it brings the `mcp` package the tool server needs)."""
@@ -124,6 +124,15 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "VAULT": str(tmp_path / "vault"), "OUT": str(tmp_path / "capturas-f7")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
         assert out.returncode == 0 and len(lines) == 5 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
+        # F8 (4): "webllm · Automático": in the selector and never what a new chat opens with; a code question gets the
+        # chosen AI's answer with the first line saying which and why (and the record keeps it); the next question goes
+        # on with the conversation; an idea gets the Committee's plan (nothing sent).
+        out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f8_checks.mjs")], capture_output=True, text=True,
+                             timeout=600, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
+                                               "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
+                                               "OUT": str(tmp_path / "capturas-f8")})
+        lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        assert out.returncode == 0 and len(lines) == 4 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F4 (6): the same Open WebUI, now pointed at a webllm with the REAL extension in Chromium and the
         # extended test chat page: the chat's models in the selector, a file whole, a switch that changes the mode.
         out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f4_checks.mjs")], capture_output=True, text=True,

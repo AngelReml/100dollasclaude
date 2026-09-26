@@ -184,3 +184,109 @@ def test_an_api_that_streams_gets_the_first_line_before_its_first_words(tmp_path
             assert pieces[0].startswith("**Automático** eligió **groq** para «Código»") and pieces[0].endswith("\n\n")
             assert "".join(pieces[1:]) == "answer from groq/ok"
     run(go())
+
+
+# ------------------------------------------------------------------ the app: the table in view, the API cards, Iván's test
+
+OMNIROUTE_IDS = ["nvidia/z-ai/glm-5.2", "mistral/codestral-2508", "cc/claude-sonnet-4.5", "groq/qwen/qwen3.8-27b"]
+
+
+class ListingAPI(FakeAPI):
+    """OmniRoute with a list of the models it serves (/v1/models)."""
+
+    async def start(self):
+        from aiohttp.test_utils import TestServer
+        app = web.Application()
+        app.router.add_get("/api/health", lambda r: web.json_response({"ok": True}))
+        app.router.add_get("/v1/models", lambda r: web.json_response({"data": [{"id": i} for i in OMNIROUTE_IDS]}))
+        app.router.add_post("/v1/chat/completions", self.chat)
+        self.server = TestServer(app)
+        await self.server.start_server()
+        self.base_url = str(self.server.make_url("/v1"))
+        return self
+
+
+class ListingWorld(Committee):
+    def __init__(self, tmp_path, **kw):
+        super().__init__(tmp_path, **kw)
+        self.api = ListingAPI(self.api.scripts)
+
+
+def row(view, kind, label):
+    t = next(t for t in view["tipos"] if t["key"] == kind)
+    return next(r for r in t["rows"] if r["label"] == label)
+
+
+def test_the_table_is_in_view_with_who_is_available_now_and_why_not(tmp_path):
+    async def go():
+        async with ListingWorld(tmp_path) as app:
+            status, v, _ = await app.get("/api/automatico")
+            assert status == 200 and v["reglas"][0].startswith("Si dice «mi idea»") and v["checked"]
+            assert row(v, "codigo", "GLM-5.2 (API)") == {"key": "glm-5.2", "label": "GLM-5.2 (API)", "state": "no",
+                                                          "why": "sin configurar", "added": False, "api": True}
+            assert row(v, "codigo", "groq")["state"] == "lista" and row(v, "codigo", "groq")["added"] is True
+            assert next(t for t in v["tipos"] if t["key"] == "codigo")["now"] == "groq"
+            assert next(t for t in v["tipos"] if t["key"] == "idea")["now"] == "webllm · Comité"
+            card = next(f for f in v["fichas"] if f["key"] == "nemotron")
+            assert card["privacidad"]["estado"] == "puede_entrenar" and card["configurada"] is True and card["decidido_por_ti"] is False
+    run(go())
+
+
+def test_an_api_is_turned_on_from_omniroutes_own_list_with_one_test_call(tmp_path):
+    async def go():
+        async with ListingWorld(tmp_path, api_scripts={"nvidia/z-ai/glm-5.2": lambda t: "pong"}) as app:
+            status, found, _ = await app.get("/api/apis/omniroute")
+            assert status == 200 and found["modelos"]["glm-5.2"] == ["nvidia/z-ai/glm-5.2"]
+            assert found["modelos"]["qwen3.8-27b"] == ["groq/qwen/qwen3.8-27b"]
+            assert not any("claude" in i for ids in found["modelos"].values() for i in ids)  # never a blocked one
+            # a model that is not in OmniRoute's list (or not that card's model) is refused, nothing is called
+            status, err = await app.post("/api/apis/usar", {"key": "glm-5.2", "model": "nvidia/z-ai/glm-9"})
+            assert status == 400 and err["code"] == "not_in_list" and not app.api.requests
+            status, err = await app.post("/api/apis/usar", {"key": "codestral", "model": "cc/claude-sonnet-4.5"})
+            assert status == 400 and not app.api.requests
+            # the real one: one short test call, then it is an AI of webllm and first for code
+            status, v = await app.post("/api/apis/usar", {"key": "glm-5.2", "model": "nvidia/z-ai/glm-5.2"})
+            assert status == 200 and len(app.api.calls("nvidia/z-ai/glm-5.2")) == 1
+            assert row(v, "codigo", "GLM-5.2 (API)")["state"] == "lista"
+            assert next(t for t in v["tipos"] if t["key"] == "codigo")["now"] == "GLM-5.2 (API)"
+            _, lines, _ = await gw(app, body("Hazme un script en Python"))
+            assert content(lines).startswith("**Automático** eligió **GLM-5.2 (API)** para «Código»")
+            _, models, _ = await app.get("/gw/v1/models")
+            assert "glm-5.2" in [m["id"] for m in models["data"]]  # also in Open WebUI's selector
+            status, v = await app.post("/api/apis/quitar", {"key": "glm-5.2"})
+            assert status == 200 and row(v, "codigo", "GLM-5.2 (API)")["why"] == "sin configurar"
+    run(go())
+
+
+def test_an_api_that_may_train_waits_for_ivans_word(tmp_path):
+    async def go():
+        async with ListingWorld(tmp_path, api_scripts={"mistral/codestral-2508": lambda t: "pong"}) as app:
+            _, v = await app.post("/api/apis/usar", {"key": "codestral", "model": "mistral/codestral-2508"})
+            assert row(v, "codigo", "Codestral (API)") == {"key": "codestral", "label": "Codestral (API)", "state": "no",
+                                                            "why": "puede usar lo que escribes para entrenar", "added": False, "api": True}
+            _, v = await app.post("/api/apis/privacidad", {"key": "codestral", "permitir": True})  # "Ya lo apagué"
+            assert row(v, "codigo", "Codestral (API)")["state"] == "lista"
+            assert next(f for f in v["fichas"] if f["key"] == "codestral")["decidido_por_ti"] is True
+            _, v = await app.post("/api/apis/privacidad", {"key": "codestral", "permitir": None})  # back to its card
+            assert row(v, "codigo", "Codestral (API)")["state"] == "no"
+            status, _ = await app.post("/api/apis/privacidad", {"key": "codestral", "permitir": "sí"})
+            assert status == 400
+    run(go())
+
+
+def test_ivans_test_questions_say_what_automatico_would_choose_and_send_nothing(tmp_path):
+    async def go():
+        async with ListingWorld(tmp_path) as app:
+            status, res = await app.post("/api/automatico/probar", {"preguntas": [
+                "Hazme un script en Python", "¿Cuál es la capital de Australia?", "¿Merece la pena abrir una tienda?", ""]})
+            got = [(r["tipo"], r["elegida"]) for r in res["resultados"]]
+            assert status == 200 and got == [("Código", "groq"), ("Pregunta rápida", "z.ai"), ("Evaluar una idea", "webllm · Comité")]
+            assert res["resultados"][0]["linea"].startswith("**Automático** eligió **groq**")
+            assert not app.api.requests and not app.ext.jobs  # nothing sent to anyone
+            status, saved = await app.post("/api/automatico/pruebas", {"preguntas": [
+                {"texto": "Hazme un script en Python", "tipo": "Código", "elegida": "groq", "bien": True},
+                {"texto": "¿Cuál es la capital de Australia?", "tipo": "Pregunta rápida", "elegida": "z.ai", "bien": False}]})
+            assert status == 200 and [x["bien"] for x in saved["preguntas"]] == [True, False]
+            _, v, _ = await app.get("/api/automatico")
+            assert [x["texto"] for x in v["pruebas"]] == ["Hazme un script en Python", "¿Cuál es la capital de Australia?"]
+    run(go())

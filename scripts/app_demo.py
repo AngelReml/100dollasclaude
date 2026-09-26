@@ -163,12 +163,20 @@ def demo_repair(prompt: str, log: Path | None) -> str:
     return json.dumps(out)
 
 
+# PLAN-v5 F8: the models of the Automático table a real OmniRoute would list once Iván put their keys in it
+F8_MODELS = ("nvidia/z-ai/glm-5.2", "groq/qwen/qwen3.8-27b", "mistral/codestral-2508", "mistral/mistral-large-2511",
+             "gemini/gemini-3.5-flash")
+
+
 def fake_omniroute(data: Path | None = None) -> web.Application:
     async def health(request):
         return web.json_response({"ok": True})
 
     async def models(request):
-        return web.json_response({"object": "list", "data": [{"id": m} for m in ("zai/glm-4.7-flash", "groq/x", "nr/x")]})
+        # what a real OmniRoute would list once Iván put the keys of PLAN-v5's table in it (PLAN-v5 F8), and one
+        # model webllm must never offer
+        ids = ("zai/glm-4.7-flash", "groq/x", "nr/x", *F8_MODELS, "cc/claude-sonnet-4.5")
+        return web.json_response({"object": "list", "data": [{"id": m} for m in ids]})
 
     async def chat(request):
         body = await request.json()
@@ -185,7 +193,11 @@ def fake_omniroute(data: Path | None = None) -> web.Application:
             p.get("text", "") for p in last["content"] if isinstance(p, dict))
         if prompt.startswith("You help a browser extension find elements"):  # webllm repairing a page
             return await answer(request, body, {"content": demo_repair(prompt, data / "demo_reparaciones.jsonl" if data else None)})
+        if prompt == "Responde solo con la palabra: pong":  # "Usar" on an API card: its one test call
+            return await answer(request, body, {"content": "pong"})
         key = "zai" if model.startswith("zai") else "groq" if model.startswith("groq") else "nemotron"
+        if model in F8_MODELS:  # an API turned on from OmniRoute's list in the demo
+            return await answer(request, body, {"content": f"(Respuesta de prueba de {model}.) " + API_ANSWERS["groq"]})
         committee_text = demo_committee(prompt, key)
         if committee_text is not None:
             return await answer(request, body, {"content": committee_text})
