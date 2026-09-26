@@ -1,0 +1,74 @@
+# "Automático" (PLAN-v5 D7 and F8): the rules are written here and shown in the app; no machine learning.
+# Each question is read (the LAST one Iván wrote, and the files that come with it) and the steps of "orden" are
+# tried one by one: the first that matches gives the type (what comes with the question weighs more than a loose
+# word). No step matches = "rapida". Then it goes to the first AI of that type's list that is available now:
+#   connected / configured, not paused, under its cap today, fine in its last check, not failed in the last
+#   minutes (saturated, no session), private (never a web that publishes nor an API that may train on what you
+#   write, unless Iván allowed it), and able to take what comes with the question (a PDF only to a web chat that
+#   can upload files; an image only to an AI that sees images).
+# The first line of the answer says what it chose and why (D21). A question with no signal inside a conversation
+# goes on with the previous question's type ("sigue la conversación").
+#
+# frases      words or phrases, compared without accents or capitals, as whole words
+# patrones    regular expressions over the question as written (code syntax)
+# archivo     documento | codigo: a file of that kind came with the question
+# largo       the question is longer than this many characters
+# ruta        provider names, in order (modelos_api.yaml for the APIs, catalog keys for web chats,
+#             "comite" = webllm · Comité). "añadidas" = not in PLAN-v5's table: what Iván already has, unmeasured.
+checked: "2026-09-26"
+fuente: "PLAN-v5 sección 6 (pruebas públicas de septiembre de 2026); F8 la mide con tus cuentas antes de darla por buena"
+orden:  # [type, signal]
+  - [idea, frases]
+  - [codigo, archivo]
+  - [documento, archivo]
+  - [codigo, patrones]
+  - [documento, largo]
+  - [codigo, frases]
+  - [documento, frases]
+  - [investigar, frases]
+tipos:
+  - key: idea
+    name: Evaluar una idea
+    frases: ["mi idea", "esta idea", "es buena idea", "sería buena idea", "merece la pena",
+             "vale la pena", "pros y contras", "evalúa mi", "evalúa esta", "evalúa el plan", "evaluar la idea",
+             "evaluar mi", "plan de negocio", "me conviene", "debería lanzar", "debería montar"]
+    ruta: [comite]
+    sin_reserva: "el Comité tiene sus propias reservas: si faltan IAs, lo dice en su plan"
+
+  - key: codigo
+    name: Código
+    archivo: codigo
+    patrones: ["```", "(?m)^\\s*(def|class|import|from \\S+ import|function|const|let|var|public|private|#include|SELECT|UPDATE|INSERT)\\b",
+               "\\w+\\([^()]*\\)\\s*[{:;]", "</?(div|span|html|body|script|button)\\b", "Traceback \\(most recent call last\\)",
+               "\\b\\w+(Error|Exception)\\b"]
+    frases: ["código", "programa", "programar", "programando", "programación", "función", "script", "traceback", "excepción", "bug",
+             "compilar", "compila", "python", "javascript", "typescript", "java", "html", "css", "sql", "regex",
+             "expresión regular", "github", "git", "npm", "pip", "docker", "powershell", "bash", "terminal", "debug",
+             "depurar", "refactor", "refactorizar", "react", "node", "api rest", "base de datos", "json", "yaml",
+             "variable", "bucle", "commit", "repositorio", "error de compilación", "stack trace"]
+    ruta: [glm-5.2, qwen3.8-27b, codestral, kimi]
+    añadidas: [groq, deepseek, qwen]
+
+  - key: documento
+    name: Documento largo
+    archivo: documento
+    largo: 8000
+    frases: ["este documento", "el documento", "este pdf", "el pdf", "resume este", "resumen de este", "resume el",
+             "este informe", "este contrato", "el archivo adjunto", "el adjunto", "este texto largo", "este libro",
+             "este artículo"]
+    ruta: [gemini-flash, kimi]
+    añadidas: [qwen, deepseek]
+
+  - key: investigar
+    name: Investigar con fuentes
+    frases: ["fuentes", "con fuentes", "cita las fuentes", "con enlaces", "enlaces", "referencias", "busca en internet",
+             "búscame", "busca información", "investiga", "investigar", "noticias", "últimas noticias", "novedades",
+             "qué se sabe de", "estado del arte", "según estudios", "estudios sobre", "precio actual", "hoy en día",
+             "actualmente", "este mes", "esta semana", "en 2026", "qué tiempo hace", "el tiempo en",
+             "previsión del tiempo", "última hora", "cotización", "resultado del partido", "quién ha ganado"]
+    ruta: [felo, brave, perplexity, kimi]
+
+  - key: rapida
+    name: Pregunta rápida
+    ruta: [qwen3.8-27b, zai, gemini-flash]
+    añadidas: [groq, qwen]

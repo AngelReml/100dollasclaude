@@ -1,0 +1,153 @@
+# Each AI by API that webllm knows (PLAN-v5 F8, "fichas de cada modelo de API"). In git: what the model is, who
+# serves it, what it is good for, what it sees, its free limits and what happens with what Iván writes. What Iván
+# did (turned one on from OmniRoute, allowed or not Automático and the Committee to use it on their own) lives in
+# data/state/apis.json.
+#
+# key          provider name in webllm (the Committee's and Automático's lists use it)
+# buscar       how to find it in OmniRoute's own list of models (a regular expression, lower case)
+# imagenes     si | no | desconocido (only "si" gets an image from Automático)
+# privacidad   estado: no_entrena | sin_comprobar | entrena_salvo_que_lo_apagues | puede_entrenar
+#              The last two are never used by Automático or the Committee on their own until Iván allows it
+#              (the same rule as a web chat that is not private, catalog.yaml).
+# Facts: PLAN-v4 "Fuentes gratis por API comprobadas" (2026-09-25); privacy: each provider's terms as a search
+# engine quoted them on 2026-09-26 (their own pages are not reachable from the cloud: say so, never guess).
+checked: "2026-09-26"
+modelos:
+  - key: glm-5.2
+    name: GLM-5.2 (API)
+    proveedor: NVIDIA NIM
+    web: https://build.nvidia.com
+    familia: GLM
+    hace: "programar (el mejor modelo abierto para código, según PLAN-v4)"
+    contexto: sin dato
+    imagenes: desconocido
+    herramientas: si
+    limites: "unas 40 peticiones por minuto"
+    pide: "cuenta NVIDIA Developer y un teléfono"
+    buscar: "glm-?5[.-]?2(?!\\d)"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: sin_comprobar
+      detalle: "NVIDIA guarda lo que escribes 30 días (condiciones de prueba de su API); no queda claro si lo usa para entrenar."
+
+  - key: qwen3.8-27b
+    name: Qwen3.8-27B (Groq)
+    proveedor: Groq
+    web: https://console.groq.com
+    familia: Qwen
+    hace: "respuestas rápidas; también código"
+    contexto: sin dato
+    imagenes: desconocido
+    herramientas: si
+    limites: "30 por minuto; entre 250 y 1.000 al día según el modelo"
+    pide: "una cuenta de Groq (sin tarjeta)"
+    buscar: "qwen-?3[.-]?8-?27b"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: no_entrena
+      detalle: "Groq no puede usar lo que escribes para entrenar sin tu permiso (su contrato, apartado 4.2). Puede guardarlo un tiempo si investiga un error o un abuso."
+
+  - key: codestral
+    name: Codestral (API)
+    proveedor: Mistral
+    web: https://console.mistral.ai
+    familia: Mistral
+    hace: "código"
+    contexto: sin dato
+    imagenes: no
+    herramientas: si
+    limites: "plan gratis «Experiment»: todos los modelos con límite (una lista de agosto dice 10 $ al mes en créditos)"
+    pide: "una cuenta de Mistral (sin tarjeta)"
+    buscar: "codestral"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: entrena_salvo_que_lo_apagues
+      detalle: "En el plan gratis, Mistral usa lo que escribes para entrenar sus modelos si no lo apagas."
+      como_evitarlo: "En console.mistral.ai → Admin → Privacy, apaga «Anonymous improvement data». Después pulsa aquí «Ya lo apagué»."
+
+  - key: mistral-large
+    name: Mistral Large (API)
+    proveedor: Mistral
+    web: https://console.mistral.ai
+    familia: Mistral
+    hace: "general; buen jurado en el Comité"
+    contexto: sin dato
+    imagenes: desconocido
+    herramientas: si
+    limites: "plan gratis «Experiment»: todos los modelos con límite (una lista de agosto dice 10 $ al mes en créditos)"
+    pide: "una cuenta de Mistral (sin tarjeta)"
+    buscar: "mistral-large"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: entrena_salvo_que_lo_apagues
+      detalle: "En el plan gratis, Mistral usa lo que escribes para entrenar sus modelos si no lo apagas."
+      como_evitarlo: "En console.mistral.ai → Admin → Privacy, apaga «Anonymous improvement data». Después pulsa aquí «Ya lo apagué»."
+
+  - key: gemini-flash
+    name: Gemini Flash (API)
+    proveedor: Google (API de Gemini)
+    web: https://aistudio.google.com
+    familia: Gemini
+    hace: "documentos largos (1 millón de tokens) e imágenes"
+    contexto: "1 millón de tokens"
+    imagenes: si
+    herramientas: si
+    limites: "bajos y cambiantes: de 20 a 1.500 al día según el modelo; desde abril los Pro ya no son gratis"
+    pide: "una cuenta de Google"
+    buscar: "gemini-?3([.-]\\d+)?-?flash"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026); PLAN-v5 sección 6"
+    privacidad:
+      estado: no_entrena
+      detalle: "Si vives en Europa (Espacio Económico Europeo), Suiza o Reino Unido, Google trata lo gratis como lo de pago: no usa lo que escribes para mejorar sus productos (condiciones adicionales de la API de Gemini). Fuera de ahí, sí lo usaría."
+
+  - key: zai
+    name: GLM Flash (z.ai, API)
+    proveedor: Z.ai
+    web: https://z.ai/model-api
+    familia: GLM
+    hace: "preguntas rápidas; es el que arregla las webs (F6)"
+    contexto: sin dato
+    imagenes: no
+    herramientas: si
+    limites: "GLM-4.7-Flash gratis (el que ya usas)"
+    pide: "una cuenta de z.ai"
+    buscar: "glm-?4[.-]?7-?flash"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: sin_comprobar
+      detalle: "Las fuentes no coinciden: su acuerdo de datos dice que lo que mandas por la API no se guarda ni se usa para entrenar, y otras lecturas de sus condiciones dicen que sí."
+
+  - key: groq
+    name: gpt-oss-120b (Groq)
+    proveedor: Groq
+    web: https://console.groq.com
+    familia: OpenAI
+    hace: "general y código, rápido"
+    contexto: sin dato
+    imagenes: no
+    herramientas: si
+    limites: "30 por minuto; entre 250 y 1.000 al día según el modelo"
+    pide: "una cuenta de Groq (sin tarjeta)"
+    buscar: "gpt-oss-120b"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: no_entrena
+      detalle: "Groq no puede usar lo que escribes para entrenar sin tu permiso (su contrato, apartado 4.2). Puede guardarlo un tiempo si investiga un error o un abuso."
+
+  - key: nemotron
+    name: Nemotron (OpenRouter, gratis)
+    proveedor: OpenRouter
+    web: https://openrouter.ai
+    familia: NVIDIA
+    hace: "general"
+    contexto: sin dato
+    imagenes: desconocido
+    herramientas: desconocido
+    limites: "modelos «:free»: 20 por minuto y 50 al día (1.000 al día tras recargar 10 $ una vez)"
+    pide: "una cuenta de OpenRouter"
+    buscar: "nemotron"
+    fuente: "PLAN-v4, APIs gratis (25-sep-2026)"
+    privacidad:
+      estado: puede_entrenar
+      detalle: "Es un modelo gratis («:free») de OpenRouter: quien lo sirve suele guardar lo que escribes para entrenar (lo dice la guía de privacidad de OpenRouter)."
+      como_evitarlo: "Gratis solo se puede usar así. Si te parece bien que Automático y el Comité lo usen solos, pulsa «Permitir»."

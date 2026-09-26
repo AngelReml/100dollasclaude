@@ -101,6 +101,8 @@ class ProviderConfig:
     private: bool = True
     # A chat site from webllm's catalog, connected with "Conectar" (PLAN-v5 F3).
     catalog: bool = False
+    # An AI by API Iván turned on from OmniRoute's own list, with its card in modelos_api.yaml (PLAN-v5 F8).
+    api_card: bool = False
 
     @property
     def guarded(self) -> bool:
@@ -261,6 +263,12 @@ def _with_custom(configured: dict[str, ProviderConfig], paths: Paths) -> dict[st
     return {**configured, **extra}
 
 
+def _with_api_models(providers: dict[str, ProviderConfig], paths: Paths) -> dict[str, ProviderConfig]:
+    """Each API card's privacy applied, then the APIs Iván turned on from OmniRoute (automatico.py, F8)."""
+    from .automatico import with_api_models  # it imports ProviderConfig from here
+    return with_api_models(providers, paths)
+
+
 def load_custom_ais(paths: Paths) -> dict[str, ProviderConfig]:
     """Chat sites added from the app ("+ Añadir otra IA") or connected from the catalog. They live in
     data/state/ (not in git) so ACTUALIZAR never conflicts; a catalog one takes its daily cap and privacy
@@ -347,7 +355,7 @@ def load_config(data_dir: Path | None = None) -> AppConfig:
         base_url=str(base_url).rstrip("/"),
         bridge_port=int(bridge_raw.get("port", 20130)),
         bridge_timeout_s=float(bridge_raw.get("timeout_s", 300)),
-        providers=_with_custom(_coerce_providers(merged.get("providers")), paths),
+        providers=_with_api_models(_with_custom(_coerce_providers(merged.get("providers")), paths), paths),
         guard=GuardConfig(
             min_spacing_s=float(guard_raw.get("min_spacing_s", 20)),
             daily_cap=int(guard_raw.get("daily_cap", 150)),
