@@ -221,6 +221,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--terminal", default="", help="dirección del MCP de tu terminal (mcpo)")
     ap.add_argument("--solo-conectores", action="store_true")
     a = ap.parse_args(argv)
+    if a.clave.strip().startswith(("github_pat_", "ghp_", "gho_", "ghu_", "ghs_")):  # never printed back
+        print("Eso que has pegado es tu token de GitHub, no la clave de Open WebUI. No se ha enviado a ningún sitio.\n"
+              "Primero va la clave de Open WebUI (en Open WebUI: tu nombre → Ajustes → Cuenta → Claves de la API);\n"
+              "el token de GitHub se pide justo después.")
+        return 1
     github_token = None
     if a.github:
         github_token = os.environ.get("WEBLLM_GITHUB_TOKEN", "").strip() or getpass.getpass(
@@ -231,7 +236,8 @@ def main(argv: list[str] | None = None) -> int:
     if not a.openwebui:
         a.openwebui = find_openwebui() or ""
         if not a.openwebui:
-            print("No encuentro Open WebUI en este PC. Ábrelo y vuelve a ejecutar esto.")
+            print("No encuentro Open WebUI en este PC: no está abierto, o no está instalado.\n"
+                  "Ábrelo y vuelve a ejecutar esto. Si no lo tienes, cómo instalarlo: docs\\F1-cara.md, «Para ti».")
             return 1
         print(f"Open WebUI encontrado en {a.openwebui}")
     ow = OpenWebUI(a.openwebui, a.clave)

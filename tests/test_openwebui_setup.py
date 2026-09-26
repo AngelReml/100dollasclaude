@@ -227,3 +227,18 @@ def test_the_github_token_comes_from_the_environment_and_is_never_printed(monkey
     out = capsys.readouterr().out
     assert "github_pat_secreto" not in out and "GitHub: conectado" in out
     assert not any("functions" in c for c in fake.calls)  # "--solo-conectores": webllm itself is not reinstalled
+
+
+def test_a_github_token_pasted_as_open_webuis_key_is_caught_and_never_shown(monkeypatch, capsys):
+    """Iván pasted his GitHub token where the Open WebUI key goes (26-sep): say so, send nothing, never echo it."""
+    monkeypatch.setattr(setup, "find_openwebui", lambda: (_ for _ in ()).throw(AssertionError("nothing may be looked up")))
+    assert setup.main(["--clave", "github_pat_11ABCDEFG0secreto", "--github", "--solo-conectores"]) == 1
+    out = capsys.readouterr().out
+    assert "token de GitHub, no la clave de Open WebUI" in out and "secreto" not in out and "11ABC" not in out
+
+
+def test_without_open_webui_it_says_it_may_not_be_installed_and_where_to_read_how(monkeypatch, capsys):
+    monkeypatch.setattr(setup, "find_openwebui", lambda: None)
+    assert setup.main(["--clave", "clave"]) == 1
+    out = capsys.readouterr().out
+    assert "no está abierto, o no está instalado" in out and "F1-cara.md" in out
