@@ -5,6 +5,7 @@ import type { Ai } from "../api";
 import { go } from "../nav";
 import { useStore, type Turn, type TurnAnswer } from "../state";
 import { AiAvatar } from "../ui/Ai";
+import { ObservingBanner, WebRow } from "../ui/Observando";
 import { AiPicker } from "../ui/AiPicker";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -230,6 +231,9 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
         {answer.phase === "done" && !answer.ok && <ProblemBox code={answer.code} ai={answer.target} said={answer.error} onRetry={retry} onAskOther={askOther} />}
       </div>
       {answer.phase === "done" && answer.ok && (
+        <WebRow runId={turn.runId} provider={answer.provider} label={answer.providerLabel} url={answer.url} repairedBy={answer.repairedBy} />
+      )}
+      {answer.phase === "done" && answer.ok && (
         <div data-footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
           <PassMenu kind="pasar" exclude={answer.provider} onPick={(ai) => onPass("pasar", ai)} />
           <PassMenu kind="criticar" exclude={answer.provider} onPick={(ai) => onPass("criticar", ai)} />
@@ -329,6 +333,7 @@ export function Preguntar() {
 
   return (
     <Page title="Preguntar" subtitle="Escribe una vez y elige a quién. Las respuestas salen una al lado de otra.">
+      <ObservingBanner />
       <Card className="mb-10 p-5 md:p-6">
         <label htmlFor="pregunta" className="mb-2 block text-[17px] font-semibold">
           Tu pregunta

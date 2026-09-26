@@ -654,6 +654,8 @@ async function saveObservers() {
 async function startObserving(tabId, site, follows, siteConfig) {
   observers[tabId] = { site, follows: follows || null, site_config: siteConfig || null, typed: "", turn: null, stable: 0, sig: "" };
   await saveObservers();
+  // start listening for what he sends BEFORE the mark says "registrando": a message sent at once is not lost
+  if (SITES[site]) observers[tabId].last = await call(tabId, "observe", SITES[site]).catch(() => undefined);
   await call(tabId, "observeBadge", true).catch(() => {});
   chrome.action.setBadgeText({ tabId, text: "REC" }).catch(() => {});
   sendToBridge({ type: "observe_state", site, follows: follows || null, tab: tabId, on: true });
@@ -697,35 +699,54 @@ function siteOfTab(url) {
   return Object.keys(SITES).find((k) => { try { return new URL(SITES[k].newChat).origin === origin; } catch (e) { return false; } }) || null;
 }
 
+const sigOf = (st) => `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
+
 async function watchOnce(tabId, o) {
   const site = SITES[o.site];
   if (!site) return;
   const st = await call(Number(tabId), "observe", site);
   if (!st) return;
   if (st.stop) return stopObserving(tabId, "badge");
+  if (!st.badge) call(Number(tabId), "observeBadge", true).catch(() => {});  // the page was reloaded: the mark again
   const typed = String(st.typed || "").trim();
+  // what the page noted as sent (Enter or the send button), in order
+  const sent = (st.sent || []).map((x) => String((x && x.text) || "").trim()).filter(Boolean);
+  if (sent.length) { o.queue = [...(o.queue || []), ...sent]; o.typed = ""; }
   if (!o.turn) {
-    if (typed) { o.typed = typed; o.before = st; return; }
-    // the box emptied: sent (the page started writing, or something new appeared) or just erased
-    if (o.typed && o.before && (st.generating || st.bodyLen > o.before.bodyLen + 2 || st.copyCount > o.before.copyCount ||
-        st.answerCount > o.before.answerCount)) {
-      o.turn = { user: o.typed, before: o.before, t0: Date.now(), changed: false };
-      o.sig = ""; o.stable = 0;
+    if (o.queue && o.queue.length) {
+      const before = o.last || o.before || st;
+      o.turn = { user: o.queue.splice(0).join("\n\n"), before, t0: Date.now() };
+      o.sig = sigOf(before); o.stable = 0; o.typed = "";
+    } else {
+      o.last = st;
+      if (typed) { o.typed = typed; o.before = st; return; }
+      // the box emptied without a noted send (a button with no name): sent if the page started writing or
+      // something new appeared; otherwise just erased
+      if (o.typed && o.before && (st.generating || st.bodyLen > o.before.bodyLen + 2 || st.copyCount > o.before.copyCount ||
+          st.answerCount > o.before.answerCount)) {
+        o.turn = { user: o.typed, before: o.before, t0: Date.now() };
+        o.sig = sigOf(o.before); o.stable = 0;
+      }
+      o.typed = "";
+      return;
     }
-    o.typed = "";
-    return;
   }
-  // an answer is being written: the same "finished" rules as a job (a new copy button and stability)
-  const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
-  if (sig !== o.sig) { o.sig = sig; o.stable = 0; o.turn.changed = true; } else { o.stable++; }
-  const newCopy = st.copyCount > o.turn.before.copyCount;
-  const done = o.turn.changed && !st.generating && ((newCopy && o.stable >= 1) || o.stable >= 5);
+  // an answer is being written: the same "finished" rules as a job (a new copy button and stability), measured
+  // against the page as it was before the message was sent (his own message appearing is not an answer yet)
+  const sig = sigOf(st);
+  if (sig !== o.sig) { o.sig = sig; o.stable = 0; } else { o.stable++; }
+  const b0 = o.turn.before;
+  const answered = st.answerCount !== b0.answerCount || st.lastAnswerLen !== b0.lastAnswerLen || st.copyCount !== b0.copyCount;
+  const newCopy = st.copyCount > b0.copyCount;
+  const done = !st.generating && ((answered && newCopy && o.stable >= 1) || (answered && o.stable >= 5) ||
+                                  (st.bodyLen !== b0.bodyLen && o.stable >= 12));
   if (!done && Date.now() - o.turn.t0 < 30 * 60000) return;
   const out = await call(Number(tabId), "fallback", site).catch(() => null);  // read from the page: no click in his tab
-  sendToBridge({ type: "observed", site: o.site, follows: o.follows, site_config: o.site_config || null, url: st.url,
+  sendToBridge({ type: "observed", tab: Number(tabId), site: o.site, follows: o.follows, site_config: o.site_config || null, url: st.url,
                  user: o.turn.user, answer: out && out.ok ? out.text : "", via: out && out.ok ? out.via : null,
                  error: out && out.ok ? null : (done ? "empty_answer" : "timeout") });
   o.turn = null;
+  o.last = st;
 }
 
 setInterval(() => {

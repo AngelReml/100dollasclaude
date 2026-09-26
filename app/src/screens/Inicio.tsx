@@ -5,6 +5,7 @@ import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
 import { MemoriaCard } from "../ui/Memoria";
+import { ObservingBanner } from "../ui/Observando";
 import { RemoveAiButton } from "../ui/AddAi";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -199,6 +200,7 @@ export function Inicio() {
         </div>
       }
     >
+      <ObservingBanner />
       {offline && (
         <div className="mb-6">
           <Empty icon={<Unplug size={26} />} title="webllm no responde" text="Cierra esta ventana y vuelve a abrir webllm con su icono. Si sigue igual, haz doble clic en ACTUALIZAR." />

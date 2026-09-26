@@ -717,14 +717,40 @@
   };
 
   // Observer mode (PLAN-v5 F6): Iván writes in his own tab; webllm only looks (no clicks, no typing).
+  // What he sends is noted the moment he sends it (Enter in the box, or a click on the send button), before the
+  // page empties the box: a message pasted and sent at once is between two looks. Listening only, in the capture
+  // phase, never stopping or changing the event.
+  const boxText = (input) => String((!input ? "" : ("value" in input && input.tagName !== "DIV" ? input.value : input.innerText)) || "");
+  const listenSent = (site) => {
+    window.__webllmObsSite = site;
+    if (window.__webllmSent) return;
+    window.__webllmSent = [];
+    const note = () => {
+      const text = boxText(findInput(window.__webllmObsSite)).trim();
+      const q = window.__webllmSent;
+      const prev = q[q.length - 1];
+      if (text && !(prev && prev.text === text && Date.now() - prev.t < 3000)) q.push({ text: text.slice(0, 20000), t: Date.now() });
+    };
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.shiftKey || e.isComposing) return;
+      const input = findInput(window.__webllmObsSite);
+      if (input && (input === e.target || input.contains(e.target))) note();
+    }, true);
+    window.addEventListener("click", (e) => {
+      const b = e.target && e.target.closest && e.target.closest("button,[role='button'],input[type='submit']");
+      if (!b || b.closest("[data-webllm-observe]")) return;
+      if (b === findSend(window.__webllmObsSite) || SEND_RE.test(labelOf(b) + " " + nameOf(b))) note();
+    }, true);
+  };
   const observe = (site) => {
+    listenSent(site);
     const input = findInput(site);
-    const typed = !input ? "" : ("value" in input && input.tagName !== "DIV" ? input.value : input.innerText) || "";
+    const typed = boxText(input);
     const last = lastAnswerEl(site);
-    return { url: location.href, typed: String(typed).slice(0, 20000), generating: isGenerating(site), hidden: document.hidden,
+    return { url: location.href, typed: typed.slice(0, 20000), sent: window.__webllmSent.splice(0), generating: isGenerating(site), hidden: document.hidden,
              copyCount: copyButtons(site).length, answerCount: answers(site).length, lastAnswerLen: last ? (last.innerText || "").length : 0,
              bodyLen: ((document.body && document.body.innerText) || "").length, challenge: detectChallenge(),
-             stop: !!window.__webllmStopObserving };
+             stop: !!window.__webllmStopObserving, badge: !!document.querySelector("[data-webllm-observe]") };
   };
   // A visible mark while webllm records this tab, with a way to stop it (it also stops from the extension icon).
   const observeBadge = (on) => {

@@ -81,16 +81,18 @@ MODES = ["webllm_buscar", "webllm_constructor", "webllm_imagen", "webllm_investi
 
 def run_install(fake: FakeOpenWebUI):
     ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
-    known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}"} for m in fake.pipe_models}
+    known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}", "kind": "api" if m == "webllm.zai" else "chat"}
+             for m in fake.pipe_models}
     return setup.install(ow, "http://127.0.0.1:20130", "llave-webllm", say=lambda _m: None, known=known)
 
 
 def test_installs_the_pipe_and_the_switches_active_with_webllms_key():
     fake = FakeOpenWebUI()
     run_install(fake)
-    assert set(fake.functions) == {"webllm", *MODES}
+    assert set(fake.functions) == {"webllm", "webllm_continuar", *MODES}
     assert all(f["is_active"] for f in fake.functions.values())
     assert fake.valves["webllm"] == {"WEBLLM_URL": "http://127.0.0.1:20130", "WEBLLM_TOKEN": "llave-webllm"}
+    assert fake.valves["webllm_continuar"] == fake.valves["webllm"]  # the button asks webllm too
     assert fake.functions["webllm"]["content"] == (ROOT / "openwebui" / "webllm_pipe.py").read_text("utf-8")
 
 
@@ -104,6 +106,9 @@ def test_every_webllm_model_gets_whole_files_and_its_switches():
         assert caps["file_context"] is False and caps["vision"] is True and caps["file_upload"] is True
         assert caps["builtin_tools"] is False  # only the tools Iván switches on
         assert m["meta"]["filterIds"] == sorted(MODES)  # every switch of the "+" (PLAN-v5 F4)
+    # "Continuar en la web" only under the answers of the web chats (an API has no web conversation, PLAN-v5 F6)
+    assert fake.models["webllm.qwen"]["meta"]["actionIds"] == ["webllm_continuar"]
+    assert fake.models["webllm.zai"]["meta"]["actionIds"] == []
     assert fake.config["/api/v1/retrieval/config/update"] == {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}
     assert fake.config["/api/v1/evaluations/config"] == {"ENABLE_EVALUATION_ARENA_MODELS": False}
 
@@ -124,7 +129,7 @@ def test_running_it_again_updates_and_duplicates_nothing():
     run_install(fake)
     assert "POST /api/v1/functions/create" not in fake.calls and "POST /api/v1/models/create" not in fake.calls
     assert fake.calls.count("POST /api/v1/functions/id/webllm/toggle") == 0  # still active: not switched off
-    assert len(fake.functions) == 1 + len(MODES) and len(fake.models) == 2 and first
+    assert len(fake.functions) == 2 + len(MODES) and len(fake.models) == 2 and first
 
 
 def test_it_refuses_when_webllm_is_not_answering():

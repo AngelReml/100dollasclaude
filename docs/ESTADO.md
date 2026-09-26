@@ -43,6 +43,28 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F6: webs que se reparan solas, y seguir tú en la web)
+
+- **Cuando una web cambia de diseño, webllm lo arregla solo, sin enviar nada para probar:**
+  1. primero busca la caja y los botones en más idiomas y con las cajas modernas;
+  2. si no los encuentra, una IA por API (z.ai, o la que elijas) señala dónde están con números de una lista de la página, **sin ver tu conversación**;
+  3. webllm lo prueba en la página, y si vale lo guarda en la Ficha de ese chat, con fecha y **«Deshacer»**;
+  4. si nada de eso basta, **«Enséñame esta web»**: tres clics tuyos (caja, enviar, respuesta).
+- **Una pregunta nunca se envía dos veces:** si faltaba la caja, no se había enviado; si faltaba la respuesta, se vuelve a leer.
+- **Comprobación diaria** (Conectores → «Webs que cambian»): webllm abre cada chat conectado y mira que siga bien, sin enviar nada. También con «Comprobar ahora».
+- **«Parar» pulsa también el botón de parar de la web.**
+- **«Continuar en la web»**, bajo cada respuesta de un chat web (en Open WebUI y en la app):
+  - abre esa conversación en tu Chrome;
+  - lo que escribas allí a mano queda en la misma conversación (historial y vault), marcado como tuyo;
+  - al volver a Open WebUI, tu siguiente pregunta lo lleva consigo, y la respuesta te lo dice.
+- **«Registrar esta conversación»:** en el icono de la extensión, para un chat que abriste tú. Solo si tú lo pulsas, y con «Dejar de registrar».
+- **Probado aquí:** la extensión de verdad en Chromium, **15 de 15**; con la extensión anterior, cada caso falla. **El Open WebUI de verdad, 5 de 5.** Y 32 pruebas de código nuevas.
+- **Falta tu PC:** seguir en la web de Kimi una conversación empezada en webllm, y volver a probar las webs del catálogo que «No funcionan todavía». Guía en `docs/F6-reparacion.md`.
+- **Qué hacer:**
+  1. `ACTUALIZAR`;
+  2. ↻ en «webllm puente» en `chrome://extensions` (**versión 0.8.0**);
+  3. `herramientas\poner-en-openwebui.cmd` otra vez (trae el botón «Continuar en la web»).
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F5: tu memoria en Obsidian)
 
 - **En la app, en el Inicio, la tarjeta «Memoria en Obsidian».** Escribes la carpeta de tu vault (donde quieras: en tu PC o en Drive) y pulsas «Encender la memoria».

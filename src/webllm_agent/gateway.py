@@ -71,6 +71,38 @@ def _last_user_text(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
+def with_hand_turns(messages: list[dict[str, Any]], turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The conversation with the turns Iván wrote himself in a web chat's page put where they happened: after the
+    answer to the question he went on from (found by its text; if Open WebUI no longer has it, just before the
+    new question). The new question stays last."""
+    out = [m for m in messages if isinstance(m, dict)]
+    last = max((i for i, m in enumerate(out) if m.get("role") == "user"), default=len(out))
+    groups: list[list[dict[str, Any]]] = []
+    for t in turns:
+        if groups and groups[-1][0]["after"] == t["after"]:
+            groups[-1].append(t)
+        else:
+            groups.append([t])
+    start = 0
+    for group in groups:
+        after = group[0]["after"].strip()
+        found = next((i for i in range(start, last) if out[i].get("role") == "user"
+                      and (_content_text(out[i].get("content")) or "").strip() == after), None) if after else None
+        if found is None:
+            at = last
+        else:
+            answer = next((k for k in range(found + 1, last) if out[k].get("role") == "assistant"), None)
+            at = (answer if answer is not None else found) + 1
+        new = []
+        for t in group:
+            new.append({"role": "user", "content": f"(written by the user directly in {t['label']}'s own web page)\n{t['user']}"})
+            new.append({"role": "assistant", "content": t["answer"] or "(the answer could not be read from the page)"})
+        out[at:at] = new
+        last += len(new)
+        start = at + len(new)
+    return out
+
+
 def _inline_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Images the face put inside the last user message as data URLs (OpenAI image_url parts)."""
     out = []
@@ -208,6 +240,7 @@ class Gateway:
         app.router.add_get("/gw/v1/models", self.models)
         app.router.add_post("/gw/v1/chat/completions", self.chat)
         app.router.add_post("/gw/v1/parar", self.stop_all)
+        app.router.add_post("/gw/v1/continuar", self.continue_web)
 
     @staticmethod
     def _error(status: int, code: str, message: str) -> web.Response:
@@ -260,6 +293,41 @@ class Gateway:
         sites.update(self.bridge.cancel_all())  # and any other job in Chrome (e.g. `webllm cadena`)
         return web.json_response({"parados": stopped, "chats": sorted(sites)})
 
+    async def continue_web(self, request: web.Request) -> web.Response:
+        """"Continuar en la web" under an answer in Open WebUI (openwebui/webllm_continuar.py, PLAN-v5 F6): that
+        exact conversation opened in a normal tab of Iván's Chrome, and what he writes there recorded in it. The
+        answer is found by Open WebUI's own ids (the pipe sent them with the question); nothing else is guessed."""
+        if not self.bridge._authorized(request):
+            return self._error(401, "unauthorized", "token del puente incorrecto")
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        chat_id = str((body or {}).get("chat_id") or "")[:100]
+        message_id = str((body or {}).get("message_id") or "")[:100]
+        run_id = self._run_of(chat_id, message_id) if chat_id and message_id else None
+        if run_id is None:
+            return self._error(404, "not_found", "No encuentro esta respuesta en webllm (¿es de antes de instalarlo, "
+                                                 "o de otra IA que no pasa por webllm?).")
+        return await self.bridge.app_api.continue_run(run_id)
+
+    def _run_of(self, chat_id: str, message_id: str, newest: int = 5000) -> str | None:
+        """The run whose question came from that Open WebUI message (its first journal line says so)."""
+        runs = self.bridge.cfg.paths.runs_dir
+        try:
+            names = sorted((d.name for d in runs.iterdir() if d.is_dir()), reverse=True)[:newest]
+        except OSError:
+            return None
+        for name in names:
+            try:
+                with (runs / name / "journal.jsonl").open(encoding="utf-8") as fh:
+                    head = json.loads(fh.readline())
+            except (OSError, ValueError):
+                continue
+            if head.get("kind") == "gateway" and head.get("chat_id") == chat_id and head.get("message_id") == message_id:
+                return name
+        return None
+
     def _stop(self, p: ProviderConfig, work: asyncio.Task, run_id: str) -> bool:
         """Stop one question. A chat site: its job in Chrome ends as "cancelled" (the flow then finishes and
         journals it) and, if it is still waiting its turn, it is never sent. Anything else: cancelled outright."""
@@ -297,6 +365,13 @@ class Gateway:
         if ext.get("task") and p.gateway == "bridge":
             raise RequestError(400, "task_for_web_chat", problem_text("task_for_web_chat", p.display))
         messages = body.get("messages") if isinstance(body.get("messages"), list) else []
+        chat_id = str(ext.get("chat_id") or "")[:100]
+        # what Iván wrote himself in a web chat's page, going on from this conversation (observer mode, PLAN-v5 F6):
+        # it goes with the question, where it happened, to whichever AI answers (it is not in Open WebUI's messages)
+        hand = flows.hand_turns(cfg, chat_id) if chat_id and not ext.get("task") else []
+        if hand:
+            messages = with_hand_turns(messages, hand)
+            body["messages"] = messages  # the direct path (APIs, this PC) sends the body's messages
         conversation = self.bridge_flatten(messages)
         question = _last_user_text(messages) or conversation
         if not conversation.strip():
@@ -307,7 +382,8 @@ class Gateway:
         modes = [str(m)[:40] for m in (ext.get("modes") or []) if isinstance(m, str)][:10]
         return cfg, p, {"question": question, "conversation": conversation, "files": files, "modes": modes,
                         "want_model": want_model, "strongest": strongest, "use_page_model": use_page,
-                        "chat_id": str(ext.get("chat_id") or "")[:100], "message_id": str(ext.get("message_id") or "")[:100],
+                        "chat_id": chat_id, "message_id": str(ext.get("message_id") or "")[:100],
+                        "hand_turns": [{"label": h["label"]} for h in hand],
                         "task": str(ext.get("task") or "")[:60], "tools": bool(body.get("tools")),
                         # where Open WebUI keeps the conversation (its folder = the project in Obsidian)
                         "project": str(ext.get("project") or "")[:80] or None, "title": str(ext.get("title") or "")[:120] or None}
@@ -381,6 +457,11 @@ class Gateway:
                                     f"{p.display} (por API) no los tiene.")
         if req["tools"] and not direct:
             reply.avisos.append(f"{p.display} todavía no puede usar herramientas: llega en la fase F9.")
+        if req.get("hand_turns"):
+            where = " y ".join(dict.fromkeys(f"la web de {h['label']}" for h in req["hand_turns"]))
+            n = len(req["hand_turns"])
+            reply.avisos.append(f"Con tu pregunta {'va también el mensaje' if n == 1 else f'van también los {n} mensajes'} que "
+                                f"escribiste directamente en {where}, con {'su respuesta' if n == 1 else 'sus respuestas'}.")
 
     async def chat(self, request: web.Request) -> web.StreamResponse:
         if not self.bridge._authorized(request):

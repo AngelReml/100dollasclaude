@@ -113,6 +113,7 @@ class AppApi:
         self._last_omni_start = -1e9
         self._memory_retry = -1e9  # when the app last asked the memory to write again what it missed
         self.observing: dict[int, dict[str, Any]] = {}  # Chrome tab -> the conversation Iván goes on with there
+        self.tab_conversation: dict[tuple[int, str], str] = {}  # (tab, site) -> the run its hand-written turns follow
         self.checking: asyncio.Task | None = None  # the daily check in progress
         self._daily: asyncio.Task | None = None
         self.daily_every_s = 24 * 3600.0
@@ -420,7 +421,10 @@ class AppApi:
                     "ok": ok, "text": read(line.get("response_file")) if ok else "",
                     "seconds": round(float(line.get("latency_s") or 0), 1),
                     "error": "" if ok else (line.get("error") or line.get("status") or ""),
-                    "code": "" if ok else line.get("code", "")}
+                    "code": "" if ok else line.get("code", ""),
+                    # PLAN-v5 F6: "Continuar en la web" needs its address; a turn Iván wrote himself says so
+                    "url": line.get("url") or "", "by_ivan": line.get("by") == "ivan",
+                    "repaired": bool(line.get("repaired"))}
 
         flow_file = run_dir / "flow.json"
         if flow_file.exists():
@@ -1028,7 +1032,7 @@ class AppApi:
         if not await self.bridge._ensure_extension():
             return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
         async with self.bridge.locks.setdefault(site, asyncio.Lock()):  # never while a question is being asked
-            res = await self.bridge._send_to_extension({"type": "discover", **self.bridge.site_payload(site)}, 120)
+            res = await self.bridge._send_to_extension({"type": "discover", **self._site_msg(site)}, 120)
         if not res.get("ok"):
             code = str(res.get("error") or "extension_error")
             text = {"login_required": f"{p.display} no tiene la sesión abierta: pulsa Conectar y entra.",
@@ -1378,13 +1382,17 @@ class AppApi:
             self.bridge.log(f"Observador: turno sin chat conocido ({site}) o sin mensaje: no se guarda.")
             return
         self.bridge.guard.note(ProviderConfig(name=site, model="browser/" + site, kind="browser"))  # counts, never blocks
-        follows = str(data.get("follows") or "") or None
+        # the conversation this turn belongs to: the question it was continued from, or (a chat Iván opened himself
+        # and registered from the extension's icon) the first turn recorded in that tab
+        tab = int(data.get("tab") or 0)
+        follows = str(data.get("follows") or "") or self.tab_conversation.get((tab, site)) or None
         run_dir = await asyncio.to_thread(flows.record_observed, self.cfg, p, follows=follows, user=user[:MAX_PROMPT],
                                           answer=str(data.get("answer") or ""), url=str(data.get("url") or "")[:500],
                                           via=data.get("via"), error=data.get("error"))
-        for o in self.observing.values():
-            if o.get("site") == site and o.get("follows") in (None, follows):
-                o["follows"] = follows or run_dir.name  # the next turns follow the same conversation
+        if tab:  # the next turns in that tab follow the same conversation
+            self.tab_conversation[(tab, site)] = follows or run_dir.name
+            if tab in self.observing:
+                self.observing[tab]["follows"] = self.tab_conversation[(tab, site)]
         self.bridge.log(f"Observador: {p.display}: turno escrito por Iván guardado ({run_dir.name}).")
 
     async def encender_local(self, request: web.Request) -> web.Response:

@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, CircleSlash, ClipboardCopy, EyeOff, Gauge, Globe, Loader2, Plug, Plus, RotateCcw, ShieldAlert, Square, UserRound } from "lucide-react";
+import { CircleAlert, CircleCheck, CircleSlash, ClipboardCopy, EyeOff, Gauge, Globe, Loader2, MousePointerClick, Plug, Plus, RotateCcw, ShieldAlert, Square, UserRound } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, type Batch, type BatchResult, type CatalogAi, type Catalogo } from "../api";
 import { useOpenAddAi } from "../nav";
@@ -8,8 +8,10 @@ import { AiAvatar } from "../ui/Ai";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
+import { FichaDialog } from "../ui/Ficha";
 import { Modal } from "../ui/Modal";
 import { Page, SectionTitle } from "../ui/Page";
+import { RepararCard } from "../ui/Reparar";
 import { Badge } from "../ui/Status";
 import { useToast } from "../ui/Toast";
 import { AiCard } from "./Inicio";
@@ -56,7 +58,9 @@ function why(ai: CatalogAi): string {
   return [ai.may_fail, ai.note].filter(Boolean).join(" · ");
 }
 
-function CatalogCard({ ai, onConnect, busy, defaultCap }: { ai: CatalogAi; onConnect: (key: string) => void; busy: boolean; defaultCap: number }) {
+function CatalogCard({ ai, onConnect, onTeach, busy, defaultCap }: {
+  ai: CatalogAi; onConnect: (key: string) => void; onTeach: (ai: CatalogAi) => void; busy: boolean; defaultCap: number;
+}) {
   const label = ai.state === "no_funciona" ? "Probar otra vez" : "Conectar";
   return (
     <Card className="flex flex-col gap-3 p-5" data-catalog={ai.key}>
@@ -75,9 +79,16 @@ function CatalogCard({ ai, onConnect, busy, defaultCap }: { ai: CatalogAi; onCon
       )}
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
         <span className="min-w-0 truncate text-[15px] text-muted">{ai.url.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>
-        <Button variant="soft" icon={ai.state === "no_funciona" ? <RotateCcw size={18} aria-hidden /> : <Plug size={18} aria-hidden />} disabled={busy} onClick={() => onConnect(ai.key)}>
-          {label}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {ai.state === "no_funciona" && (
+            <Button variant="ghost" icon={<MousePointerClick size={18} aria-hidden />} disabled={busy} onClick={() => onTeach(ai)}>
+              Enséñame esta web
+            </Button>
+          )}
+          <Button variant="soft" icon={ai.state === "no_funciona" ? <RotateCcw size={18} aria-hidden /> : <Plug size={18} aria-hidden />} disabled={busy} onClick={() => onConnect(ai.key)}>
+            {label}
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -276,6 +287,7 @@ export function Conectores() {
   const [cat, setCat] = useState<Catalogo | null>(null);
   const [batch, setBatch] = useState<Batch | null>(null);
   const [dialog, setDialog] = useState(false);
+  const [teach, setTeach] = useState<CatalogAi | null>(null);
   const timer = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -366,6 +378,7 @@ export function Conectores() {
         Tus chats web. Solo los conectados salen en Open WebUI y en Preguntar. Conectar uno lo abre en la ventanita de webllm y le manda
         un mensaje de prueba; si pide entrar, entras tú.
       </p>
+      <RepararCard />
       <section className="mb-10">
         <SectionTitle>Conectados</SectionTitle>
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
@@ -385,7 +398,7 @@ export function Conectores() {
               </SectionTitle>
               <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                 {members.map((ai) => (
-                  <CatalogCard key={ai.key} ai={ai} busy={running} defaultCap={defaultCap} onConnect={(key) => start([key])} />
+                  <CatalogCard key={ai.key} ai={ai} busy={running} defaultCap={defaultCap} onConnect={(key) => start([key])} onTeach={setTeach} />
                 ))}
               </div>
             </section>
@@ -411,6 +424,7 @@ export function Conectores() {
         </div>
       )}
       <ConnectDialog open={dialog} onOpenChange={setDialog} choices={notConnected} batch={batch} onStart={start} onStop={stop} />
+      {teach && <FichaDialog ai={teach.key} label={teach.name} open onOpenChange={(o) => { if (!o) { setTeach(null); load(); } }} />}
     </Page>
   );
 }

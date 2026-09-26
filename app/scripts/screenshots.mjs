@@ -243,6 +243,43 @@ async function apiLimit(page, tag) {
   await shot(page, `${tag}-20-limite-otra-ia`);
 }
 
+// Webs that change (PLAN-v5 F6): the daily check and the repair switch in Conectores, a chat's fixes in its Ficha,
+// and "Continuar en la web" from the history: webllm says it is recording, and the turn Iván writes there by hand
+// (the demo's fake Chrome writes one 3 s later) joins the same conversation.
+async function reparacion(page, tag) {
+  await page.goto(base + "#/conectores");
+  const card = page.locator('[data-card="reparar"]');
+  await card.getByRole("button", { name: "Comprobar ahora" }).click();
+  await card.getByText(/\d+ de \d+ bien/).waitFor({ timeout: 30000 });
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-37-webs-que-cambian`);
+  await page.goto(base);
+  const dialog = page.getByRole("dialog");
+  await page.locator('[data-card="qwen"]').getByRole("button", { name: "Ficha: modelos y modos" }).click();
+  await dialog.getByText("Arreglos de esta web").scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-38-ficha-arreglos`);
+  await page.keyboard.press("Escape");
+  await page.goto(base + "#/historial");
+  await page.getByRole("link").filter({ hasText: /Intacto|Alterado/ }).first().click();
+  const go = page.getByRole("button", { name: "Continuar en la web" }).first();
+  await go.waitFor({ timeout: 15000 });
+  await go.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-39-continuar-en-la-web`);
+  await go.click();
+  await page.getByText(/Abierta en tu Chrome/).waitFor({ timeout: 15000 });
+  await page.goto(base);
+  await page.getByText(/Registrando tu conversación con/).waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-40-registrando`);
+  await page.waitForTimeout(4500); // the turn written by hand arrives
+  await page.goto(base + "#/historial");
+  await page.getByRole("link").filter({ hasText: /Intacto|Alterado/ }).first().click();
+  await page.getByText(/Escrita por ti en la web de/).waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-41-escrita-en-la-web`);
+  await page.goto(base);
+  await page.getByRole("button", { name: "Dejar de registrar" }).first().click();
+  await page.getByText(/Registrando tu conversación con/).waitFor({ state: "detached", timeout: 15000 });
+}
+
 async function run(theme, width, full) {
   const height = width === 1920 ? 1080 : 800;
   const browser = await chromium.launch({ executablePath: exe });
@@ -316,6 +353,7 @@ async function run(theme, width, full) {
     await conectores(page, tag);
     await fichas(page, tag);
     await memoria(page, tag);
+    await reparacion(page, tag);
   }
   await browser.close();
 }

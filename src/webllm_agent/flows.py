@@ -27,7 +27,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import os
 import re
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -575,8 +577,78 @@ def record_observed(cfg: AppConfig, p: ProviderConfig, *, follows: str | None, u
     journal_call(run_dir, run_id, 1, step.id, message_file, message_sha, outcome, "first", p.name,
                  extra={"by": "ivan", "via": via})
     close_run(run_dir, run_id, flow.name, OK if ok else FAILED, {step.id: OK if ok else FAILED})
+    _remember_hand_turn(cfg, str(head.get("chat_id") or ""), run_id)
     to_vault(cfg, run_dir)
     return run_dir
+
+
+# Open WebUI conversation -> the turns Iván wrote himself in a web chat's page that belong to it, so that when he
+# comes back to that conversation they go with his next question (PLAN-v5 section 3: "seguir desde donde lo
+# dejaste"). Only an index: the turns themselves are read from their runs, checked.
+HAND_TURNS = "escritos_en_la_web.json"
+_hand_lock = threading.Lock()
+
+
+def _remember_hand_turn(cfg: AppConfig, chat_id: str, run_id: str) -> None:
+    if not chat_id:
+        return
+    path = cfg.paths.state_dir / HAND_TURNS
+    with _hand_lock:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        data = data if isinstance(data, dict) else {}
+        ids = data.setdefault(chat_id, [])
+        if run_id not in ids:
+            ids.append(run_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+
+
+def _question_of(run_dir: Path) -> str:
+    try:
+        inputs = json.loads((run_dir / "flow.json").read_text(encoding="utf-8")).get("inputs") or {}
+    except (OSError, ValueError):
+        return ""
+    return str(inputs.get("pregunta") or "")
+
+
+def hand_turns(cfg: AppConfig, chat_id: str) -> list[dict[str, Any]]:
+    """The turns Iván wrote himself in a web chat's page that belong to this Open WebUI conversation, oldest
+    first: the question they went on from (``after``), who (``label``), what he wrote and what the page answered."""
+    if not chat_id:
+        return []
+    try:
+        ids = json.loads((cfg.paths.state_dir / HAND_TURNS).read_text(encoding="utf-8")).get(chat_id) or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    out = []
+    for run_id in ids:
+        if not isinstance(run_id, str) or not RUN_ID_RE.fullmatch(run_id):
+            continue
+        run_dir = cfg.paths.runs_dir / run_id
+        try:
+            lines = [json.loads(x) for x in (run_dir / journal.JOURNAL_NAME).read_text(encoding="utf-8").splitlines() if x.strip()]
+        except (OSError, ValueError):
+            continue
+        head = lines[0] if lines else {}
+        if head.get("kind") != "observed" or head.get("chat_id") != chat_id:
+            continue
+        call = next((x for x in lines if x.get("kind") == "flow"), {})
+        answer = ""
+        if call.get("status") == OK and call.get("response_file"):
+            try:
+                answer = (run_dir / call["response_file"]).read_text(encoding="utf-8")
+            except OSError:
+                answer = ""
+        root = str(head.get("follows_root") or head.get("follows") or "")
+        p = cfg.providers.get(str(head.get("provider")))
+        out.append({"ts": head.get("ts") or "", "after": _question_of(cfg.paths.runs_dir / root) if RUN_ID_RE.fullmatch(root) else "",
+                    "label": p.display if p else str(head.get("provider")), "user": _question_of(run_dir), "answer": answer})
+    return sorted(out, key=lambda x: x["ts"])
 
 
 RUN_ID_RE = re.compile(r"\d{8}-\d{6}-[0-9a-f]{4}")
@@ -621,7 +693,9 @@ def error_code(r: ChatResult) -> str:
         if isinstance(err, dict):
             code, message = err.get("code"), str(err.get("message") or "")
     except (ValueError, KeyError, TypeError):
-        pass
+        # a body cut short (the client keeps its first 500 characters): webllm's own code is still readable
+        if m := _OWN_CODE_RE.search(r.body_excerpt or ""):
+            code = m.group(1)
     # Only webllm's own codes pass through; a provider's code is its own vocabulary (OpenRouter
     # sends the HTTP number, z.ai its own numbers) and is read like the HTTP status instead.
     if isinstance(code, str) and code in OWN_ERROR_CODES:
@@ -660,6 +734,8 @@ OWN_ERROR_CODES = frozenset({
 _CREDIT_TEXT = re.compile(r"insufficient[ _-]?(balance|credits?|funds|quota)|\bcredits?\b|\bbalance\b", re.I)
 _RATE_TEXT = re.compile(r"rate.?limit|too many requests|quota|concurren", re.I)
 _BUSY_TEXT = re.compile(r"overloaded|at capacity|temporarily unavailable", re.I)
+_OWN_CODE_RE = re.compile(r'"code":\s*"([a-z_]{2,40})"')
+_MESSAGE_RE = re.compile(r'"message":\s*"((?:[^"\\]|\\.){8,})')
 
 
 def _error_text(r: ChatResult) -> str:
@@ -673,7 +749,11 @@ def _error_text(r: ChatResult) -> str:
         if isinstance(err, str):
             return err
     except (ValueError, KeyError, TypeError):
-        pass
+        if m := _MESSAGE_RE.search(r.body_excerpt or ""):  # a body cut short: the start of its message
+            try:
+                return json.loads(f'"{m.group(1)}"') + "…"
+            except ValueError:
+                pass
     return r.error or r.status
 
 

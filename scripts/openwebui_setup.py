@@ -36,6 +36,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[1]
 FUNCTIONS_DIR = ROOT / "openwebui"
 PIPE_ID = "webllm"
+ACTION_ID = "webllm_continuar"  # "Continuar en la web", under the answers of the web chats (PLAN-v5 F6)
 # The background jobs turned off; ENABLE_TITLE_GENERATION stays as it is (the pipe answers it itself).
 TASKS_OFF = ("ENABLE_TAGS_GENERATION", "ENABLE_FOLLOW_UP_GENERATION", "ENABLE_AUTOCOMPLETE_GENERATION",
              "ENABLE_SEARCH_QUERY_GENERATION", "ENABLE_RETRIEVAL_QUERY_GENERATION")
@@ -57,7 +58,7 @@ def frontmatter(source: str) -> dict[str, str]:
 
 
 def functions_to_install() -> list[dict[str, str]]:
-    out = [{"id": PIPE_ID, "file": "webllm_pipe.py"}]
+    out = [{"id": PIPE_ID, "file": "webllm_pipe.py"}, {"id": ACTION_ID, "file": "webllm_continuar.py"}]
     for f in sorted(FUNCTIONS_DIR.glob("webllm_modo_*.py")):
         out.append({"id": f.stem.replace("webllm_modo_", "webllm_"), "file": f.name})
     for item in out:
@@ -86,7 +87,8 @@ class OpenWebUI:
 def webllm_models(webllm_url: str, webllm_token: str) -> dict[str, dict[str, str]]:
     """webllm's own name and card for each model (Open WebUI keeps the names it saved the first time)."""
     data = httpx.get(f"{webllm_url}/gw/v1/models", headers={"Authorization": f"Bearer {webllm_token}"}, timeout=10).json()
-    return {PIPE_ID + "." + m["id"]: {"name": m.get("name") or m["id"], "card": (m.get("webllm") or {}).get("card", "")}
+    return {PIPE_ID + "." + m["id"]: {"name": m.get("name") or m["id"], "card": (m.get("webllm") or {}).get("card", ""),
+                                      "kind": (m.get("webllm") or {}).get("kind", "")}
             for m in data["data"]}
 
 
@@ -104,8 +106,8 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print,
         current = ow.call("GET", f"/api/v1/functions/id/{fn['id']}")
         if not current.get("is_active"):
             ow.call("POST", f"/api/v1/functions/id/{fn['id']}/toggle")
-        if fn["id"] == PIPE_ID:
-            ow.call("POST", f"/api/v1/functions/id/{PIPE_ID}/valves/update",
+        if fn["id"] in (PIPE_ID, ACTION_ID):
+            ow.call("POST", f"/api/v1/functions/id/{fn['id']}/valves/update",
                     json={"WEBLLM_URL": webllm_url, "WEBLLM_TOKEN": webllm_token})
         else:
             filters.append(fn["id"])
@@ -121,7 +123,7 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print,
         mine = known.get(m["id"], {})
         form = {"id": m["id"], "base_model_id": None, "name": mine.get("name") or m.get("name") or m["id"], "params": {},
                 "meta": {"description": mine.get("card") or "Una IA de webllm.", "capabilities": CAPABILITIES,
-                         "filterIds": filters}}
+                         "filterIds": filters, "actionIds": [ACTION_ID] if mine.get("kind") == "chat" else []}}
         if ow.call("GET", "/api/v1/models/model", missing_ok=True, params={"id": m["id"]}):
             ow.call("POST", "/api/v1/models/model/update", json=form)
         else:

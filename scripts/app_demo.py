@@ -327,7 +327,7 @@ async def fake_extension(port: int) -> None:
                         "modes": [{"mode": m, "name": MODE_NAMES.get(m, m)} for m in want.get("modes") or []],
                         "modes_on": [MODE_NAMES.get(m, m) for m in want.get("modes") or []]}
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": text, "via": "copy-button",
-                                    "used": used})
+                                    "used": used, "url": f"https://{site}.demo/c/{job['id'][:8]}"})  # its conversation
 
         async for msg in ws:
             job = json.loads(msg.data)
@@ -357,12 +357,21 @@ async def fake_extension(port: int) -> None:
                 ok = logged_in.get(job["site"], True)
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "via": "check",
                                     "text": json.dumps({"input": ok, "login": not ok, "url": f"https://{job['site']}.demo/"})})
+            elif job.get("type") == "observe_stop":  # "Dejar de registrar"
+                await ws.send_json({"type": "observe_state", "site": "qwen", "tab": 1, "on": False})
             elif job.get("type") in ("try_patch", "observe", "reread"):
                 text = json.dumps({"ok": True, "checks": {k: {"ok": True} for k in job.get("patch") or {}}}) \
                     if job["type"] == "try_patch" else json.dumps({"tab": 1}) if job["type"] == "observe" else "Respuesta releída."
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "via": job["type"], "text": text})
                 if job["type"] == "observe":
                     await ws.send_json({"type": "observe_state", "site": job["site"], "follows": job.get("follows"), "tab": 1, "on": True})
+
+                    async def by_hand(job=job):  # "Continuar en la web": Iván writes one turn there 3 s later
+                        await asyncio.sleep(3)
+                        await ws.send_json({"type": "observed", "tab": 1, "site": job["site"], "follows": job.get("follows"),
+                                            "url": job.get("url"), "via": "dom", "user": "Esto lo escribí a mano en la web (demo)",
+                                            "answer": "Y esto contestó la web (demo)."})
+                    asyncio.create_task(by_hand())
 
 
 async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30, catalog_file: Path | None = None,

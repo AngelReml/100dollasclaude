@@ -28,7 +28,7 @@ export interface Ai {
   icon: boolean;
   /** Its chat is waiting for Iván right now (a verification, a pop-up, or the webllm window is
    *  covered/minimized so the page cannot write); the question goes on after. */
-  waiting: "challenge" | "popup" | "hidden" | null;
+  waiting: "challenge" | "popup" | "hidden" | "repair" | null;
 }
 
 export interface AddStep {
@@ -138,6 +138,55 @@ export interface Ficha {
   found: { model: boolean; plus: boolean };
   table: { source: string; checked: string; known: string[] };
   taught: string[];
+  /** PLAN-v5 F6: every change to where things are on this site, newest first; each can be undone. */
+  arreglos: Arreglo[];
+  /** The last daily check of this chat. */
+  revision: SiteCheck | null;
+}
+
+export interface Arreglo {
+  index: number;
+  when: string;
+  /** "la caja de texto", "la respuesta"… */
+  what: string;
+  /** "tú" or "una IA (z.ai)" */
+  by: string;
+  why: string;
+  active: boolean;
+  undone: string | null;
+}
+
+export interface SiteCheck {
+  site?: string;
+  label: string;
+  state: "bien" | "reparada" | "sin_sesion" | "verificacion" | "saturada" | "limite" | "bloqueada" | "no_encuentro_la_caja" | "no_se_pudo_abrir";
+  when: string;
+  repaired_by?: string;
+}
+
+export interface Revision {
+  when: string | null;
+  running: boolean;
+  sites: SiteCheck[];
+  ok: number;
+  total: number;
+}
+
+export interface Reparar {
+  enabled: boolean;
+  ai: string | null;
+  ai_label: string | null;
+  options: { name: string; label: string }[];
+  last: { when: string; site: string; result: string; why?: string }[];
+}
+
+/** A chat Iván goes on with by hand in his Chrome, recorded (PLAN-v5 F6). */
+export interface Observing {
+  tab: number;
+  site: string;
+  label: string;
+  follows: string | null;
+  since: string;
 }
 
 export interface LocalServer {
@@ -154,6 +203,7 @@ export interface Estado {
   extension_path: string;
   ais: Ai[];
   local_servers: LocalServer[];
+  observing?: Observing[];
 }
 
 export interface HistoryAnswer {
@@ -166,6 +216,10 @@ export interface HistoryAnswer {
   seconds: number;
   error: string;
   code: string;
+  /** The conversation's own address on the chat's site ("Continuar en la web"). */
+  url?: string;
+  by_ivan?: boolean;
+  repaired?: boolean;
 }
 
 export interface HistoryStep {
@@ -217,6 +271,8 @@ export type FlowEvent =
       seconds: number;
       error: string;
       code: string;
+      url?: string;
+      repaired?: { ai?: string; roles?: string[] };
     }
   | { type: "flow_done"; run_id: string; status: string; verified: boolean }
   | { type: "error"; code: string; error: string }
@@ -290,7 +346,18 @@ export const api = {
   fichaPotente: (ai: string, model: string | null, page = false) =>
     post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/potente`, { model, page }),
   /** "Enséñame dónde está": the chat comes forward; Iván's next click there shows where that thing is. */
-  ensename: (ia: string, what: "model" | "plus" | "file") => post<Ficha & { name: string | null }>("/api/ensename", { ia, what }),
+  ensename: (ia: string, what: "model" | "plus" | "file" | "input" | "send" | "answer") =>
+    post<Ficha & { name: string | null }>("/api/ensename", { ia, what }),
+  /** Undo one repair or lesson of this chat: the extension stops using it at once. */
+  fichaDeshacer: (ai: string, index: number) => post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/deshacer`, { index }),
+  revision: () => call<Revision>("/api/revision"),
+  /** "Comprobar ahora": each chat opened and looked at; nothing is sent. */
+  revisar: () => post<Revision>("/api/revisar", {}),
+  reparar: () => call<Reparar>("/api/reparar"),
+  guardarReparar: (enabled: boolean, ai: string | null) => post<Reparar>("/api/reparar", { enabled, ai: ai ?? "" }),
+  /** "Continuar en la web": that conversation, in a normal tab of your Chrome, recorded as you go on. */
+  continuar: (runId: string, ai?: string) => post<{ ok: boolean; label: string; url: string }>("/api/continuar", { run_id: runId, ai: ai ?? "" }),
+  dejarDeRegistrar: (tab?: number) => post<{ ok: boolean }>("/api/dejar-de-registrar", tab ? { tab } : {}),
   fichaOlvidar: (ai: string) => post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/olvidar`, {}),
   memoria: () => call<Memoria>("/api/memoria"),
   guardarMemoria: (dir: string, enabled: boolean) => post<Memoria>("/api/memoria", { dir, enabled }),

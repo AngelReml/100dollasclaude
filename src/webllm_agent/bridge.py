@@ -227,7 +227,8 @@ class Bridge:
 
     @staticmethod
     def _error(status: int, message: str, code: str) -> web.Response:
-        return web.json_response({"error": {"message": message, "type": code, "code": code}}, status=status)
+        # the code first: a client that keeps only the start of an error body still reads it (flows.error_code)
+        return web.json_response({"error": {"code": code, "type": code, "message": message}}, status=status)
 
     # ------------------------------------------------------------ extension
 
@@ -674,7 +675,9 @@ class Bridge:
         res = await self.send_job(site, names[site], prompt, tag=tag, files=files or None, want=want or None,
                                   wanted=lambda: transport is not None and not transport.is_closing())
         if not res.get("ok"):
-            detail = res.get("detail")
+            # the page's whole diagnosis is in the log; the message keeps a short hint of it
+            detail = " ".join(str(res.get("detail") or "").split())
+            detail = detail if len(detail) <= 160 else detail[:159] + "…"
             message = res["message"] + (f" ({detail})" if detail and res["status"] == 502 else "")
             return self._error(res["status"], message, res["error"])
 

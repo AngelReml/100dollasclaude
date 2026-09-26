@@ -13,6 +13,9 @@ export interface TurnAnswer {
   provider: string;
   providerLabel: string;
   startedAt: number | null;
+  /** PLAN-v5 F6: the conversation's own address on the chat's site; the page had changed and was repaired. */
+  url?: string;
+  repairedBy?: string;
 }
 
 export interface Turn {
@@ -138,6 +141,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             code: e.code,
             provider: e.provider,
             providerLabel: e.provider_label,
+            url: e.url,
+            repairedBy: e.repaired?.ai,
           });
         else if (e.type === "flow_done") update((t) => ({ ...t, runId: e.run_id, verified: e.verified }));
         else if (e.type === "error") update((t) => ({ ...t, error: { message: e.error, code: e.code } }));

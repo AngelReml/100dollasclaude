@@ -12,6 +12,7 @@ import { Modal } from "../ui/Modal";
 import { Page } from "../ui/Page";
 import { Badge, DoneBadge } from "../ui/Status";
 import { useToast } from "../ui/Toast";
+import { WebRow } from "../ui/Observando";
 import { PassDialog } from "./Preguntar";
 
 function when(ts: string | null) {
@@ -130,7 +131,7 @@ function HistoryList() {
   );
 }
 
-function HistoryAnswerCard({ a, onPass, question }: { a: HistoryAnswer; question: string; onPass: (a: HistoryAnswer) => void }) {
+function HistoryAnswerCard({ a, onPass, question, runId }: { a: HistoryAnswer; question: string; onPass: (a: HistoryAnswer) => void; runId: string }) {
   const toast = useToast();
   const stopped = !a.ok && a.code === "cancelled";
   return (
@@ -146,6 +147,10 @@ function HistoryAnswerCard({ a, onPass, question }: { a: HistoryAnswer; question
       <div className="max-h-[560px] overflow-y-auto px-5 py-4">
         {a.ok ? <Markdown text={a.text} /> : <p className="text-bad-ink">{stopped ? "Lo has parado tú." : a.error || "No respondió."}</p>}
       </div>
+      {a.ok && (
+        <WebRow runId={runId} provider={a.provider} label={a.provider_label} url={a.url} byIvan={a.by_ivan}
+          repairedBy={a.repaired ? "webllm" : undefined} />
+      )}
       {a.ok && (
         <div data-footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
           <Button size="sm" variant="secondary" icon={<Link2 size={18} aria-hidden />} onClick={() => onPass(a)} title={`Seguir con esta respuesta: ${question.slice(0, 60)}`}>
@@ -221,7 +226,7 @@ function HistoryDetail({ id }: { id: string }) {
               </div>
               <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr))]">
                 {s.answers.map((a) => (
-                  <HistoryAnswerCard key={a.target} a={a} question={run.text} onPass={setChoose} />
+                  <HistoryAnswerCard key={a.target} a={a} question={run.text} onPass={setChoose} runId={run.id} />
                 ))}
               </div>
             </section>

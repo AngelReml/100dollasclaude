@@ -34,14 +34,14 @@ def test_generic_detection_types_sends_and_reads_on_an_unknown_site():
     assert all("BIEN" in line and "sigue_escribiendo=false" in line for line in lines[4:])
 
 
-def run_real(script: str) -> list[str]:
+def run_real(script: str, timeout: float = 300) -> list[str]:
     """Run a tests/extension/*.mjs script (real extension + real bridge); its BIEN/FALLO lines."""
     with socket.socket() as sock:  # a free port for the bridge
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     env = {**os.environ, "WEBLLM_PYTHON": sys.executable, "WEBLLM_TEST_PORT": str(port)}
     out = subprocess.run(["node", str(ROOT / "tests" / "extension" / script)],
-                         capture_output=True, text=True, timeout=300, env=env)
+                         capture_output=True, text=True, timeout=timeout, env=env)
     lines = [line for line in out.stdout.splitlines() if line.startswith(("BIEN", "FALLO"))]
     assert out.returncode == 0 and all(line.startswith("BIEN") for line in lines), out.stdout + out.stderr
     return lines
@@ -92,3 +92,15 @@ def test_each_chats_capabilities_with_the_real_extension():
     """PLAN-v5 F4: discovery presses no option and sends nothing; model and modes confirmed on the page, or
     nothing is sent; files whole (20 MB too); "Publicar" never pressed; a download saved; "Enséñame"."""
     assert len(run_real("capabilities_flow.mjs")) == 14
+
+
+@needs_chromium
+@needs_openssl
+def test_webs_that_repair_themselves_and_the_observer_with_the_real_extension():
+    """PLAN-v5 F6: a page in French with a modern box works with no help (layer 1); one whose answers cannot be read
+    is repaired by an AI that sees only the page's structure and answers with numbers (layer 3), tried on the page
+    sending nothing; an AI answering with code is refused; "Deshacer"; "Enséñame" with 3 clicks (layer 4); "Parar"
+    also presses the site's own stop; the daily check sends nothing; "Continuar en la web" and "Registrar esta
+    conversación" record 2 turns written by hand into the same conversation and the vault. The same script with
+    extension 0.7.0 fails (docs/F6-reparacion.md)."""
+    assert len(run_real("repair_flow.mjs", timeout=1200)) == 15
