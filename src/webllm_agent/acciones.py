@@ -279,10 +279,12 @@ def parse(answer: str, tag: str, tools: list[dict[str, Any]]) -> Parsed:
         return Parsed(outside, problem="la petición debe tener exactamente «herramienta» y «argumentos»")
     name, args = data["herramienta"], data["argumentos"]
     by_name = {str((t.get("function") or {}).get("name")): t for t in tools}
-    if not isinstance(name, str) or name not in by_name:
-        return Parsed(outside, problem=f"«{name}» no es una herramienta del menú")
+    if not isinstance(name, str) or not name.strip():
+        return Parsed(outside, problem="no dice qué herramienta")
     if not isinstance(args, dict):
         return Parsed(outside, problem="«argumentos» debe ser un objeto")
+    if name not in by_name:  # a well-formed request for something it was not offered: refused by ``check``
+        return Parsed(outside, call={"name": name, "arguments": args})
     params = (by_name[name].get("function") or {}).get("parameters") or {"type": "object"}
     bad = _fits(args, {**params, "type": "object"}, "argumentos")
     if bad:

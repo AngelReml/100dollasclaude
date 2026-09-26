@@ -538,6 +538,17 @@ def close_run(run_dir: Path, run_id: str, name: str, status: str, steps: dict[st
     return verify_run(run_dir).ok
 
 
+def add_line(run_dir: Path, run_id: str, entry: dict[str, Any]) -> bool:
+    """A line after the run was closed (the tool a web chat asked for is read once its answer is in, PLAN-v5 F9):
+    chained like any other, and the manifest written again so the record still verifies."""
+    jpath = run_dir / journal.JOURNAL_NAME
+    last = journal.append(jpath, {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"), "run_id": run_id, **entry})
+    lines = sum(1 for x in jpath.read_text(encoding="utf-8").splitlines() if x.strip())
+    (run_dir / "run.json").write_text(json.dumps({"run_id": run_id, "kind": "flow", "lines": lines,
+                                                  "last_hash": last["hash"]}, indent=2), encoding="utf-8")
+    return verify_run(run_dir).ok
+
+
 def to_vault(cfg: AppConfig, run_dir: Path, **kw: Any) -> None:
     """PLAN-v5 F5: the journal is copied one way to Obsidian as it grows (nothing when the memory is off),
     with the names Iván knows for each AI."""

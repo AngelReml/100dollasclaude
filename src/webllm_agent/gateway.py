@@ -36,7 +36,7 @@ from typing import Any
 import httpx
 from aiohttp import web
 
-from . import automatico, automatico_face, committee, committee_face, flows, journal
+from . import acciones, automatico, automatico_face, committee, committee_face, flows, journal
 from .appapi import MAX_PROMPT, site_of
 from .broadcaster import SKIPPED as _SKIPPED, GatewayError, Outcome, new_run_id, upstream_key
 from .budget import budget_for
@@ -404,6 +404,18 @@ class Gateway:
         question = _last_user_text(messages) or conversation
         if not conversation.strip():
             raise RequestError(400, "empty_prompt", "El mensaje está vacío.")
+        # PLAN-v5 F9: the AI only sees the tools it may ask for (acciones.yaml); a web chat gets them as a text menu
+        # with a mark only this message knows, and its answer is read strictly (acciones.parse)
+        offered, kept_away = acciones.offer(acciones.load(), body.get("tools") if isinstance(body.get("tools"), list) else [])
+        if body.get("tools"):
+            if offered:
+                body["tools"] = offered
+            else:
+                body.pop("tools", None)
+                body.pop("tool_choice", None)
+        tool_tag = acciones.new_tag() if offered and site_of(p) else None
+        if tool_tag:
+            conversation = f"{conversation}\n\n{acciones.menu(offered, tool_tag)}"
         if len(conversation) > MAX_PROMPT:
             raise RequestError(413, "too_long", "La conversación es demasiado larga para mandarla de una vez.")
         files = decode_files([*(ext.get("files") or []), *_inline_images(messages)])
@@ -412,7 +424,9 @@ class Gateway:
                         "want_model": want_model, "strongest": strongest, "use_page_model": use_page,
                         "chat_id": chat_id, "message_id": str(ext.get("message_id") or "")[:100],
                         "hand_turns": [{"label": h["label"]} for h in hand],
-                        "task": str(ext.get("task") or "")[:60], "tools": bool(body.get("tools")),
+                        "task": str(ext.get("task") or "")[:60], "tools": bool(offered),
+                        "offered": [str((t.get("function") or {}).get("name")) for t in offered], "tool_specs": offered,
+                        "kept_away": kept_away, "tool_tag": tool_tag,
                         # where Open WebUI keeps the conversation (its folder = the project in Obsidian)
                         "project": str(ext.get("project") or "")[:80] or None, "title": str(ext.get("title") or "")[:120] or None}
 
@@ -485,7 +499,10 @@ class Gateway:
                 reply.avisos.append(f"{', '.join(req['modes']).capitalize()}: son modos de los chats web; "
                                     f"{p.display} (por API) no los tiene.")
         if req["tools"] and not direct:
-            reply.avisos.append(f"{p.display} todavía no puede usar herramientas: llega en la fase F9.")
+            await reply.say(f"{p.display} recibe tus herramientas como una lista escrita ({len(req['offered'])}). "
+                            "Si pide usar una, Open WebUI te preguntará antes.")
+        if req.get("kept_away"):
+            await reply.say("No se le enseñan: " + "; ".join(f"«{n}» ({why})" for n, why in req["kept_away"]) + ".")
         if req.get("hand_turns"):
             where = " y ".join(dict.fromkeys(f"la web de {h['label']}" for h in req["hand_turns"]))
             n = len(req["hand_turns"])
@@ -612,7 +629,51 @@ class Gateway:
         if done.get("provider") and done.get("provider") != p.name:
             reply.avisos.append(f"Respondió {done.get('provider_label')} en lugar de {p.display} (tu reserva).")
         reply.avisos.extend(self._used_avisos(p, done))
-        return await self._finish_text(reply, str(done.get("text") or ""))
+        return await self._finish_web(reply, run_dir, p, req, str(done.get("text") or ""))
+
+    async def _finish_web(self, reply: Reply, run_dir: Any, p: ProviderConfig, req: dict[str, Any],
+                          text: str) -> web.StreamResponse:
+        """A web chat's answer. With tools (PLAN-v5 F9): a request for one, read strictly, becomes a tool call that
+        Open WebUI shows with "Permitir / Denegar"; one that does not fit or breaks a rule is refused, recorded and
+        said. Nothing is guessed and nothing is run here."""
+        tag = req.get("tool_tag")
+        if not tag:
+            return await self._finish_text(reply, text)
+        parsed = acciones.parse(text, tag, req["tool_specs"])
+        if parsed.call is None and parsed.problem is None:
+            return await self._finish_text(reply, parsed.text)
+        call = parsed.call or {}
+        why = parsed.problem or acciones.check(acciones.load(), call.get("name", ""), call.get("arguments"), set(req["offered"]))
+        status = "malformed" if parsed.problem else "refused" if why else "asked"
+        flows.add_line(run_dir, reply.run_id, {"kind": "tool_request", "provider": p.name, "status": status,
+                                               "tool": call.get("name"), "arguments": call.get("arguments"), "why": why})
+        if status == "asked":
+            return await self._finish_tool_calls(reply, parsed.text, [call])
+        note = (f"{p.display} {why}: no se ha usado ninguna herramienta." if status == "malformed"
+                else f"webllm no ha dejado a {p.display} usar «{call.get('name')}»: {why}.")
+        reply.avisos.append(note)
+        return await self._finish_text(reply, (f"{parsed.text}\n\n" if parsed.text else "") + f"({note})")
+
+    async def _finish_tool_calls(self, reply: Reply, text: str, calls: list[dict[str, Any]]) -> web.StreamResponse:
+        """Tool calls in the standard shape (D6): Open WebUI asks Iván before running any of them."""
+        shaped = [{"index": i, "id": f"call_{uuid.uuid4().hex[:12]}", "type": "function",
+                   "function": {"name": c["name"], "arguments": json.dumps(c.get("arguments") or {}, ensure_ascii=False)}}
+                  for i, c in enumerate(calls)]
+        if not reply.stream:
+            content = reply.take_prefix() + text
+            return web.json_response({
+                "id": reply.cid, "object": "chat.completion", "created": reply.created, "model": reply.model,
+                "webllm": {"avisos": reply.avisos},
+                "choices": [{"index": 0, "finish_reason": "tool_calls",
+                             "message": {"role": "assistant", "content": content or None,
+                                         "tool_calls": [{k: v for k, v in c.items() if k != "index"} for c in shaped]}}],
+            }, headers={"x-webllm-run": reply.run_id})
+        await reply.lead()
+        if text:
+            await reply.chunk({"content": text})
+        await reply.chunk({"tool_calls": shaped})
+        await reply.chunk({}, "tool_calls", webllm={"avisos": reply.avisos})
+        return await reply.end()
 
     def _used_avisos(self, p: ProviderConfig, done: dict[str, Any]) -> list[str]:
         """What the chat's page really used (read back from it) and what it produced (PLAN-v5 D21/D22)."""
@@ -697,7 +758,7 @@ class Gateway:
                            **{k: body[k] for k in DIRECT_KEYS if k in body}}
                 lock = server_lock(upstream_key(p.model)) if p.gateway == "local" else contextlib.nullcontext()
                 async with lock:
-                    outcome.result, result = await self._upstream(reply, base, key, payload, p)
+                    outcome.result, result = await self._upstream(reply, base, key, payload, p, set(req.get("offered") or []))
                 if outcome.result.ok or result.get("started") or n == len(p.fallback_models):
                     break
                 nxt = p.fallback_models[n]
@@ -713,7 +774,7 @@ class Gateway:
             outcome.notices.append(f"{p.name}: respondió el respaldo {outcome.tried_models[-1]}")
             reply.avisos.append(f"Respondió el respaldo {outcome.tried_models[-1]} en lugar de {p.model} "
                                 "(tu reserva configurada).")
-        extra = {"tool_calls": result.get("tool_calls")} if result.get("tool_calls") else None
+        extra = {k: result[k] for k in ("tool_calls", "refused") if result.get(k)} or None
         answer = flows.journal_call(run_dir, reply.run_id, 1, step.id, message_file, message_sha, outcome, "first",
                                     p.name, extra=extra)
         status = flows.OK if answer.ok else flows.FAILED
@@ -742,9 +803,36 @@ class Gateway:
         await reply.chunk({}, None, webllm={"avisos": reply.avisos})
         return await reply.end()
 
-    async def _upstream(self, reply: Reply, base: str, key: str, payload: dict[str, Any], p: ProviderConfig
-                        ) -> tuple[ChatResult, dict[str, Any]]:
-        """One call to the API (or this PC's server); a stream is passed on as it comes."""
+    @staticmethod
+    def _vet(calls: list[dict[str, Any]], offered: set[str]) -> tuple[list[dict[str, Any]], list[list[str]]]:
+        """The tool calls an AI by API wrote, checked against acciones.yaml before Open WebUI is asked (PLAN-v5 F9):
+        (the ones that go on, [name, why] of the refused ones)."""
+        rules, allowed, refused = acciones.load(), [], []
+        for c in calls:
+            fn = c.get("function") or {}
+            name, raw = str(fn.get("name") or ""), fn.get("arguments") or "{}"
+            try:
+                args = json.loads(raw) if isinstance(raw, str) else raw
+            except ValueError:
+                refused.append([name, "sus datos no son un JSON válido"])
+                continue
+            why = acciones.check(rules, name, args, offered)
+            if why:
+                refused.append([name, why])
+            else:
+                allowed.append(c)
+        return allowed, refused
+
+    async def _refusal_notes(self, reply: Reply, p: ProviderConfig, refused: list[list[str]]) -> str:
+        notes = [f"webllm no ha dejado a {p.display} usar «{name}»: {why}." for name, why in refused]
+        reply.avisos.extend(notes)
+        return "\n\n" + "\n".join(f"({n})" for n in notes) if notes else ""
+
+    async def _upstream(self, reply: Reply, base: str, key: str, payload: dict[str, Any], p: ProviderConfig,
+                        offered: set[str] | None = None) -> tuple[ChatResult, dict[str, Any]]:
+        """One call to the API (or this PC's server); a stream is passed on as it comes, except a tool call: it is
+        held back until it is whole and checked (acciones.yaml), then passed on or refused (PLAN-v5 F9)."""
+        offered = offered or set()
         headers = {**auth_headers(key), **(TRANSPARENT_HEADERS if p.gateway == "omniroute" else {})}
         timeout = httpx.Timeout(connect=10.0, read=p.timeout_s, write=30.0, pool=10.0)
         t0 = time.perf_counter()
@@ -763,23 +851,38 @@ class Gateway:
                         # asked to stream, answered with one JSON: pass it on as chunks all the same
                         data = json.loads(await r.aread())
                         message = data["choices"][0]["message"]
-                        delta = {k: v for k, v in (("content", message.get("content")),
-                                                   ("tool_calls", [{"index": i, **c} for i, c in enumerate(message.get("tool_calls") or [])]))
+                        allowed, refused = self._vet(message.get("tool_calls") or [], offered)
+                        note = await self._refusal_notes(reply, p, refused)
+                        delta = {k: v for k, v in (("content", (message.get("content") or "") + note),
+                                                   ("tool_calls", [{"index": i, **c} for i, c in enumerate(allowed)]))
                                  if v}
                         await reply.chunk(delta)
-                        await reply.chunk({}, data["choices"][0].get("finish_reason") or "stop")
+                        finish = data["choices"][0].get("finish_reason") or "stop"
+                        await reply.chunk({}, "tool_calls" if allowed else ("stop" if refused else finish))
                         info["started"] = True
-                        if message.get("tool_calls"):
-                            info["tool_calls"] = [{"name": c["function"]["name"]} for c in message["tool_calls"]]
+                        if allowed:
+                            info["tool_calls"] = [{"name": c["function"]["name"]} for c in allowed]
+                        if refused:
+                            info["refused"] = refused
                         return ChatResult(OK, text=_content_text(message.get("content")) or "", model=data.get("model"),
                                           latency_s=time.perf_counter() - t0, http_status=200,
                                           upstream_provider=upstream), info
                     if not payload["stream"]:
                         data = json.loads(await r.aread())
                         message = data["choices"][0]["message"]
-                        info["body"] = data
                         if message.get("tool_calls"):
-                            info["tool_calls"] = [{"name": c["function"]["name"]} for c in message["tool_calls"]]
+                            allowed, refused = self._vet(message["tool_calls"], offered)
+                            note = await self._refusal_notes(reply, p, refused)
+                            if allowed:
+                                message["tool_calls"] = allowed
+                                info["tool_calls"] = [{"name": c["function"]["name"]} for c in allowed]
+                            else:
+                                message.pop("tool_calls", None)
+                                data["choices"][0]["finish_reason"] = "stop"
+                            if note:
+                                message["content"] = ((_content_text(message.get("content")) or "") + note).strip()
+                                info["refused"] = refused
+                        info["body"] = data
                         return ChatResult(OK, text=_content_text(message.get("content")) or "", model=data.get("model"),
                                           latency_s=time.perf_counter() - t0, http_status=200,
                                           upstream_provider=upstream), info
@@ -805,11 +908,17 @@ class Gateway:
                             if delta.get("content"):
                                 text.append(delta["content"])
                             for c in delta.get("tool_calls") or []:
-                                slot = calls.setdefault(c.get("index", 0), {"name": "", "arguments": ""})
+                                slot = calls.setdefault(c.get("index", 0), {"id": "", "name": "", "arguments": ""})
+                                slot["id"] = slot["id"] or str(c.get("id") or "")
                                 fn = c.get("function") or {}
                                 slot["name"] += fn.get("name") or ""
                                 slot["arguments"] += fn.get("arguments") or ""
                         info["started"] = True
+                        if calls:  # a tool call is being written: held back until it is whole and checked
+                            content = "".join((ch.get("delta") or {}).get("content") or "" for ch in chunk.get("choices") or [])
+                            if content:
+                                await reply.chunk({"content": content})
+                            continue
                         if reply.prefix and any((c.get("delta") or {}).get("content") for c in chunk.get("choices") or []):
                             await reply.lead()
                         await reply.write(f"{line.strip()}\n\n".encode("utf-8"))
@@ -820,7 +929,19 @@ class Gateway:
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             return ChatResult(MALFORMED, latency_s=time.perf_counter() - t0, error=f"respuesta mal formada: {exc}"), info
         if calls:
-            info["tool_calls"] = [{"name": c["name"]} for c in calls.values()]
+            whole = [{"id": c["id"] or f"call_{uuid.uuid4().hex[:12]}", "type": "function",
+                      "function": {"name": c["name"], "arguments": c["arguments"] or "{}"}} for _, c in sorted(calls.items())]
+            allowed, refused = self._vet(whole, offered)
+            note = await self._refusal_notes(reply, p, refused)
+            if note:
+                await reply.chunk({"content": note})
+            if allowed:
+                await reply.chunk({"tool_calls": [{"index": i, **c} for i, c in enumerate(allowed)]})
+            await reply.chunk({}, "tool_calls" if allowed else "stop")
+            if allowed:
+                info["tool_calls"] = [{"name": c["function"]["name"]} for c in allowed]
+            if refused:
+                info["refused"] = refused
         return ChatResult(OK, text="".join(text), model=served or payload["model"], latency_s=time.perf_counter() - t0,
                           http_status=200), info
 

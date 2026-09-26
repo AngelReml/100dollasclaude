@@ -133,7 +133,6 @@ def test_plain_answers_are_just_text():
     (block("ab12cd", "{herramienta: github_issue_write}"), "no es un JSON válido"),
     (block("ab12cd", '{"herramienta": "github_issue_write"}'), "exactamente «herramienta» y «argumentos»"),
     (block("ab12cd", '{"herramienta": "github_issue_write", "argumentos": {}, "y_ademas": 1}'), "exactamente"),
-    (block("ab12cd", '{"herramienta": "github_delete_repository", "argumentos": {"owner": "a", "repo": "b"}}'), "no es una herramienta del menú"),
     (block("ab12cd", '{"herramienta": "github_issue_write", "argumentos": {"method": "create", "owner": "a", "repo": "b"}}'), "falta «title»"),
     (block("ab12cd", '{"herramienta": "github_issue_write", "argumentos": {"method": "borrar", "owner": "a", "repo": "b", "title": "t"}}'), "no es uno de"),
     (block("ab12cd", '{"herramienta": "github_issue_write", "argumentos": {"method": "create", "owner": "a", "repo": "b", "title": 7}}'), "«title» debe ser string"),
@@ -146,6 +145,16 @@ def test_plain_answers_are_just_text():
 def test_what_does_not_fit_is_refused_never_guessed(answer, problem):
     p = acciones.parse(answer, "ab12cd", TOOLS)
     assert p.call is None and p.problem is not None and problem in p.problem, p.problem
+
+
+def test_a_well_formed_request_for_a_tool_not_offered_is_read_and_then_refused_by_the_rules():
+    """An AI that obeys "borra el repo" asks for a tool it was never shown: it is a request (recorded as refused),
+    and the rules refuse it."""
+    p = acciones.parse(block("ab12cd", '{"herramienta": "github_delete_repository", "argumentos": {"owner": "a", "repo": "b"}}'),
+                       "ab12cd", TOOLS)
+    assert p.problem is None and p.call == {"name": "github_delete_repository", "arguments": {"owner": "a", "repo": "b"}}
+    offered = {t["function"]["name"] for t in TOOLS}
+    assert acciones.check(RULES, p.call["name"], p.call["arguments"], offered) == "esa herramienta no se le ofreció"
 
 
 def test_an_injection_inside_a_tool_result_stays_data():
