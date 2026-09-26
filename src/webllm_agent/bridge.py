@@ -28,6 +28,7 @@ from typing import Any, Callable
 
 from aiohttp import WSMsgType, web
 
+from . import vault
 from .appapi import AppApi
 from .gateway import Gateway, RequestError, decode_files
 from .client import _content_text
@@ -171,7 +172,13 @@ class Bridge:
         app.router.add_post("/admin/diagnose", self.diagnose)
         self.app_api.register(app)
         self.gateway.register(app)
+        app.on_shutdown.append(self._flush_vault)
         return app
+
+    @staticmethod
+    async def _flush_vault(app: web.Application) -> None:
+        """Whatever the memory still has to write reaches the vault before the bridge closes (PLAN-v5 F5)."""
+        await asyncio.to_thread(vault.flush, 10)
 
     def site_names(self) -> dict[str, str]:
         """Chat sites the bridge serves: the built-in ones plus the ones added from the app."""

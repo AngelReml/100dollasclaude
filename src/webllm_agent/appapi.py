@@ -45,6 +45,7 @@ from aiohttp import web
 from . import catalog as catalog_mod
 from . import fichas
 from . import flows
+from . import vault
 from .broadcaster import GatewayError, verify_run
 from .budget import budget_for
 from .config import (
@@ -146,6 +147,8 @@ class AppApi:
         app.router.add_post("/api/ficha/{ai}/potente", self.ficha_potente)
         app.router.add_post("/api/ensename", self.ensename)
         app.router.add_post("/api/ficha/{ai}/olvidar", self.ficha_olvidar)
+        app.router.add_get("/api/memoria", self.memoria)
+        app.router.add_post("/api/memoria", self.guardar_memoria)
 
     # ---------------------------------------------------------------- helpers
 
@@ -1049,6 +1052,42 @@ class AppApi:
             return self._fail(408, "No llegó tu clic (esperé 3 minutos). Vuelve a intentarlo.", "no_click")
         fichas.teach(self.cfg.paths, site, what, str(out["selector"]))
         return web.json_response({"ok": True, "what": what, "name": out.get("name"), **self.ficha_view(p, site)})
+
+    # ---------------------------------------------------------------- memory in Obsidian (PLAN-v5 F5)
+
+    def memoria_view(self) -> dict[str, Any]:
+        s = vault.settings(self.cfg.paths)
+        last = s.get("last")
+        try:
+            last = time.strftime("%d/%m/%Y a las %H:%M", time.strptime(str(last), "%Y-%m-%d %H:%M:%S")) if last else None
+        except ValueError:
+            last = None
+        return {"dir": s["dir"], "enabled": s["enabled"], "error": s.get("error"), "last": last,
+                "conversations": vault.conversations(self.cfg.paths)}
+
+    async def memoria(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        view = self.memoria_view()
+        if view["enabled"] and view["error"]:
+            vault.retry(self.cfg.paths)  # Drive may be back: try again what it missed
+        return web.json_response(view)
+
+    async def guardar_memoria(self, request: web.Request) -> web.Response:
+        """Turn the memory on (in this vault folder) or off. The folder check touches Drive: in a thread, so a
+        slow Drive never holds the app up."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        try:
+            body = await request.json()
+        except ValueError:
+            return self._fail(400, "La petición no es JSON.", "bad_request")
+        try:
+            await asyncio.to_thread(vault.configure, self.cfg.paths, str(body.get("dir") or ""),
+                                    bool(body.get("enabled", True)))
+        except ValueError as exc:
+            return self._fail(400, str(exc), "bad_folder")
+        return web.json_response(self.memoria_view())
 
     async def encender_local(self, request: web.Request) -> web.Response:
         if not self._authorized(request):

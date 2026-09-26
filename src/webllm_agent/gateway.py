@@ -42,7 +42,7 @@ from .broadcaster import SKIPPED as _SKIPPED, GatewayError, Outcome, new_run_id,
 from .budget import budget_for
 from .client import (CANCELLED, CONNECTION_ERROR, HTTP_ERROR, MALFORMED, OK, TIMEOUT, TRANSPARENT_HEADERS, ChatResult,
                      _content_text, auth_headers)
-from .config import ProviderConfig
+from .config import AppConfig, ProviderConfig
 from .guard import Guard
 from .local import server_lock
 from .omniroute import load_api_key
@@ -97,6 +97,8 @@ def decode_files(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             raise RequestError(400, "bad_file", "Un archivo llegó mal formado.")
         name = str(item.get("name") or "archivo")[:200]
+        if "data" not in item:
+            raise RequestError(400, "bad_file", f"El archivo «{name}» llegó sin contenido.")
         try:
             data = base64.b64decode(str(item.get("data") or ""), validate=True)
         except (binascii.Error, ValueError):
@@ -306,14 +308,17 @@ class Gateway:
         return cfg, p, {"question": question, "conversation": conversation, "files": files, "modes": modes,
                         "want_model": want_model, "strongest": strongest, "use_page_model": use_page,
                         "chat_id": str(ext.get("chat_id") or "")[:100], "message_id": str(ext.get("message_id") or "")[:100],
-                        "task": str(ext.get("task") or "")[:60], "tools": bool(body.get("tools"))}
+                        "task": str(ext.get("task") or "")[:60], "tools": bool(body.get("tools")),
+                        # where Open WebUI keeps the conversation (its folder = the project in Obsidian)
+                        "project": str(ext.get("project") or "")[:80] or None, "title": str(ext.get("title") or "")[:120] or None}
 
     @staticmethod
     def bridge_flatten(messages: list[dict[str, Any]]) -> str:
         from .bridge import flatten_messages  # late: bridge imports this module
         return flatten_messages(messages)
 
-    def _record(self, run_dir: Any, run_id: str, p: ProviderConfig, req: dict[str, Any]) -> None:
+    def _record(self, cfg: AppConfig, run_dir: Any, run_id: str, p: ProviderConfig, req: dict[str, Any],
+                flow: flows.Flow) -> None:
         """The first journal line of a question from the face: where it came from, and the files
         (saved next to it, hashed) and modes it brought."""
         entries = []
@@ -330,6 +335,10 @@ class Gateway:
             "provider": p.name, "chat_id": req["chat_id"], "message_id": req["message_id"], "task": req["task"],
             "files": entries, "modes": req["modes"],
         })
+        # PLAN-v5 F5: the question is in Obsidian while the answer is on its way, in the project (Open WebUI's
+        # folder) and under the title Open WebUI shows
+        flows.write_flow(run_dir, flow)
+        flows.to_vault(cfg, run_dir, project=req["project"], title=req["title"])
 
     @staticmethod
     def _flow(p: ProviderConfig, req: dict[str, Any]) -> flows.Flow:
@@ -392,7 +401,7 @@ class Gateway:
 
         run_id = new_run_id()
         run_dir = cfg.paths.runs_dir / run_id
-        self._record(run_dir, run_id, p, req)
+        self._record(cfg, run_dir, run_id, p, req, flow)
         reply = Reply(request, bool(body.get("stream")), run_id, p.name)
         await reply.open()
         await self._before(reply, p, req)
@@ -576,6 +585,7 @@ class Gateway:
                                     p.name, extra=extra)
         status = flows.OK if answer.ok else flows.FAILED
         flows.close_run(run_dir, reply.run_id, flow.name, status, {step.id: status})
+        flows.to_vault(cfg, run_dir)
         self.bridge.app_api._remember({"target": p.name, "code": answer.code, "error": answer.error, "ok": answer.ok})
         for notice in outcome.notices:
             await reply.say(notice)

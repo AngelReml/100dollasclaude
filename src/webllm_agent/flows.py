@@ -35,7 +35,7 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 
-from . import journal
+from . import journal, vault
 from .broadcaster import (
     GatewayError, Outcome, TargetError, _run_target, _safe, check_gateway, new_run_id,
     resolve_targets, upstream_key, verify_run,
@@ -363,15 +363,17 @@ async def run_flow(
                  target: str) -> Answer:
         nonlocal counter
         counter += 1
-        return journal_call(run_dir, run_id, counter, step.id, message_file, message_sha, outcome, attempt, target)
+        answer = journal_call(run_dir, run_id, counter, step.id, message_file, message_sha, outcome, attempt, target)
+        to_vault(cfg, run_dir)
+        return answer
 
     async with httpx.AsyncClient(transport=transport) as client:
         if any(p.gateway == "omniroute" for ps in resolved.values() for p in ps):
             await check_gateway(client, cfg.base_url, api_key)  # before anything is written or sent
         (run_dir / "messages").mkdir(parents=True, exist_ok=True)
         (run_dir / "responses").mkdir(parents=True, exist_ok=True)
-        (run_dir / "flow.json").write_text(json.dumps(flow_to_dict(flow), indent=2, ensure_ascii=False),
-                                           encoding="utf-8")
+        write_flow(run_dir, flow)
+        to_vault(cfg, run_dir)  # the question is in Obsidian while the answers are on their way
         await _emit(emit, {"type": "flow_start", "run_id": run_id, "name": flow.name, "template": flow.template,
                            "steps": [{"id": s.id, "title": s.title or s.id, "to": list(s.to),
                                       "labels": [_label(cfg, n) for n in s.to]} for s in flow.steps],
@@ -467,6 +469,7 @@ async def run_flow(
     statuses = [r.status for r in results.values()]
     status = STOPPED if (FAILED in statuses or SKIPPED in statuses) else PARTIAL if PARTIAL in statuses else OK
     verified = close_run(run_dir, run_id, flow.name, status, {sid: r.status for sid, r in results.items()})
+    to_vault(cfg, run_dir)
     await _emit(emit, {"type": "flow_done", "run_id": run_id, "status": status, "verified": verified,
                        "steps": {sid: r.status for sid, r in results.items()}})
     return FlowRun(run_id=run_id, run_dir=run_dir, status=status, steps=results, verified=verified)
@@ -525,11 +528,26 @@ def close_run(run_dir: Path, run_id: str, name: str, status: str, steps: dict[st
     return verify_run(run_dir).ok
 
 
+def to_vault(cfg: AppConfig, run_dir: Path, **kw: Any) -> None:
+    """PLAN-v5 F5: the journal is copied one way to Obsidian as it grows (nothing when the memory is off),
+    with the names Iván knows for each AI."""
+    vault.export_run(cfg.paths, run_dir, labels={p.name: p.display for p in cfg.providers.values()}, **kw)
+
+
+def write_flow(run_dir: Path, flow: Flow) -> None:
+    """flow.json, once: the gateway writes it with its first journal line, and the memory's writer (another
+    thread) may be reading it, so it is never rewritten (same flow, same file)."""
+    path = run_dir / "flow.json"
+    if not path.exists():
+        run_dir.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(flow_to_dict(flow), indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def start_run(run_dir: Path, flow: Flow, step: Step, message: str) -> tuple[str, str]:
     """For a call made outside run_flow: the run's folders, flow.json and the message; (file, sha256)."""
     (run_dir / "messages").mkdir(parents=True, exist_ok=True)
     (run_dir / "responses").mkdir(parents=True, exist_ok=True)
-    (run_dir / "flow.json").write_text(json.dumps(flow_to_dict(flow), indent=2, ensure_ascii=False), encoding="utf-8")
+    write_flow(run_dir, flow)
     message_file = f"messages/{_safe(step.id)}.md"
     (run_dir / message_file).write_text(message, encoding="utf-8", newline="")
     return message_file, journal.sha256_text(message)

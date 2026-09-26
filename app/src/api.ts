@@ -222,6 +222,15 @@ export type FlowEvent =
   | { type: "error"; code: string; error: string }
   | { type: "step_start" | "step_done" | "target_wait" | "target_fallback"; [key: string]: unknown };
 
+/** "Memoria en Obsidian" (PLAN-v5 F5): where the vault is and how the last write went. */
+export type Memoria = {
+  dir: string;
+  enabled: boolean;
+  error: string | null;
+  last: string | null;
+  conversations: number;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -282,6 +291,8 @@ export const api = {
   /** "Enséñame dónde está": the chat comes forward; Iván's next click there shows where that thing is. */
   ensename: (ia: string, what: "model" | "plus" | "file") => post<Ficha & { name: string | null }>("/api/ensename", { ia, what }),
   fichaOlvidar: (ai: string) => post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/olvidar`, {}),
+  memoria: () => call<Memoria>("/api/memoria"),
+  guardarMemoria: (dir: string, enabled: boolean) => post<Memoria>("/api/memoria", { dir, enabled }),
   iconUrl: (key: string) => `/api/icono/${encodeURIComponent(key)}?token=${encodeURIComponent(TOKEN)}`,
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),
