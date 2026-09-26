@@ -2,9 +2,9 @@
 
 **Resultado en la nube: hecho y probado.**
 - **52 pruebas de «Automático».** Rompiendo a propósito cada protección, su prueba falla.
-- **El Open WebUI de verdad: __OWUI__.**
+- **El Open WebUI de verdad: 4 de 4 en «Automático», y las 44 comprobaciones de F1 a F8, todas bien.**
 - **103 capturas de la app, sin problemas** (entre ellas «Automático», tu prueba, las fichas y el Historial).
-- **Todas las pruebas del proyecto juntas: __TOTAL__.**
+- **Todas las pruebas del proyecto juntas: 385 pasan, ninguna falla** (19 min, con Chromium y Open WebUI de verdad).
 
 Falta lo que solo se ve en tu PC:
 - **Tus 10 preguntas de prueba**, 2 de cada tipo, marcando si eligió bien. Es la salida del plan: **9 de 10 bien elegidas**.
@@ -140,9 +140,18 @@ En la app: **Inicio → Automático → «Probar con tus preguntas»**.
 | Tu prueba: qué elegiría para cada pregunta sin enviar nada; tus marcas se guardan | **Bien** | aquí |
 | El Historial dice qué eligió y por qué (y nada si elegiste tú) | **Bien** | aquí |
 | Open WebUI: «Automático» no tiene interruptores del «+» ni el botón «Continuar en la web» | **Bien** | aquí |
-| **En el Open WebUI de verdad:** en el selector y no es el de partida; una pregunta de código con su primera línea y su registro; «sigue la conversación»; una idea → plan del Comité, nada enviado | **__OWUI_CORTO__** | Open WebUI de verdad |
+| **En el Open WebUI de verdad:** en el selector y no es el de partida; una pregunta de código con su primera línea y su registro; «sigue la conversación»; una idea → plan del Comité, nada enviado | **Bien** (4 de 4) | Open WebUI de verdad |
 | Tus 10 preguntas, 9 de 10 bien | Pendiente | tu PC |
 | Encender GLM-5.2, Qwen3.8-27B, Codestral y Gemini Flash desde tu OmniRoute | Pendiente | tu PC |
+
+Lo que dijo el Open WebUI de verdad (la batería completa, 26-sep-2026):
+
+```
+BIEN  «webllm · Automático» está en el selector y un chat nuevo no se abre con él (se abre con «Qwen (web)»)
+BIEN  una pregunta de código: la primera línea dice qué eligió y por qué («Automático eligió groq para «Código» (dice «script», dice «python»)») y el registro lo guarda (groq)
+BIEN  la siguiente pregunta, sin señales, sigue la conversación («Código»)
+BIEN  una idea recibe el plan del Comité con la primera línea de Automático, y no se envía nada (0 envíos)
+```
 
 Rompiendo a propósito una protección, su prueba falla:
 - sin la regla de privacidad;

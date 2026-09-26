@@ -62,8 +62,8 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 - **«Probar con tus preguntas»:** 10 preguntas tuyas, qué elegiría para cada una (sin enviar nada), y tú marcas Bien o Mal. La meta es 9 de 10.
 - **Probado aquí:**
   - 52 pruebas de «Automático»;
-  - el Open WebUI de verdad: __OWUI__;
-  - todas juntas: **__TOTAL__**.
+  - el Open WebUI de verdad: 4 de 4 en «Automático», y las 44 comprobaciones de F1 a F8, todas bien;
+  - todas juntas: **385 pasan, ninguna falla (19 min, con Chromium y Open WebUI de verdad)**.
 - **Falta tu PC:** encender las APIs de la tabla y tus 10 preguntas. Guía en `docs/F8-automatico.md`.
 
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F7: el Comité)

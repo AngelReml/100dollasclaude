@@ -513,7 +513,7 @@ Cada fase tiene:
 
 > **Estado (26-sep-2026):** hecho y probado en la nube.
 > - La tabla y sus reglas están en `src/webllm_agent/automatico.yaml` (a la vista en la app, en orden). Las fichas de las APIs, en `modelos_api.yaml`, con fuente y fecha.
-> - Pruebas de la tabla: cada tipo tiene primero y reserva, nada apunta a una IA prohibida, ninguna regla usa una web no privada. En total, 52 pruebas de «Automático», y el Open WebUI de verdad: __OWUI__.
+> - Pruebas de la tabla: cada tipo tiene primero y reserva, nada apunta a una IA prohibida, ninguna regla usa una web no privada. En total, 52 pruebas de «Automático», y el Open WebUI de verdad: 4 de 4 en «Automático», y las 44 comprobaciones de F1 a F8, todas bien.
 >
 > **Diferencias a propósito:**
 > - **Añadidas:** detrás de las reservas del plan van las que Iván ya tiene (gpt-oss-120b, DeepSeek, Qwen), marcadas como «añadidas, sin medir». Sin ellas, hoy casi nunca habría a quién preguntar.
