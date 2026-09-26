@@ -19,6 +19,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -75,7 +76,8 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
            "HF_HUB_OFFLINE": "1", "ENABLE_OLLAMA_API": "false", "ENABLE_OPENAI_API": "false", "DEFAULT_LOCALE": "es-ES",
            "ENABLE_VERSION_UPDATE_CHECK": "false", "RAG_EMBEDDING_MODEL_AUTO_UPDATE": "false"}
     (tmp_path / "ow").mkdir()
-    procs = [subprocess.Popen([str(Path(OWPY).parent / "open-webui"), "serve", "--host", "127.0.0.1", "--port", str(ow_port)],
+    ow_executable = Path(OWPY).parent / "Scripts" / "open-webui.exe" if os.name == "nt" else Path(OWPY).parent / "open-webui"
+    procs = [subprocess.Popen([str(ow_executable), "serve", "--host", "127.0.0.1", "--port", str(ow_port)],
                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
              subprocess.Popen([sys.executable, str(ROOT / "scripts" / "app_demo.py"), "--port", str(demo_port),
                                "--data", str(tmp_path / "demo")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
@@ -92,6 +94,26 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                 "--clave", token, "--webllm", demo_url, "--webllm-token", "demo-token"],
                                capture_output=True, text=True, timeout=120)
         assert setup.returncode == 0 and "Listo." in setup.stdout, setup.stdout + setup.stderr
+        config_request = urllib.request.Request(f"{ow_url}/api/v1/auths/admin/config",
+                                                headers={"Authorization": f"Bearer {token}"})
+        config = json.loads(urllib.request.urlopen(config_request, timeout=30).read())
+        config.update(ENABLE_API_KEYS=True, ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS=True, API_KEYS_ALLOWED_ENDPOINTS="")
+        post(f"{ow_url}/api/v1/auths/admin/config", config, token)
+        api_key = post(f"{ow_url}/api/v1/auths/api_key", {}, token)["api_key"]
+        functions_request = urllib.request.Request(f"{ow_url}/api/v1/functions/",
+                                                   headers={"Authorization": f"Bearer {api_key}"})
+        with pytest.raises(urllib.error.HTTPError) as denied:
+            urllib.request.urlopen(functions_request, timeout=30)
+        assert denied.value.code == 403
+        assert "permission to access" in json.loads(denied.value.read())["detail"]
+        config["ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS"] = False
+        post(f"{ow_url}/api/v1/auths/admin/config", config, token)
+        setup_with_api_key = subprocess.run([sys.executable, str(ROOT / "scripts" / "openwebui_setup.py"),
+                                             "--openwebui", ow_url, "--clave", api_key, "--webllm", demo_url,
+                                             "--webllm-token", "demo-token"],
+                                            capture_output=True, text=True, timeout=120)
+        assert setup_with_api_key.returncode == 0 and "Listo." in setup_with_api_key.stdout, (
+            setup_with_api_key.stdout + setup_with_api_key.stderr)
         out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f1_checks.mjs")], capture_output=True, text=True,
                              timeout=600, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
                                                "WEBLLM_DATA": str(tmp_path / "demo"), "OUT": str(tmp_path / "capturas")})

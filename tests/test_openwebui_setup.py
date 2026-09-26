@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import httpx
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -227,6 +228,21 @@ def test_the_github_token_comes_from_the_environment_and_is_never_printed(monkey
     out = capsys.readouterr().out
     assert "github_pat_secreto" not in out and "GitHub: conectado" in out
     assert not any("functions" in c for c in fake.calls)  # "--solo-conectores": webllm itself is not reinstalled
+
+
+@pytest.mark.parametrize(("detail", "expected"), [
+    ("Use of API key is not enabled in the environment.", "claves de API sin activar"),
+    ("You do not have permission to access this resource. Please contact your administrator for assistance.",
+     "restricciones de endpoints"),
+])
+def test_api_key_403_explains_the_setting_to_change(detail, expected):
+    def denied(_request):
+        return httpx.Response(403, json={"detail": detail})
+
+    ow = setup.OpenWebUI("http://ow.test", "sk-prueba", transport=httpx.MockTransport(denied))
+    with pytest.raises(SystemExit, match=expected) as error:
+        ow.call("GET", "/api/v1/functions/")
+    assert "¿está abierto?" not in str(error.value)
 
 
 def test_a_github_token_pasted_as_open_webuis_key_is_caught_and_never_shown(monkeypatch, capsys):

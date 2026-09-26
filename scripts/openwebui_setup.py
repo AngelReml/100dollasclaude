@@ -88,6 +88,7 @@ def functions_to_install() -> list[dict[str, str]]:
 
 class OpenWebUI:
     def __init__(self, url: str, key: str, transport: httpx.BaseTransport | None = None) -> None:
+        self.is_api_key = key.startswith("sk-")
         self.http = httpx.Client(base_url=url.rstrip("/"), headers={"Authorization": f"Bearer {key}"}, timeout=60,
                                  transport=transport)
 
@@ -98,6 +99,21 @@ class OpenWebUI:
         if r.status_code == 401:
             raise SystemExit("Open WebUI no acepta la clave: créala de nuevo en Ajustes → Cuenta → Claves de la API → "
                              "Mostrar → Crear Nueva Clave (con tu usuario administrador; empieza por sk-) y vuelve a ejecutar esto.")
+        if r.status_code == 403:
+            try:
+                detail = r.json().get("detail", "")
+            except (ValueError, AttributeError):
+                detail = ""
+            if self.is_api_key and detail == "Use of API key is not enabled in the environment.":
+                raise SystemExit("Open WebUI tiene las claves de API sin activar. En Administración → Ajustes → "
+                                 "Autenticación, activa «Claves de la API», guarda y vuelve a ejecutar esto.")
+            if self.is_api_key and detail == ("You do not have permission to access this resource. "
+                                                "Please contact your administrator for assistance."):
+                raise SystemExit("Open WebUI tiene activadas las restricciones de endpoints para las claves de API. "
+                                 "En Administración → Ajustes → Autenticación → Claves de la API, apágalas, "
+                                 "guarda y vuelve a ejecutar esto.")
+            raise SystemExit(f"Open WebUI ha denegado el acceso ({r.status_code}): {detail or 'sin más detalles'}. "
+                             "Comprueba que usas tu cuenta de administrador y sus permisos.")
         r.raise_for_status()
         return r.json() if r.content else None
 
