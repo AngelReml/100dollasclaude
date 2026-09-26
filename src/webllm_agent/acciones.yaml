@@ -1,0 +1,37 @@
+# What an AI may ask to do through webllm (PLAN-v5 F9; D6 one action format, D21.5 forbidden buttons, D24 never
+# leave Iván without Windows). Open WebUI runs the tools (its MCP connections) and asks Iván "Permitir / Denegar"
+# before each one; webllm decides first which tools an AI even sees, and refuses a request that breaks these rules
+# before Open WebUI is asked (it is written in the record, and the answer says why). Shown in the app.
+#
+# conectores     an MCP connection of Open WebUI by its id (its tools reach the AI as "<id>_<tool>"):
+#   permitidas   the only tools of that connection an AI sees (exact names; the rest are never offered)
+#   ramas        tools that write to a branch ("con_rama") only on a branch whose name starts like this
+# prohibidas     words that, in a tool's name, keep it away from every AI, whatever connection it comes from
+# comandos       tools that run commands (a name like "run_command", or an argument like "command"): a command
+#                that matches one of these is refused. A text filter, not a sandbox: the real protection is that
+#                nothing runs as administrator (D24) and that Iván approves each one.
+checked: "2026-09-26"
+conectores:
+  github:
+    name: GitHub
+    fuente: "README de github/github-mcp-server, conjuntos Issues, Pull Requests, Repositories y Context (26-sep-2026)"
+    permitidas: [get_me, issue_read, list_issues, search_issues, issue_write, add_issue_comment,
+                 pull_request_read, list_pull_requests, search_pull_requests, create_pull_request,
+                 get_file_contents, list_branches, list_commits, get_commit, create_branch, create_or_update_file]
+    ramas: "webllm/"
+    con_rama: [create_branch, create_or_update_file]
+prohibidas: [delete, remove, merge, destroy, drop, purge, wipe, force, publish, deploy, release, share, transfer,
+             archive, admin, rename, revoke, dismiss, fork]
+comandos:
+  nombres: [command, cmd, shell, terminal, exec, execute, run, powershell, bash, script]
+  argumentos: [command, cmd, commands, script, shell, powershell, bash, code]
+  prohibidos:
+    - {patron: '\b(runas|sudo|gsudo|psexec)\b|-verb\s+runas', por_que: "pide permisos de administrador"}
+    - {patron: '\b(shutdown|logoff|stop-computer|restart-computer|reboot|poweroff|halt)\b', por_que: "apaga, reinicia o cierra la sesión"}
+    - {patron: '\b(diskpart|bcdedit|bootrec|format-volume|clear-disk|remove-partition|initialize-disk|mkfs)\b|\bformat\s+[a-z]:|\bcipher\s+/w|\bdd\s+if=', por_que: "toca discos o el arranque"}
+    - {patron: '\brm\s+(-\w*r\w*f|-\w*f\w*r)|\b(rd|rmdir)\s+/s\b|\bdel\s+(/\w\s+)*/s\b|remove-item\b[^\n]*-recurse', por_que: "borra carpetas enteras (en F11 solo dentro del proyecto)"}
+    - {patron: '\breg(\.exe)?\s+(delete|add|import)\b|hklm:|hkey_local_machine', por_que: "cambia el registro de todo el equipo"}
+    - {patron: 'c:\\windows|\\system32|program files|programdata', por_que: "toca Windows o los programas instalados"}
+    - {patron: '\b(taskkill|stop-process|pkill|killall)\b|\bkill\s+-9\b', por_que: "cierra programas"}
+    - {patron: 'set-mppreference|enablelua|consentpromptbehavior|advfirewall\s+set|netsh\s+firewall|disable-computerrestore|vssadmin', por_que: "apaga una protección de Windows"}
+    - {patron: '\b(icacls|takeown|cacls)\b', por_que: "cambia los permisos de archivos"}
