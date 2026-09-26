@@ -95,6 +95,10 @@ class Answer:
     code: str = ""            # machine-readable reason when not ok (see error_code)
     notices: list[str] = field(default_factory=list)
     model: str = ""           # the model that answered, as its gateway reported it
+    # A chat site (PLAN-v5 F4): what was really used on its page (model, modes, files with their sha256)
+    # and what it produced (downloads saved in data/descargas/, or links).
+    used: dict[str, Any] = field(default_factory=dict)
+    downloads: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -335,12 +339,14 @@ async def run_flow(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     transport: httpx.AsyncBaseTransport | None = None,
     stop: asyncio.Event | None = None,
+    bridge_extra: dict[str, Any] | None = None,
 ) -> FlowRun:
     """Run ``flow`` and return every step's result; raise FlowError / GatewayError before sending anything.
 
     ``stop`` is Iván's "parar": once set, a call in progress ends as "cancelled" at once (whoever sets it also
     tells the bridge, so a chat's job in Chrome stops too), nothing more is sent (no retry, no stand-in, no
-    later step), and the run still closes its journal."""
+    later step), and the run still closes its journal.
+    ``bridge_extra`` goes to the chat sites asked (PLAN-v5 F4): {"model", "modes", "files"}."""
     stopping = stop.is_set if stop is not None else (lambda: False)
     resolved = validate(cfg, flow)
     run_id = run_id or new_run_id()
@@ -383,7 +389,7 @@ async def run_flow(
                 work = asyncio.ensure_future(_run_target(
                     provider, prompt=message, client=client, cfg=cfg, api_key=api_key, guard=guard,
                     timeout_s=timeout_s, notify=lambda _m: None,  # guard waits show as "esperando"
-                    bridge_key=bridge_key, run_tag=run_id))
+                    bridge_key=bridge_key, run_tag=run_id, bridge_extra=bridge_extra))
                 if stop is None:
                     return await work
                 t0 = asyncio.get_running_loop().time()
@@ -425,7 +431,8 @@ async def run_flow(
                                "label": _label(cfg, target), "provider": answer.provider,
                                "provider_label": _label(cfg, answer.provider), "ok": answer.ok,
                                "text": answer.text, "seconds": answer.seconds, "error": answer.error,
-                               "code": answer.code, "notices": answer.notices, "model": answer.model})
+                               "code": answer.code, "notices": answer.notices, "model": answer.model,
+                               "used": answer.used, "downloads": answer.downloads})
             return answer
 
         async def run_step(step: Step) -> None:
@@ -494,11 +501,15 @@ def journal_call(run_dir: Path, run_id: str, counter: int, step_id: str, message
         "error": r.error,
         "code": error_code(r),
         "notices": outcome.notices,
+        # what the chat's page really used and produced (the files by their sha256, never their content)
+        **({"used": used} if (used := (r.webllm or {}).get("used")) else {}),
+        **({"downloads": made} if (made := (r.webllm or {}).get("downloads")) else {}),
         **(extra or {}),
     })
     return Answer(target=target, provider=outcome.target.name, ok=r.ok, text=r.text if r.ok else "",
                   seconds=round(r.latency_s, 1), error=_error_text(r), code=error_code(r),
-                  notices=list(outcome.notices), model=r.model or outcome.target.model)
+                  notices=list(outcome.notices), model=r.model or outcome.target.model,
+                  used=dict((r.webllm or {}).get("used") or {}), downloads=list((r.webllm or {}).get("downloads") or []))
 
 
 def close_run(run_dir: Path, run_id: str, name: str, status: str, steps: dict[str, str]) -> bool:
@@ -576,6 +587,8 @@ OWN_ERROR_CODES = frozenset({
     "site_busy", "not_sent", "paused", "bridge_unavailable", "unknown_site", "model_not_found",
     "empty_prompt", "no_input", "insert_failed", "send_failed", "empty_answer", "extension_error",
     "unauthorized", "unreachable", "cancelled",
+    # PLAN-v5 F4: what Iván chose could not be put or confirmed on the page, so nothing was sent
+    "not_confirmed", "model_not_in_page", "mode_not_in_page", "file_not_attached", "forbidden", "expensive_cap",
 })
 # Whole words: a "load balancer" is not a balance, and "insufficient context" is not money.
 _CREDIT_TEXT = re.compile(r"insufficient[ _-]?(balance|credits?|funds|quota)|\bcredits?\b|\bbalance\b", re.I)

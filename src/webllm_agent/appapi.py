@@ -15,6 +15,11 @@
     GET  /api/catalogo     every web chat webllm knows (catalog.yaml) with what Iván did with it (PLAN-v5 F3)
     POST /api/conectar-varias   connect several: one Chrome permission, then one by one (log in, "pong")
     GET  /api/conectar-varias/<id>, POST /api/conectar-varias/<id>/parar
+    GET  /api/ficha/<ai>   what a chat can do (PLAN-v5 F4): models (strongest first), modes, "+" menu, files
+    POST /api/descubrir    read it on the chat's page (menus opened, read and closed; nothing pressed or sent)
+    POST /api/ficha/<ai>/potente   Iván says which model is the strongest
+    POST /api/ensename     "Enséñame dónde está": Iván clicks the thing in the chat's page
+    POST /api/ficha/<ai>/olvidar   forget what he showed (back to the site's own and generic rules)
 
 Only answers on this PC (the bridge's local-only middleware) and only with the bridge token,
 which the app receives inside its HTML. Answers are untrusted text: the app renders them as
@@ -38,6 +43,7 @@ from urllib.parse import urlsplit
 from aiohttp import web
 
 from . import catalog as catalog_mod
+from . import fichas
 from . import flows
 from .broadcaster import GatewayError, verify_run
 from .budget import budget_for
@@ -135,6 +141,11 @@ class AppApi:
         app.router.add_post("/api/conectar-varias", self.conectar_varias)
         app.router.add_get("/api/conectar-varias/{batch_id}", self.conectar_varias_estado)
         app.router.add_post("/api/conectar-varias/{batch_id}/parar", self.conectar_varias_parar)
+        app.router.add_get("/api/ficha/{ai}", self.ficha)
+        app.router.add_post("/api/descubrir", self.descubrir)
+        app.router.add_post("/api/ficha/{ai}/potente", self.ficha_potente)
+        app.router.add_post("/api/ensename", self.ensename)
+        app.router.add_post("/api/ficha/{ai}/olvidar", self.ficha_olvidar)
 
     # ---------------------------------------------------------------- helpers
 
@@ -929,6 +940,115 @@ class AppApi:
             self.bridge.cancel(st["key"])  # or its "pong" test, if it had got that far
             self._add_failed(st["add_id"], "cancelled")
         return web.json_response(self._batch_view(b))
+
+    # ------------------------------------------------------------------ each chat's card (PLAN-v5 F4)
+
+    def _chat(self, name: str) -> tuple[ProviderConfig, str] | None:
+        p = self.cfg.providers.get(name)
+        site = site_of(p) if p is not None else None
+        return (p, site) if p is not None and site else None
+
+    def ficha_view(self, p: ProviderConfig, site: str) -> dict[str, Any]:
+        entry = self.catalog.get(site)
+        card = fichas.load(self.cfg.paths, site)
+        return {
+            "ai": p.name, "label": p.display, "site": site, "discovered": bool(card.get("when")), "when": card.get("when"),
+            "current_model": card.get("current_model"), "models": fichas.rank(entry, card),
+            "strongest": fichas.strongest(entry, card), "strongest_by_ivan": card.get("strongest_by_ivan"),
+            "use_page_model": bool(card.get("use_page_model")),
+            "modes": card.get("modes") or [], "plus": card.get("plus") or [], "files": card.get("files") or [],
+            "found": {"model": bool(card.get("model_button")), "plus": bool(card.get("plus"))},
+            "table": {"source": entry.models_source if entry else "", "checked": entry.models_checked if entry else "",
+                      "known": [m["match"] for m in (entry.models if entry else ())]},
+            "taught": sorted(fichas.load_patch(self.cfg.paths, site)),
+        }
+
+    async def ficha(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        chat = self._chat(request.match_info["ai"])
+        if chat is None:
+            return self._fail(404, "Solo los chats web tienen ficha.", "not_a_chat")
+        return web.json_response(self.ficha_view(*chat))
+
+    async def descubrir(self, request: web.Request) -> web.Response:
+        """Read a chat's card on its page. Its menus are opened, read and closed; no option is pressed and
+        nothing is sent, so it spends no message (and does not go through the message guard)."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        chat = self._chat(str((await request.json()).get("ia", "")))
+        if chat is None:
+            return self._fail(404, "Solo los chats web tienen ficha.", "not_a_chat")
+        p, site = chat
+        if not await self.bridge._ensure_extension():
+            return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
+        async with self.bridge.locks.setdefault(site, asyncio.Lock()):  # never while a question is being asked
+            res = await self.bridge._send_to_extension({"type": "discover", **self.bridge.site_payload(site)}, 120)
+        if not res.get("ok"):
+            code = str(res.get("error") or "extension_error")
+            text = {"login_required": f"{p.display} no tiene la sesión abierta: pulsa Conectar y entra.",
+                    "challenge": f"{p.display} pide una verificación: resuélvela tú y vuelve a pulsar Descubrir.",
+                    "no_input": f"No encontré la caja de texto de {p.display}.",
+                    "timeout": "La extensión de Chrome no contestó: si es antigua, pulsa ↻ en «webllm puente»."}.get(
+                        code, f"No pude leer la ficha de {p.display}.")
+            return self._fail(502, text, code)
+        try:
+            card = json.loads(str(res.get("text") or "{}"))
+        except ValueError:
+            return self._fail(502, "La extensión devolvió una ficha rota.", "bad_card")
+        fichas.save_discovery(self.cfg.paths, site, card)
+        return web.json_response(self.ficha_view(p, site))
+
+    async def ficha_potente(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        chat = self._chat(request.match_info["ai"])
+        if chat is None:
+            return self._fail(404, "Solo los chats web tienen ficha.", "not_a_chat")
+        body = await request.json()
+        model = body.get("model")
+        try:
+            fichas.set_strongest(self.cfg.paths, chat[1], str(model) if model else None, page=bool(body.get("page")))
+        except ValueError:
+            return self._fail(400, "Ese modelo no está en su ficha: pulsa Descubrir otra vez.", "unknown_model")
+        return web.json_response(self.ficha_view(*chat))
+
+    async def ficha_olvidar(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        chat = self._chat(request.match_info["ai"])
+        if chat is None:
+            return self._fail(404, "Solo los chats web tienen ficha.", "not_a_chat")
+        fichas.forget_patch(self.cfg.paths, chat[1])
+        return web.json_response(self.ficha_view(*chat))
+
+    async def ensename(self, request: web.Request) -> web.Response:
+        """"Enséñame dónde está": the chat comes to the front with a banner, and Iván's next click there
+        (which does nothing on the page) tells webllm where that thing is, for good."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        chat = self._chat(str(body.get("ia", "")))
+        what = str(body.get("what", ""))
+        if chat is None or what not in fichas.TEACHABLE:
+            return self._fail(400, "No sé qué enseñar ahí.", "bad_request")
+        p, site = chat
+        text = {"model": "haz clic en el botón que elige el modelo",
+                "plus": "haz clic en el botón «+» (el que abre las opciones y adjuntar)",
+                "file": "haz clic en el botón para adjuntar archivos"}[what]
+        if not await self.bridge._ensure_extension():
+            return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
+        async with self.bridge.locks.setdefault(site, asyncio.Lock()):
+            res = await self.bridge._send_to_extension({"type": "teach", **self.bridge.site_payload(site), "what": what,
+                                                        "text": text, "wait_ms": 180000}, 200)
+        try:
+            out = json.loads(str(res.get("text") or "{}"))
+        except ValueError:
+            out = {}
+        if not res.get("ok") or not out.get("selector"):
+            return self._fail(408, "No llegó tu clic (esperé 3 minutos). Vuelve a intentarlo.", "no_click")
+        fichas.teach(self.cfg.paths, site, what, str(out["selector"]))
+        return web.json_response({"ok": True, "what": what, "name": out.get("name"), **self.ficha_view(p, site)})
 
     async def encender_local(self, request: web.Request) -> web.Response:
         if not self._authorized(request):

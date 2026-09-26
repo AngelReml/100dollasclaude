@@ -1,4 +1,4 @@
-import { AppWindow, Cpu, LifeBuoy, Plug, Plus, Power, Server, MessageSquarePlus, MonitorCheck, OctagonX, TestTube2, Unplug } from "lucide-react";
+import { AppWindow, Cpu, LifeBuoy, Plug, Plus, Power, ScanSearch, Server, MessageSquarePlus, MonitorCheck, OctagonX, TestTube2, Unplug } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api, ApiError, type Ai } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
@@ -8,6 +8,7 @@ import { RemoveAiButton } from "../ui/AddAi";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
+import { FichaDialog } from "../ui/Ficha";
 import { FixButtons } from "../ui/Fix";
 import { Page, SectionTitle } from "../ui/Page";
 import { AiStateBadge, Badge } from "../ui/Status";
@@ -49,6 +50,7 @@ function aiLine(ai: Ai): { text: string; actions: FixAction[] } {
 
 export function AiCard({ ai }: { ai: Ai }) {
   const line = aiLine(ai);
+  const [ficha, setFicha] = useState(false);
   return (
     <Card className="flex flex-col gap-3 p-5" data-card={ai.name}>
       <div className="flex items-center gap-3">
@@ -63,6 +65,14 @@ export function AiCard({ ai }: { ai: Ai }) {
       </div>
       <p className="text-[15px] text-ink-2">{line.text}</p>
       {line.actions.length > 0 && <FixButtons actions={line.actions} ai={ai.name} />}
+      {ai.kind === "chat" && (
+        <div>
+          <Button size="sm" variant="soft" icon={<ScanSearch size={18} aria-hidden />} onClick={() => setFicha(true)}>
+            Ficha: modelos y modos
+          </Button>
+          <FichaDialog ai={ai.name} label={ai.label} open={ficha} onOpenChange={setFicha} />
+        </div>
+      )}
       {ai.custom && (
         <div className="-mb-1 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
           <span className="min-w-0 truncate text-[15px] text-muted">{ai.catalog ? "De la lista de webllm" : "Añadida por ti"} · {ai.url?.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>

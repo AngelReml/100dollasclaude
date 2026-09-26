@@ -45,6 +45,21 @@ PROBLEMS: dict[str, tuple[str, str]] = {
     "unauthorized": ("{ai} no acepta la clave",
                      "La clave guardada en OmniRoute no vale o ha caducado. Revísala en el panel de OmniRoute."),
     "offline": ("webllm no responde", "Cierra esta ventana y vuelve a abrir webllm con su icono."),
+    # PLAN-v5 F4 (D21): what Iván chose could not be put or confirmed on the chat's page, so nothing was sent
+    "not_confirmed": ("No se envió: {ai} no confirmó lo que pediste",
+                      "webllm puso el modelo o el modo en su web, pero la página no lo confirmó, así que no mandó "
+                      "nada. Vuelve a intentarlo o elige otro modelo. Si pasa siempre con el modelo, en su Ficha "
+                      "(webllm) pulsa «Usar siempre el que tenga puesto su web»."),
+    "model_not_in_page": ("No se envió: ese modelo ya no está en {ai}",
+                          "Su selector no lo tiene. En webllm → Conectores, pulsa Descubrir para ver sus modelos de hoy."),
+    "mode_not_in_page": ("No se envió: {ai} no tiene ese modo",
+                         "Quita ese interruptor del «+» o pregúntaselo a otro chat."),
+    "file_not_attached": ("No se envió: el archivo no quedó adjunto en {ai}",
+                          "Su web no lo aceptó así. Pregúntaselo a otro chat o arrástralo tú en su ventana."),
+    "forbidden": ("No se envió: iba a pulsar un botón prohibido en {ai}",
+                  "webllm nunca pulsa publicar, compartir, borrar ni nada parecido. Dímelo para revisar esa web."),
+    "expensive_cap": ("{ai} ya ha usado hoy sus modos caros",
+                      "La investigación profunda y el modo constructor se cuentan aparte (5 al día). Mañana vuelven."),
     "cancelled": ("Lo has parado tú", "Si ya se había enviado, la web puede haber contestado igualmente; "
                                       "pregunta otra vez cuando quieras."),
     "task_for_web_chat": ("Petición interna rechazada",
@@ -54,12 +69,18 @@ PROBLEMS: dict[str, tuple[str, str]] = {
 DEFAULT = ("{ai} no pudo responder", "Vuelve a intentarlo o pregúntaselo a otra IA.")
 
 
+# Codes whose text already says everything: the service's own words would only repeat webllm's.
+OWN_TEXT = frozenset({"login_required", "paused", "cooldown", "bridge_unavailable", "extension_disconnected",
+                      "not_confirmed", "model_not_in_page", "mode_not_in_page", "file_not_attached", "forbidden",
+                      "expensive_cap"})
+
+
 def problem_text(code: str, ai: str, said: str = "") -> str:
     """One paragraph: what happened, what to do, and (when it helps) what the service answered."""
     title, todo = PROBLEMS.get(code, DEFAULT)
     out = f"{title.format(ai=ai)}. {todo.format(ai=ai)}"
     said = " ".join((said or "").split())
-    if said and code not in ("login_required", "paused", "cooldown", "bridge_unavailable", "extension_disconnected"):
+    if said and code not in OWN_TEXT:
         out += f" Lo que respondió: «{said[:200]}{'…' if len(said) > 200 else ''}»"
     return out
 

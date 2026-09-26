@@ -43,6 +43,29 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F4: todo lo que sabe hacer cada chat, bajo tu control)
+
+- **Cada chat tiene su «Ficha»** (en la app, en su tarjeta):
+  - «Descubrir» abre sus menús, los lee y los cierra, sin pulsar opciones ni enviar nada;
+  - enseña sus modelos (el más potente primero, o «Empate: dime cuál»), sus modos, su menú «+» y qué archivos acepta;
+  - si falta algo, **«Enséñame dónde está»**: un clic tuyo en la web.
+- **En Open WebUI:**
+  - salen los modelos de cada chat («Qwen · … — el más potente»);
+  - hay cinco interruptores en el «+»: pensar, buscar, investigación profunda, modo constructor e imagen;
+  - los archivos que adjuntas se suben a la web con su propio botón.
+- **Antes de enviar, todo se comprueba en la página.** Si el modelo, un modo o un archivo no quedan puestos, **no se envía nada** y te dice qué pasó.
+- **Cada respuesta dice lo que se usó de verdad** (modelo, modos, a quién se subieron tus archivos). Lo que genera el chat se guarda en `data\descargas\`.
+- **Nunca** pulsa publicar, compartir, borrar, regenerar, desplegar ni pagar (en 8 idiomas).
+- **Probado aquí con la extensión de verdad:**
+  - 14 de 14 en la web de prueba, incluido un archivo de 20 MB con la misma huella;
+  - 6 de 6 en Open WebUI con la extensión de verdad detrás.
+- **Falta tu PC:** que las fichas de Qwen, z.ai, Kimi y DeepSeek coincidan con lo que ves. Guía en `docs/F4-capacidades.md`.
+- **Qué hacer:**
+  1. `ACTUALIZAR`;
+  2. ↻ en «webllm puente» (debe poner **0.7.0**);
+  3. Ficha → Descubrir en tus chats;
+  4. `herramientas\poner-en-openwebui.cmd` otra vez.
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F3: todos los chats web, precargados)
 
 - **En la app hay una pantalla nueva, «Conectores»,** con las 27 IAs de chat web de la lista del plan. Las que no están conectadas no salen en Open WebUI ni en Preguntar.

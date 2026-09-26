@@ -389,6 +389,8 @@ Cada fase tiene:
 
 ### F4 — Todo lo que sabe hacer cada chat, bajo tu control
 
+> **Estado (26-sep-2026):** hecho y probado en la nube con la extensión de verdad: la web de prueba ampliada (14 de 14) y Open WebUI con la extensión detrás (6 de 6). Límites dichos en `docs/F4-capacidades.md`: la tabla de potencia solo tiene los modelos de la sección 6 (empates y desconocidos los decides tú); «Enséñame» cubre el selector de modelos, el «+» y el botón de adjuntar, todavía no un modo concreto; las descargas que salen de los servidores de la web quedan como enlace. Falta la salida en tu PC: las 4 fichas y las 3 pruebas.
+
 - **Puerta:** F1 (comprobaciones 11 y 12) y F3.
 - **Qué:** lo de D21, D22 y la sección 3 ("Lo que sabe hacer cada chat"):
   - descubrir la ficha de cada chat (abrir menús, leer y cerrar, sin pulsar opciones ni enviar) y "Enséñame dónde está";

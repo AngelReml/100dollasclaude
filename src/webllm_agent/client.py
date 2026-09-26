@@ -49,6 +49,9 @@ class ChatResult:
     # OmniRoute's own report of who served the call and whether its cache answered.
     upstream_provider: str | None = None
     cache: str | None = None
+    # webllm's bridge (PLAN-v5 F4): what was really used in the chat's page (model, modes, files) and the
+    # files the chat produced.
+    webllm: dict[str, Any] | None = None
 
     @property
     def ok(self) -> bool:
@@ -93,8 +96,10 @@ async def chat(
     temperature: float | None = 0.0,
     max_tokens: int | None = None,
     extra_headers: dict[str, str] | None = None,
+    extra_body: dict[str, Any] | None = None,
 ) -> ChatResult:
-    """Send one user prompt and wait for the full (non-streamed) answer."""
+    """Send one user prompt and wait for the full (non-streamed) answer. ``extra_body`` is merged into the
+    request (webllm's bridge: {"webllm": {model, modes, files}})."""
     payload: dict[str, Any] = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
@@ -104,6 +109,7 @@ async def chat(
         payload["temperature"] = temperature
     if max_tokens is not None:
         payload["max_tokens"] = max_tokens
+    payload.update(extra_body or {})
 
     t0 = time.perf_counter()
     try:
@@ -132,7 +138,8 @@ async def chat(
             cache=cache,
         )
     try:
-        text, served_model = parse_completion(resp.json())
+        body = resp.json()
+        text, served_model = parse_completion(body)
     except ValueError as exc:  # json.JSONDecodeError is a ValueError too
         return ChatResult(
             MALFORMED,
@@ -151,4 +158,5 @@ async def chat(
         http_status=200,
         upstream_provider=upstream,
         cache=cache,
+        webllm=body.get("webllm") if isinstance(body, dict) and isinstance(body.get("webllm"), dict) else None,
     )

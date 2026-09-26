@@ -125,7 +125,8 @@ try {
   const hasToggle = await toggle.count();
   await shot(page, "05-interruptor");
   if (hasToggle) {
-    await page.getByRole("switch").first().click().catch(() => toggle.click());
+    // the row that says "Pensar más" is itself the button (there are several switches since F4)
+    await toggle.click();
     await page.keyboard.press("Escape");
   }
   await shot(page, "06-interruptor-encendido");
@@ -152,8 +153,9 @@ try {
   await send(page, "¿Qué dicen estos archivos?");
   await finished(page);
   await shot(page, "08-adjuntos-respuesta");
-  const stillSays = await page.getByText(/no ha visto «prueba\.pdf», «prueba\.png»/).count(); // names each file (F2)
-  say(stillSays > 0, "12. al terminar sigue a la vista que la IA aún no ha visto los archivos (lo que ves es lo que se usó)");
+  // Since F4 the files go up to the web chat with its own button: the status line says so, with the sha256.
+  const stillSays = await page.getByText(/«prueba\.pdf», «prueba\.png» se subieron a Qwen \(Alibaba\), con la misma huella/).count();
+  say(stillSays > 0, "12. al terminar sigue a la vista a quién se subieron los archivos y que llegaron con la misma huella (lo que ves es lo que se usó)");
   const files = lastGatewayLine(since)?.files ?? [];
   const byHash = Object.fromEntries(files.map((f) => [f.sha256, f.name]));
   say(!!byHash[sha(pdf)] && !!byHash[sha(png)],

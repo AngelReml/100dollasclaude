@@ -77,6 +77,42 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
         actions: ["otra"],
         said: true,
       };
+    case "not_confirmed":
+      return {
+        title: `No se envió: ${label} no confirmó lo que pediste`,
+        text: "webllm puso el modelo o el modo en su web, pero la página no lo confirmó, así que no mandó nada. Vuelve a intentarlo o elige otro modelo. Si pasa siempre con el modelo, en su Ficha pulsa «Usar siempre el que tenga puesto su web».",
+        actions: ["reintentar", "otra"],
+      };
+    case "model_not_in_page":
+      return {
+        title: `No se envió: ese modelo ya no está en ${label}`,
+        text: "Su selector no lo tiene. En Conectores, pulsa Descubrir para ver sus modelos de hoy.",
+        actions: ["otra"],
+      };
+    case "mode_not_in_page":
+      return {
+        title: `No se envió: ${label} no tiene ese modo`,
+        text: "Quita ese interruptor o pregúntaselo a otro chat.",
+        actions: ["otra"],
+      };
+    case "file_not_attached":
+      return {
+        title: `No se envió: el archivo no quedó adjunto en ${label}`,
+        text: "Su web no lo aceptó así. Pregúntaselo a otro chat o arrástralo tú en su ventana.",
+        actions: ["otra"],
+      };
+    case "forbidden":
+      return {
+        title: `No se envió: iba a pulsar un botón prohibido en ${label}`,
+        text: "webllm nunca pulsa publicar, compartir, borrar ni nada parecido. Dímelo para revisar esa web.",
+        actions: [],
+      };
+    case "expensive_cap":
+      return {
+        title: `${label} ya ha usado hoy sus modos caros`,
+        text: "La investigación profunda y el modo constructor se cuentan aparte (5 al día). Mañana vuelven.",
+        actions: ["otra"],
+      };
     case "cancelled":
       return {
         title: "Lo has parado tú",

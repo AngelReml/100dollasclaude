@@ -77,6 +77,8 @@ class FakeOpenWebUI:
         return httpx.Response(404)
 
 
+MODES = ["webllm_buscar", "webllm_constructor", "webllm_imagen", "webllm_investigar", "webllm_pensar"]
+
 def run_install(fake: FakeOpenWebUI):
     ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
     known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}"} for m in fake.pipe_models}
@@ -86,7 +88,7 @@ def run_install(fake: FakeOpenWebUI):
 def test_installs_the_pipe_and_the_switches_active_with_webllms_key():
     fake = FakeOpenWebUI()
     run_install(fake)
-    assert set(fake.functions) == {"webllm", "webllm_pensar"}
+    assert set(fake.functions) == {"webllm", *MODES}
     assert all(f["is_active"] for f in fake.functions.values())
     assert fake.valves["webllm"] == {"WEBLLM_URL": "http://127.0.0.1:20130", "WEBLLM_TOKEN": "llave-webllm"}
     assert fake.functions["webllm"]["content"] == (ROOT / "openwebui" / "webllm_pipe.py").read_text("utf-8")
@@ -101,7 +103,7 @@ def test_every_webllm_model_gets_whole_files_and_its_switches():
         caps = m["meta"]["capabilities"]
         assert caps["file_context"] is False and caps["vision"] is True and caps["file_upload"] is True
         assert caps["builtin_tools"] is False  # only the tools Iván switches on
-        assert m["meta"]["filterIds"] == ["webllm_pensar"]
+        assert m["meta"]["filterIds"] == sorted(MODES)  # every switch of the "+" (PLAN-v5 F4)
     assert fake.config["/api/v1/retrieval/config/update"] == {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}
     assert fake.config["/api/v1/evaluations/config"] == {"ENABLE_EVALUATION_ARENA_MODELS": False}
 
@@ -122,7 +124,7 @@ def test_running_it_again_updates_and_duplicates_nothing():
     run_install(fake)
     assert "POST /api/v1/functions/create" not in fake.calls and "POST /api/v1/models/create" not in fake.calls
     assert fake.calls.count("POST /api/v1/functions/id/webllm/toggle") == 0  # still active: not switched off
-    assert len(fake.functions) == 2 and len(fake.models) == 2 and first
+    assert len(fake.functions) == 1 + len(MODES) and len(fake.models) == 2 and first
 
 
 def test_it_refuses_when_webllm_is_not_answering():

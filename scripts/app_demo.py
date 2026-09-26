@@ -33,6 +33,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import hashlib
 import json
 import re
 import sys
@@ -159,6 +160,28 @@ def fake_omniroute() -> web.Application:
     return app
 
 
+# What "Descubrir" finds in each demo chat (PLAN-v5 F4): Qwen has two models the catalog's table cannot tell
+# apart (a tie), z.ai its strongest, DeepSeek only models without data, Meta no model selector ("Enséñame").
+DEMO_CARDS = {
+    "qwen": {"model_button": "Qwen3.8-Plus", "current_model": "Qwen3.8-Plus",
+             "models": [{"name": n} for n in ("Qwen3.8-Plus", "Qwen3.8-Max", "Qwen3-Max", "QwQ-32B")],
+             "plus": ["Subir archivo", "Web Dev", "Investigación profunda", "Crear imagen"],
+             "modes": [{"name": "Pensar", "on": False, "mode": "pensar"}, {"name": "Buscar", "on": False, "mode": "buscar"}],
+             "files": [{"accept": ".pdf,.docx,.txt,image/*", "multiple": True}]},
+    "zai": {"model_button": "GLM-5.2", "current_model": "GLM-5.2", "models": [{"name": "GLM-5.2"}, {"name": "GLM-4.6"}],
+            "plus": ["Subir archivo", "Diapositivas", "Desarrollo completo"], "modes": [{"name": "Pensar", "on": True, "mode": "pensar"}],
+            "files": [{"accept": "", "multiple": True}]},
+    "deepseek": {"model_button": "DeepSeek-V4", "current_model": "DeepSeek-V4",
+                 "models": [{"name": "DeepSeek-V4"}, {"name": "DeepSeek-R2"}], "plus": ["Subir archivo"],
+                 "modes": [{"name": "Pensar (R2)", "on": False, "mode": "pensar"}, {"name": "Buscar", "on": False, "mode": "buscar"}],
+                 "files": [{"accept": ".pdf,.txt,image/*", "multiple": True}]},
+    "meta": {"model_button": None, "current_model": None, "models": [], "plus": [], "modes": [],
+             "files": [{"accept": "image/*", "multiple": False}]},
+}
+MODE_NAMES = {"pensar": "Pensar", "buscar": "Buscar", "investigar": "Investigación profunda",
+              "constructor": "Web Dev", "imagen": "Imagen"}
+
+
 async def fake_extension(port: int) -> None:
     delays = {"qwen": 3.0, "deepseek": 5.0, "zai": 4.0, "meta": 1.0}
     logged_in = {"meta": False}
@@ -194,6 +217,7 @@ async def fake_extension(port: int) -> None:
             await ws.send_json({"type": "add_ready", "add_id": add_id, "icon": DEMO_ICON})
 
         cancelled: set[str] = set()  # "parar" (like the real extension 0.5.2: the job just stops)
+        incoming: dict[str, dict[str, dict[int, bytes]]] = {}  # job id -> file key -> parts
 
         async def add_many(job):  # "Conectar varias": one permission for all (Iván's click)
             await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "add_many"})
@@ -263,7 +287,17 @@ async def fake_extension(port: int) -> None:
                 if "Otra IA" in job["prompt"] or "ojo crítico" in job["prompt"]:
                     text = ("Está bien explicada. Yo añadiría un ejemplo con **sueldos**: si los precios suben un 5 % "
                             "y tu sueldo solo un 2 %, en realidad eres un 3 % más pobre.")
-                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": text, "via": "copy-button"})
+                # like extension 0.7.0: what it put on the page, the files by the sha256 of what really arrived
+                want = job.get("want") or {}
+                got = incoming.pop(job["id"], {})
+                files = [{"name": f["name"], "size": len(b"".join(got.get(f["key"], {}).get(i, b"") for i in range(f["parts"]))),
+                          "sha256": hashlib.sha256(b"".join(got.get(f["key"], {}).get(i, b"") for i in range(f["parts"]))).hexdigest()}
+                         for f in job.get("files") or []]
+                used = {"model": want.get("model"), "files": files,
+                        "modes": [{"mode": m, "name": MODE_NAMES.get(m, m)} for m in want.get("modes") or []],
+                        "modes_on": [MODE_NAMES.get(m, m) for m in want.get("modes") or []]}
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": text, "via": "copy-button",
+                                    "used": used})
 
         async for msg in ws:
             job = json.loads(msg.data)
@@ -275,6 +309,20 @@ async def fake_extension(port: int) -> None:
                 asyncio.create_task(add_check(job))
             elif job.get("type") == "cancel":
                 cancelled.add(str(job.get("id")))
+            elif job.get("type") == "discover":  # "Descubrir": read-only, nothing is sent
+                card = DEMO_CARDS.get(job["site"], {"models": [], "plus": [], "modes": [], "files": []})
+                if (job.get("site_patch") or {}).get("modelButton"):  # Iván showed where its selector is
+                    card = {**card, "model_button": "Modelos", "models": [{"name": "Llama 5"}, {"name": "Llama 5 Mini"}]}
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "via": "discover", "text": json.dumps(card)})
+            elif job.get("type") == "teach":  # "Enséñame": Iván "clicks" 3 s later
+                async def taught(job=job):
+                    await asyncio.sleep(3)
+                    await ws.send_json({"type": "result", "id": job["id"], "ok": True, "via": "teach",
+                                        "text": json.dumps({"ok": True, "what": job["what"], "selector": "button#modelos",
+                                                            "name": "Modelos"})})
+                asyncio.create_task(taught())
+            elif job.get("type") == "file_part":  # a job's files arrive in parts before it
+                incoming.setdefault(job["job"], {}).setdefault(job["key"], {})[job["n"]] = base64.b64decode(job["data"])
 
 
 async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30, catalog_file: Path | None = None,

@@ -15,7 +15,10 @@ request works as soon as you log in (with the same or a new account).
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import json
+import re
 import secrets
 import subprocess
 import time
@@ -26,7 +29,7 @@ from typing import Any, Callable
 from aiohttp import WSMsgType, web
 
 from .appapi import AppApi
-from .gateway import Gateway
+from .gateway import Gateway, RequestError, decode_files
 from .client import _content_text
 from .config import JOB_HARD_CAP_S, PROJECT_ROOT, AppConfig, ProviderConfig
 from .guard import Guard, GuardBlocked
@@ -50,7 +53,18 @@ ERRORS: dict[str, tuple[int, float | None, str]] = {
     "site_busy": (503, None, "está saturado ahora mismo (no es un límite de tu cuenta). Prueba en un rato o elige otro modelo en su web"),
     "not_sent": (502, None, "el mensaje se quedó sin enviar (una ventana emergente lo tapó). Vuelve a pedirlo"),
     "cancelled": (409, None, "lo has parado tú"),
+    # PLAN-v5 F4 (D21): what Iván chose was not confirmed on the page, so nothing was sent (no pause)
+    "not_confirmed": (409, None, "la página no confirmó lo que pediste (modelo o modo), así que no envié nada"),
+    "model_not_in_page": (409, None, "ese modelo no está en su selector, así que no envié nada"),
+    "mode_not_in_page": (409, None, "ese modo no está en su web, así que no envié nada"),
+    "file_not_attached": (409, None, "el archivo no quedó adjunto en su web, así que no envié nada"),
+    "forbidden": (409, None, "iba a pulsar un botón prohibido (publicar, compartir, borrar…) y no lo hice; no envié nada"),
+    "expensive_cap": (429, None, "ya se han usado hoy los modos caros de este chat (se cuentan aparte)"),
 }
+# The extension's file errors, all "the file did not get attached" for Iván (the detail says which).
+FILE_ERRORS = {"file_not_shown", "no_file_input", "file_type_refused", "file_changed", "file_incomplete"}
+EXPENSIVE_MODES = frozenset({"investigar", "constructor"})  # few uses a day on the sites
+FILE_PART_BYTES = 512 * 1024
 
 
 def load_token(state_dir: Path) -> str:
@@ -177,11 +191,24 @@ class Bridge:
         return entry.daily_cap if entry else None
 
     def site_payload(self, site: str) -> dict[str, Any]:
-        """What the extension needs about a site; an added one travels with its name and address."""
+        """What the extension needs about a site; an added one travels with its name and address, and
+        what Iván showed with "Enséñame dónde está" travels with every site (PLAN-v5 F4)."""
+        out: dict[str, Any] = {"site": site}
         for p in self.cfg.providers.values():
             if p.custom and p.model == MODEL_PREFIX + site:
-                return {"site": site, "site_config": {"name": p.display, "url": p.url}}
-        return {"site": site}
+                out["site_config"] = {"name": p.display, "url": p.url}
+                break
+        patch = self.site_patch(site)
+        if patch:
+            out["site_patch"] = patch
+        return out
+
+    def site_patch(self, site: str) -> dict[str, list[str]]:
+        try:
+            data = json.loads((self.cfg.paths.state_dir / "patches" / f"{site}.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return {k: [str(x) for x in v][:5] for k, v in data.items() if isinstance(v, list)} if isinstance(data, dict) else {}
 
     def _authorized(self, request: web.Request) -> bool:
         return request.headers.get("Authorization", "") == f"Bearer {self.token}"
@@ -195,7 +222,7 @@ class Bridge:
     async def ext_socket(self, request: web.Request) -> web.StreamResponse:
         if request.query.get("token") != self.token:
             return web.Response(status=401, text="bad token")
-        ws = web.WebSocketResponse(heartbeat=25)
+        ws = web.WebSocketResponse(heartbeat=25, max_msg_size=64 * 1024 * 1024)  # files a chat produced come back here
         await ws.prepare(request)
         old, self.ws = self.ws, ws
         if old is not None and not old.closed:
@@ -257,10 +284,12 @@ class Bridge:
         except asyncio.TimeoutError:
             return False
 
-    async def _send_to_extension(self, payload: dict[str, Any], wait_s: float, tag: str = "") -> dict[str, Any]:
+    async def _send_to_extension(self, payload: dict[str, Any], wait_s: float, tag: str = "",
+                                 files: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Send one message to the extension and wait for its result: at least ``wait_s``, and
         longer while the extension keeps saying it is still on the job (extension 0.5.0+ says so
-        every 10 s, e.g. while Iván solves a verification; it enforces the real time limits)."""
+        every 10 s, e.g. while Iván solves a verification; it enforces the real time limits).
+        ``files`` ({name, mime, sha256, bytes}) travel first, in parts, however big."""
         job_id = uuid.uuid4().hex
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending[job_id] = fut
@@ -268,7 +297,16 @@ class Bridge:
             self.jobs[str(payload.get("site"))] = (job_id, tag)
         start = time.monotonic()
         try:
-            await self.ws.send_json({**payload, "id": job_id})
+            metas = []
+            for i, f in enumerate(files or []):
+                key = f"f{i}"
+                data = f["bytes"]
+                n = max(1, -(-len(data) // FILE_PART_BYTES))
+                for k in range(n):
+                    part = base64.b64encode(data[k * FILE_PART_BYTES:(k + 1) * FILE_PART_BYTES]).decode("ascii")
+                    await self.ws.send_json({"type": "file_part", "job": job_id, "key": key, "n": k, "data": part})
+                metas.append({"key": key, "name": f["name"], "type": f["mime"], "sha256": f["sha256"], "parts": n})
+            await self.ws.send_json({**payload, "id": job_id, **({"files": metas} if metas else {})})
             while True:
                 now = time.monotonic()
                 until = start + wait_s
@@ -314,7 +352,8 @@ class Bridge:
 
     async def send_job(self, site: str, name: str, prompt: str, *, site_config: dict[str, str] | None = None,
                        timeout_s: float | None = None, tag: str = "",
-                       wanted: Callable[[], bool] | None = None) -> dict[str, Any]:
+                       wanted: Callable[[], bool] | None = None, files: list[dict[str, Any]] | None = None,
+                       want: dict[str, Any] | None = None) -> dict[str, Any]:
         """One message to a chat site, always through the account guard (one at a time per site,
         spacing, daily cap, pause on account limits). ``site_config`` is for a site being added
         that is not saved yet. On failure: {"ok": False, "status", "error", "message", "detail"}."""
@@ -326,7 +365,18 @@ class Bridge:
                 permit = await self.guard.acquire(provider, notify=self.log)
             except GuardBlocked as blocked:
                 return {"ok": False, "status": 403, "error": "paused", "message": blocked.message_es, "detail": ""}
+            extra_permits = []
             try:
+                # Expensive modes (deep research, builder) have few uses a day: counted apart, per chat.
+                for mode in sorted(set((want or {}).get("modes") or []) & EXPENSIVE_MODES):
+                    try:
+                        extra_permits.append(await self.guard.acquire(ProviderConfig(
+                            name=f"{site}:{mode}", model=MODEL_PREFIX + site, kind="browser",
+                            daily_cap=self.cfg.guard.expensive_daily_cap), notify=self.log))
+                    except GuardBlocked:
+                        return {"ok": False, "status": 429, "error": "expensive_cap", "detail": "",
+                                "message": f"{name}: ya has usado hoy las {self.cfg.guard.expensive_daily_cap} veces "
+                                           f"de «{mode}» (los modos caros se cuentan aparte). Mañana vuelve."}
                 if (tag and tag in self.stopped) or (wanted is not None and not wanted()):
                     # stopped while it waited its turn: nothing is sent
                     return {"ok": False, "status": 409, "error": "cancelled", "detail": "",
@@ -336,16 +386,22 @@ class Bridge:
                             "message": "Chrome no está conectado: abre Chrome con la extensión webllm cargada"}
                 t0 = time.perf_counter()
                 res = await self._send_to_extension(
-                    {"type": "job", **payload, "prompt": prompt, "timeout_ms": int(timeout_s * 1000)},
+                    {"type": "job", **payload, "prompt": prompt, "timeout_ms": int(timeout_s * 1000),
+                     **({"want": want} if want else {})},
                     timeout_s + self.human_wait_s,  # room for a human to solve a verification
-                    tag=tag,
+                    tag=tag, files=files,
                 )
                 res["latency"] = time.perf_counter() - t0
             finally:
                 self.guard.release(permit)
+                for extra in extra_permits:
+                    self.guard.release(extra)
         if res.get("ok"):
             return res
         code = res.get("error", "extension_error")
+        if code in FILE_ERRORS:
+            res["detail"] = f"{code}: {res.get('detail') or ''}"
+            code = "file_not_attached"
         status, hours, text = ERRORS.get(code, (502, None, "falló en la página del chat"))
         message = f"{name}: {text.format(site=name)}"
         if hours is not None:
@@ -499,8 +555,17 @@ class Bridge:
         prompt = flatten_messages(body.get("messages") or [])
         if not prompt.strip():
             return self._error(400, "el prompt está vacío", "empty_prompt")
+        # PLAN-v5 F4: what Iván chose for this chat (model, modes) and the files that go with the question
+        extra = body.get("webllm") if isinstance(body.get("webllm"), dict) else {}
+        try:
+            files = decode_files(extra.get("files") or [])
+        except RequestError as exc:
+            return self._error(exc.status, exc.message, exc.code)
+        want = {k: v for k, v in {"model": str(extra.get("model") or "")[:120] or None,
+                                  "modes": [str(m) for m in extra.get("modes") or []][:6]}.items() if v}
         transport = request.transport
-        res = await self.send_job(site, names[site], prompt, tag=request.headers.get("x-webllm-run", ""),
+        tag = request.headers.get("x-webllm-run", "")
+        res = await self.send_job(site, names[site], prompt, tag=tag, files=files or None, want=want or None,
                                   wanted=lambda: transport is not None and not transport.is_closing())
         if not res.get("ok"):
             detail = res.get("detail")
@@ -509,6 +574,7 @@ class Bridge:
 
         latency = res["latency"]
         text = res.get("text", "")
+        webllm = {"used": res.get("used") or {}, "downloads": self._save_downloads(tag, res.get("downloads") or [])}
         label = str(res.get("model_label") or "")
         if label:
             model = f"{model} · {label}"
@@ -522,7 +588,7 @@ class Bridge:
             await resp.prepare(request)
             for chunk in (
                 {"choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}]},
-                {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]},
+                {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "webllm": webllm},
             ):
                 data = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": model, **chunk}
                 await resp.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8"))
@@ -534,7 +600,34 @@ class Bridge:
             "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
             "usage": {"prompt_tokens": len(prompt) // 4, "completion_tokens": len(text) // 4,
                       "total_tokens": (len(prompt) + len(text)) // 4},
+            "webllm": webllm,
         }, headers=headers)
+
+    def _save_downloads(self, tag: str, items: list[Any]) -> list[dict[str, Any]]:
+        """Files a chat produced (made in its page) go to data/descargas/<question>/; links stay links."""
+        folder = self.cfg.paths.data_dir / "descargas" / (tag if re.fullmatch(r"[\w-]{1,64}", tag or "") else
+                                                          time.strftime("%Y%m%d-%H%M%S"))
+        out: list[dict[str, Any]] = []
+        for item in items[:10]:
+            if not isinstance(item, dict):
+                continue
+            name = re.sub(r"[^\w.\- ]+", "_", str(item.get("name") or "archivo"))[:100].strip(" .") or "archivo"
+            if item.get("b64"):
+                try:
+                    data = base64.b64decode(str(item["b64"]), validate=True)
+                except ValueError:
+                    continue
+                folder.mkdir(parents=True, exist_ok=True)
+                path = folder / name
+                for n in range(2, 100):
+                    if not path.exists():
+                        break
+                    path = folder / f"{Path(name).stem}-{n}{Path(name).suffix}"
+                path.write_bytes(data)
+                out.append({"name": name, "path": str(path), "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+            elif str(item.get("url") or "").startswith("https://"):
+                out.append({"name": name, "url": str(item["url"])[:500]})
+        return out
 
 
 def serve(cfg: AppConfig, port: int, timeout_s: float) -> None:

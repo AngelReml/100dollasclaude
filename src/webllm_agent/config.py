@@ -134,6 +134,8 @@ class GuardConfig:
     cooldown_hours: float = 6.0
     # Every AI by API: most questions per day (budget.py), so a loop cannot use up a free quota.
     api_daily_cap: int = 300
+    # A chat's expensive modes (deep research, builder: few uses a day on the site) are counted apart.
+    expensive_daily_cap: int = 5
 
 
 @dataclass(frozen=True)
@@ -351,6 +353,7 @@ def load_config(data_dir: Path | None = None) -> AppConfig:
             daily_cap=int(guard_raw.get("daily_cap", 150)),
             cooldown_hours=float(guard_raw.get("cooldown_hours", 6)),
             api_daily_cap=int(guard_raw.get("api_daily_cap", 300)),
+            expensive_daily_cap=int(guard_raw.get("expensive_daily_cap", 5)),
         ),
         blocked_model_prefixes=_as_tuple(merged.get("blocked_model_prefixes")),
         blocked_model_substrings=tuple(s.lower() for s in _as_tuple(merged.get("blocked_model_substrings"))),

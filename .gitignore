@@ -21,6 +21,7 @@ data/runs/
 data/logs/
 data/screenshots/
 data/dumps/
+data/descargas/
 
 # OS
 .DS_Store

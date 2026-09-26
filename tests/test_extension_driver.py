@@ -84,3 +84,11 @@ def test_conectar_varias_with_the_real_extension():
     connects, one has no text box and keeps its diagnosis, one sends you to another address to log in and
     connects when you come back, one has moved and says where; webllm types nothing on the login page."""
     assert len(run_real("catalog_flow.mjs")) == 13
+
+
+@needs_chromium
+@needs_openssl
+def test_each_chats_capabilities_with_the_real_extension():
+    """PLAN-v5 F4: discovery presses no option and sends nothing; model and modes confirmed on the page, or
+    nothing is sent; files whole (20 MB too); "Publicar" never pressed; a download saved; "Enséñame"."""
+    assert len(run_real("capabilities_flow.mjs")) == 14

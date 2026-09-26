@@ -48,6 +48,8 @@
   hookClipboard();
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Also for the clicks defined before the capabilities section below (send, copy).
+  const FORBIDDEN_RE_EARLY = (window.WEBLLM_COMMON && window.WEBLLM_COMMON.FORBIDDEN_RE) || /publish|publicar|share|compartir|delete|borrar|regenerat|deploy/i;
 
   // Really on screen: some size and not transparent (sites keep invisible
   // 0x0 / opacity-0 helper elements, e.g. z.ai's background verification).
@@ -236,7 +238,7 @@
 
   const send = (site) => {
     const b = findSend(site);
-    if (b) {
+    if (b && !FORBIDDEN_RE_EARLY.test(nameOf(b))) {
       b.click();
       return { ok: true, method: "click" };
     }
@@ -252,6 +254,7 @@
     const cps = copyButtons(site);
     if (!cps.length) return { ok: false, error: "no_copy_button" };
     captured.length = 0;
+    if (FORBIDDEN_RE_EARLY.test(nameOf(cps[cps.length - 1]))) return { ok: false, error: "forbidden" };
     cps[cps.length - 1].click();
     for (let i = 0; i < 10 && !captured.length; i++) await sleep(150);
     const text = captured.length ? captured[captured.length - 1] : "";
@@ -325,5 +328,276 @@
     };
   };
 
-  window.__webllmDriver = { state, insert, send, capture, fallback, diagnose };
+  // ------------------------------------------------ what each chat can do (PLAN-v5 F4, D21, D22)
+  // Loaded with common.js in this same (page) world: forbidden buttons, modes, model names.
+  const C = window.WEBLLM_COMMON || {};
+  const FORBIDDEN_RE = C.FORBIDDEN_RE || /publish|publicar|share|compartir|delete|borrar|regenerat|deploy/i;
+  const norm = C.normName || ((x) => String(x || "").toLowerCase());
+  const forbidden = (el) => FORBIDDEN_RE.test(nameOf(el)) || FORBIDDEN_RE.test((el.innerText || "").slice(0, 80));
+  // Every click webllm makes goes through here: a forbidden button is never pressed, whatever asked for it.
+  const safeClick = (el) => {
+    if (!el || forbidden(el)) return false;
+    el.click();
+    return true;
+  };
+  window.__webllmSafeClick = safeClick;
+
+  const MODEL_RE = /model|modelo|modèle|模型|モデル/i;
+  const FAMILY_RE = /qwen|glm|deepseek|kimi|gpt|claude|gemini|llama|mistral|grok|hermes|olmo|mercury|sonar|mimo|longcat|seed|ling/i;
+  const PLUS_RE = /^\+$|attach|adjuntar|upload|subir|more|más|tools|herramientas|añadir|add|joindre|添加|上传|附件|追加/i;
+  const OPTION_SEL = "[role='menuitem'],[role='menuitemradio'],[role='menuitemcheckbox'],[role='option']";
+  const hasPopup = (el) => el.hasAttribute("aria-haspopup") || el.hasAttribute("aria-expanded");
+  const optionName = (el) => (nameOf(el) || (el.innerText || "").trim().split("\n")[0]).slice(0, 80);
+  const isChecked = (el) => ["true", "mixed"].includes(el.getAttribute("aria-checked")) || el.getAttribute("aria-selected") === "true" ||
+    el.getAttribute("aria-pressed") === "true" || el.getAttribute("data-state") === "checked" || el.getAttribute("data-state") === "on";
+  const visibleOptions = () => [...document.querySelectorAll(OPTION_SEL)].filter((el) => visible(el));
+
+  const modelButton = (site) => {
+    const bySite = all(site.modelButton);
+    if (bySite.length) return bySite[0].closest("button,[role='button']") || bySite[0];
+    const cands = clickables().filter((b) => hasPopup(b) && !forbidden(b));
+    return cands.find((b) => MODEL_RE.test(nameOf(b))) || cands.find((b) => FAMILY_RE.test((b.innerText || "").slice(0, 60))) || null;
+  };
+  const plusButton = (site) => {
+    const bySite = all(site.plusButton);
+    if (bySite.length) return bySite[0].closest("button,[role='button']") || bySite[0];
+    const model = modelButton(site);
+    return clickables().find((b) => b !== model && hasPopup(b) && !forbidden(b) && PLUS_RE.test(nameOf(b) || (b.innerText || "").trim())) || null;
+  };
+  const modeToggles = () => [...document.querySelectorAll("button[aria-pressed],[role='switch'],[role='checkbox']:not(input)")]
+    .filter((el) => visible(el) && !forbidden(el) && !el.closest("[role='menu'],[role='listbox']"));
+
+  const closeMenu = async (trigger) => {
+    for (const target of [document.activeElement, document.body, document]) {
+      target && target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true }));
+    }
+    await sleep(250);
+    if (visibleOptions().length && trigger && trigger.getAttribute("aria-expanded") === "true") {
+      safeClick(trigger); // a toggle that does not listen to Escape: the same trigger closes it
+      await sleep(250);
+    }
+    return !visibleOptions().length;
+  };
+
+  // Open a menu, read its options, close it. Never presses an option.
+  const readMenu = async (trigger) => {
+    if (!trigger || !safeClick(trigger)) return { ok: false, options: [] };
+    let opts = [];
+    for (let i = 0; i < 8 && !opts.length; i++) { await sleep(150); opts = visibleOptions(); }
+    const options = opts.map((el) => ({ name: optionName(el), selected: isChecked(el), forbidden: forbidden(el) }))
+      .filter((o) => o.name);
+    const closed = await closeMenu(trigger);
+    return { ok: true, options, closed };
+  };
+
+  // The chat's card: its models, its modes, its "+" menu, what files it takes. Read-only: menus are opened,
+  // read and closed; no option is pressed and nothing is sent.
+  const discover = async (site) => {
+    const mb = modelButton(site);
+    const pb = plusButton(site);
+    const models = mb ? await readMenu(mb) : { ok: false, options: [] };
+    const plus = pb ? await readMenu(pb) : { ok: false, options: [] };
+    const files = [...document.querySelectorAll("input[type='file']")].map((i) => ({ accept: i.getAttribute("accept") || "", multiple: i.multiple }));
+    return {
+      ok: true,
+      url: location.href,
+      model_button: mb ? optionName(mb) : null,
+      current_model: mb ? ((mb.innerText || "").trim().split("\n")[0] || optionName(mb)).slice(0, 80) : null,
+      models: models.options.filter((o) => !o.forbidden).map((o) => ({ name: o.name, selected: o.selected })),
+      plus: plus.options.filter((o) => !o.forbidden).map((o) => o.name),
+      modes: modeToggles().map((el) => ({ name: nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60), on: isChecked(el),
+        mode: C.modeOf ? C.modeOf(nameOf(el) || el.innerText) : null })),
+      files,
+      closed: (models.closed !== false) && (plus.closed !== false),
+    };
+  };
+
+  // Put this model in the page's selector and confirm it on the page (D21: what you see is what is used).
+  const chooseModel = async (site, wanted) => {
+    const mb = modelButton(site);
+    if (!mb) return { ok: false, error: "no_model_button" };
+    const want = norm(wanted);
+    const shows = () => norm((mb.innerText || "") + " " + nameOf(mb)).includes(want);
+    if (shows()) return { ok: true, model: wanted, already: true };
+    if (!safeClick(mb)) return { ok: false, error: "forbidden" };
+    let opts = [];
+    for (let i = 0; i < 8 && !opts.length; i++) { await sleep(150); opts = visibleOptions(); }
+    const hit = opts.find((el) => norm(optionName(el)) === want) || opts.find((el) => norm(optionName(el)).includes(want));
+    if (!hit) {
+      const names = opts.map(optionName);
+      await closeMenu(mb);
+      return { ok: false, error: "model_not_found", options: names };
+    }
+    if (!safeClick(hit)) { await closeMenu(mb); return { ok: false, error: "forbidden" }; }
+    await sleep(500);
+    if (visibleOptions().length) await closeMenu(mb);
+    for (let i = 0; i < 6; i++) {
+      if (shows()) return { ok: true, model: wanted };
+      await sleep(250);
+    }
+    return { ok: false, error: "not_confirmed", shows: ((mb.innerText || "").trim() || nameOf(mb)).slice(0, 80) };
+  };
+
+  // Switch a mode on or off and confirm it on the page: a toggle next to the box, or an item of the "+" menu.
+  const setMode = async (site, mode, on = true) => {
+    const direct = modeToggles().find((el) => C.modeOf && C.modeOf(nameOf(el) || el.innerText) === mode);
+    if (direct) {
+      if (isChecked(direct) !== on && !safeClick(direct)) return { ok: false, error: "forbidden" };
+      for (let i = 0; i < 6; i++) {
+        if (isChecked(direct) === on) return { ok: true, mode, name: nameOf(direct).slice(0, 60), via: "toggle" };
+        await sleep(200);
+      }
+      return { ok: false, error: "not_confirmed", mode };
+    }
+    const pb = plusButton(site);
+    if (!pb || !safeClick(pb)) return { ok: false, error: "mode_not_found", mode };
+    let opts = [];
+    for (let i = 0; i < 8 && !opts.length; i++) { await sleep(150); opts = visibleOptions(); }
+    const item = opts.find((el) => C.modeOf && C.modeOf(optionName(el)) === mode);
+    if (!item) { await closeMenu(pb); return { ok: false, error: "mode_not_found", mode, options: opts.map(optionName) }; }
+    const name = optionName(item);
+    if (isChecked(item) !== on && !safeClick(item)) { await closeMenu(pb); return { ok: false, error: "forbidden" }; }
+    await sleep(400);
+    // Confirmed when the page shows it: the item checked (menu still open) or a chip with its name.
+    const confirmed = () => {
+      const again = visibleOptions().find((el) => optionName(el) === name);
+      if (again) return isChecked(again) === on;
+      const chip = [...document.querySelectorAll("button,span,div")].some((el) => visible(el) && !el.children.length &&
+        (el.innerText || "").trim() === name);
+      return chip === on;
+    };
+    for (let i = 0; i < 6; i++) {
+      if (confirmed()) { if (visibleOptions().length) await closeMenu(pb); return { ok: true, mode, name, via: "menu" }; }
+      await sleep(250);
+    }
+    if (visibleOptions().length) await closeMenu(pb);
+    return { ok: false, error: "not_confirmed", mode };
+  };
+
+  // Files travel into the page in parts (big ones too), then go in through the page's own file input,
+  // with their sha256 checked here, and must then show on the page.
+  const fileParts = (window.__webllmFileParts = window.__webllmFileParts || {});
+  const fileChunk = (key, index, b64) => {
+    (fileParts[key] = fileParts[key] || [])[index] = b64;
+    return { ok: true };
+  };
+  const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  const fromB64 = (b64) => {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  };
+  const acceptsType = (input, meta) => {
+    const acc = (input.getAttribute("accept") || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+    if (!acc.length) return true;
+    const ext = "." + (meta.name.split(".").pop() || "").toLowerCase();
+    return acc.some((a) => a === ext || a === meta.type || (a.endsWith("/*") && meta.type.startsWith(a.slice(0, -1))));
+  };
+  const attach = async (site, metas) => {
+    const inputs = [...document.querySelectorAll(site.fileInput && site.fileInput.length ? site.fileInput.join(",") : "input[type='file']")];
+    const out = [];
+    const byInput = new Map();
+    for (const meta of metas) {
+      const parts = fileParts[meta.key] || [];
+      if (parts.length !== meta.parts || parts.some((x) => x === undefined)) return { ok: false, error: "file_incomplete", name: meta.name };
+      const chunks = parts.map(fromB64);
+      const file = new File(chunks, meta.name, { type: meta.type || "application/octet-stream" });
+      const sha = hex(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
+      delete fileParts[meta.key];
+      if (sha !== meta.sha256) return { ok: false, error: "file_changed", name: meta.name };
+      const input = inputs.find((i) => acceptsType(i, meta));
+      if (!input) return { ok: false, error: inputs.length ? "file_type_refused" : "no_file_input", name: meta.name };
+      if (!byInput.has(input)) byInput.set(input, []);
+      byInput.get(input).push(file);
+      out.push({ name: meta.name, sha256: sha, size: file.size });
+    }
+    // An input that takes several files gets them all at once (setting it again would replace them);
+    // one that takes a single file gets them one after the other, like choosing them one by one.
+    const put = (input, files) => {
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      input.files = dt.files;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    for (const [input, files] of byInput) {
+      if (input.multiple) put(input, files);
+      else for (const f of files) { put(input, [f]); await sleep(400); }
+    }
+    // They must show on the page (a chip with the name) before anything is sent.
+    const stem = (n) => n.slice(0, Math.min(n.length, 18));
+    for (let i = 0; i < 30; i++) {
+      const text = document.body.innerText || "";
+      const titles = [...document.querySelectorAll("[title],[aria-label]")].map((el) => (el.getAttribute("title") || "") + " " + (el.getAttribute("aria-label") || "")).join(" ");
+      const missing = out.filter((f) => !text.includes(stem(f.name)) && !titles.includes(stem(f.name)));
+      if (!missing.length) return { ok: true, files: out };
+      await sleep(300);
+    }
+    return { ok: false, error: "file_not_shown", files: out };
+  };
+
+  // What the chat produced in its last answer: files made in the page (blob:/data:) come back whole;
+  // other file links stay links (webllm does not fetch them with your session).
+  const downloads = async (site) => {
+    const el = lastAnswerEl(site);
+    const scope = el ? (el.closest("[class*='message' i],[class*='answer' i],[class*='assistant' i]") || el) : null;
+    const anchors = scope ? [...scope.querySelectorAll("a[href]")].filter((a) => a.hasAttribute("download") || /^(blob|data):/.test(a.getAttribute("href"))) : [];
+    const out = [];
+    for (const a of anchors.slice(0, 10)) {
+      const href = a.getAttribute("href");
+      const name = (a.getAttribute("download") || (a.innerText || "").trim() || "archivo").slice(0, 120);
+      if (/^(blob|data):/.test(href)) {
+        try {
+          const blob = await (await fetch(href)).blob();
+          if (blob.size > 25 * 1024 * 1024) { out.push({ name, url: null, too_big: blob.size }); continue; }
+          const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1] || ""); r.onerror = rej; r.readAsDataURL(blob); });
+          out.push({ name, type: blob.type || "application/octet-stream", b64 });
+        } catch (e) { out.push({ name, url: null, error: String(e && e.message || e).slice(0, 120) }); }
+      } else {
+        out.push({ name, url: a.href });
+      }
+    }
+    return { ok: true, files: out };
+  };
+
+  // "Enséñame dónde está": Iván clicks the thing webllm could not find. That click does nothing on the page;
+  // webllm keeps a way to find the element again.
+  const selectorFor = (el) => {
+    const unique = (sel) => { try { return document.querySelectorAll(sel).length === 1; } catch (e) { return false; } };
+    const q = (v) => v.replace(/"/g, '\\"');
+    if (el.id && unique("#" + CSS.escape(el.id))) return "#" + CSS.escape(el.id);
+    for (const attr of ["data-testid", "aria-label", "title", "name"]) {
+      const v = el.getAttribute(attr);
+      if (v && unique(`${el.tagName.toLowerCase()}[${attr}="${q(v)}"]`)) return `${el.tagName.toLowerCase()}[${attr}="${q(v)}"]`;
+    }
+    const path = [];
+    for (let n = el; n && n !== document.body; n = n.parentElement) {
+      const same = n.parentElement ? [...n.parentElement.children].filter((c) => c.tagName === n.tagName) : [n];
+      path.unshift(n.tagName.toLowerCase() + (same.length > 1 ? `:nth-of-type(${same.indexOf(n) + 1})` : ""));
+    }
+    return "body > " + path.join(" > ");
+  };
+  const teach = (what, text, waitMs = 180000) => new Promise((resolve) => {
+    const bar = document.createElement("div");
+    bar.setAttribute("data-webllm-teach", "1");
+    bar.style.cssText = "position:fixed;z-index:2147483647;left:50%;top:12px;transform:translateX(-50%);background:#3a55d6;color:#fff;" +
+      "font:600 17px system-ui;padding:12px 18px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);pointer-events:none";
+    bar.textContent = "webllm: " + text;
+    document.body.appendChild(bar);
+    const done = (out) => { document.removeEventListener("click", onClick, true); bar.remove(); clearTimeout(timer); resolve(out); };
+    const onClick = (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const el = e.target.closest("button,[role='button'],a,input,textarea,[contenteditable='true'],[role='menuitem'],[role='option']") || e.target;
+      done({ ok: true, what, selector: selectorFor(el), name: optionName(el) });
+    };
+    document.addEventListener("click", onClick, true);
+    const timer = setTimeout(() => done({ ok: false, what, error: "timeout" }), waitMs);
+  });
+
+  // The modes that are on right now (a toggle next to the box, or a chip a menu left), whoever put them.
+  const activeModes = () => modeToggles().filter(isChecked).map((el) => nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60));
+
+  window.__webllmDriver = { state, insert, send, capture, fallback, diagnose, discover, chooseModel, setMode, fileChunk, attach, downloads, teach, activeModes };
 })();

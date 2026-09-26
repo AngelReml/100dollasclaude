@@ -1,13 +1,13 @@
 """
-title: Pensar más
+title: Crear imagen
 author: webllm (github.com/angelreml/100dollasclaude)
 version: 0.1.0
 required_open_webui_version: 0.11.0
-description: Pide a la IA de webllm que use su modo de pensar más (si lo tiene). Es un interruptor en el "+" de la caja de texto.
+description: Pide a la IA de webllm que cree una imagen (si su web lo tiene). Es un interruptor en el "+" de la caja de texto.
 """
 
 # Open WebUI "filter" with a switch (PLAN-v5 D22): when it is on, the question carries the mode
-# "pensar" to webllm (the pipe forwards body["webllm_modes"]). webllm turns it on in the web chat itself
+# "imagen" to webllm (the pipe forwards body["webllm_modes"]). webllm turns it on in the web chat itself
 # and checks on the page that it is on before sending (F4); if the chat does not have it, nothing is sent
 # and the answer says so. The AIs by API do not have modes: the answer says that too.
 
@@ -17,11 +17,12 @@ from typing import Any
 
 from pydantic import BaseModel
 
-MODE = "pensar"
-ICON = ("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAy"
-        "NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJv"
-        "a2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNOSAxOGg2Ii8+PHBhdGggZD0iTTEwIDIyaDQiLz48cGF0aCBkPSJNMTIgMmE3IDcgMCAw"
-        "IDAtNCAxMi43VjE3aDh2LTIuM0E3IDcgMCAwIDAgMTIgMnoiLz48L3N2Zz4=")  # a light bulb
+MODE = "imagen"
+ICON = ("data:image/svg+xml;base64,"
+        "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ry"
+        "b2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49"
+        "InJvdW5kIj48cmVjdCB3aWR0aD0iMTgiIGhlaWdodD0iMTgiIHg9IjMiIHk9IjMiIHJ4PSIyIi8+PGNpcmNsZSBjeD0iOSIgY3k9"
+        "IjkiIHI9IjIiLz48cGF0aCBkPSJtMjEgMTUtMy4xLTMuMWEyIDIgMCAwIDAtMi44IDBMNiAyMSIvPjwvc3ZnPg==")  # a picture
 
 
 class Filter:

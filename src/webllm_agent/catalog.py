@@ -51,12 +51,18 @@ class CatalogAI:
     daily_cap: int | None = None
     note: str = ""
     may_fail: str = ""
+    # The order of its models (PLAN-v5 F4): [{"match": name fragment, "rank": 1 = strongest}], with where
+    # that order comes from and when. A model the table does not know is "nuevo, sin datos".
+    models: tuple[dict[str, Any], ...] = ()
+    models_source: str = ""
+    models_checked: str = ""
 
     def public(self) -> dict[str, Any]:
         return {"key": self.key, "name": self.name, "by": self.by, "url": self.url, "group": self.group,
                 "purpose": self.purpose, "family": self.family, "tags": list(self.tags), "account": self.account,
                 "private": self.private, "builtin": self.builtin, "daily_cap": self.daily_cap, "note": self.note,
-                "may_fail": self.may_fail}
+                "may_fail": self.may_fail, "models": list(self.models), "models_source": self.models_source,
+                "models_checked": self.models_checked}
 
 
 @dataclass(frozen=True)
@@ -84,7 +90,9 @@ def load(path: Path = CATALOG_FILE) -> Catalog:
                 tags=tuple(str(t) for t in spec.get("tags") or ()), account=str(spec.get("account") or "desconocido"),
                 private=bool(spec.get("private", True)), builtin=bool(spec.get("builtin", False)),
                 daily_cap=int(spec["daily_cap"]) if spec.get("daily_cap") is not None else None,
-                note=str(spec.get("note") or ""), may_fail=str(spec.get("may_fail") or ""))
+                note=str(spec.get("note") or ""), may_fail=str(spec.get("may_fail") or ""),
+                models=tuple({"match": str(m["match"]), "rank": int(m["rank"])} for m in spec.get("models") or []),
+                models_source=str(spec.get("models_source") or ""), models_checked=str(spec.get("models_checked") or ""))
         except (KeyError, TypeError, ValueError) as exc:
             raise CatalogError(f"catalog entry {spec!r}: {exc}") from exc
         if not KEY.match(ai.key) or ai.key in seen:

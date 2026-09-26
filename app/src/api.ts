@@ -107,6 +107,39 @@ export interface Catalogo {
   batch: Batch | null;
 }
 
+/** What a chat can do, read on its page (PLAN-v5 F4). */
+export interface FichaModel {
+  name: string;
+  slug: string;
+  rank: number | null;
+  /** In the catalog's table (or marked by Iván). */
+  known: boolean;
+  by_ivan: boolean;
+  strongest: boolean;
+  /** Same rank as another one: webllm does not guess which is stronger. */
+  tie: boolean;
+}
+
+export interface Ficha {
+  ai: string;
+  label: string;
+  site: string;
+  discovered: boolean;
+  when: string | null;
+  current_model: string | null;
+  models: FichaModel[];
+  strongest: string | null;
+  strongest_by_ivan: string | null;
+  /** Iván chose: never switch this chat's model, use whatever its page has. */
+  use_page_model: boolean;
+  modes: { name: string; on: boolean; mode: string | null }[];
+  plus: string[];
+  files: { accept: string; multiple: boolean }[];
+  found: { model: boolean; plus: boolean };
+  table: { source: string; checked: string; known: string[] };
+  taught: string[];
+}
+
 export interface LocalServer {
   key: string;
   name: string;
@@ -241,6 +274,14 @@ export const api = {
   conectarVarias: (keys: string[], skip: string[] = []) => post<Batch>("/api/conectar-varias", { keys, skip }),
   conectarVariasEstado: (id: string) => call<Batch>(`/api/conectar-varias/${encodeURIComponent(id)}`),
   conectarVariasParar: (id: string) => post<Batch>(`/api/conectar-varias/${encodeURIComponent(id)}/parar`, {}),
+  ficha: (ai: string) => call<Ficha>(`/api/ficha/${encodeURIComponent(ai)}`),
+  /** Read it on the chat's page: menus opened, read and closed; nothing pressed, nothing sent. */
+  descubrir: (ia: string) => post<Ficha>("/api/descubrir", { ia }),
+  fichaPotente: (ai: string, model: string | null, page = false) =>
+    post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/potente`, { model, page }),
+  /** "Enséñame dónde está": the chat comes forward; Iván's next click there shows where that thing is. */
+  ensename: (ia: string, what: "model" | "plus" | "file") => post<Ficha & { name: string | null }>("/api/ensename", { ia, what }),
+  fichaOlvidar: (ai: string) => post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/olvidar`, {}),
   iconUrl: (key: string) => `/api/icono/${encodeURIComponent(key)}?token=${encodeURIComponent(TOKEN)}`,
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),

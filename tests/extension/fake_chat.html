@@ -20,9 +20,96 @@
      ?stopfijo=1 never removes "Detener" after the answer, ?stopfuera=1 moves it off-screen instead
      of removing it, ?clasestop=1 has a button whose class contains "stop" ("nonstop-toggle"), ?detenersiempre=1
      always shows a "Detener lectura en voz alta" button, even before anything is asked.
+     ?completa=1 (PLAN-v5 F4) adds what real chats have: a model selector (menu), a "+" menu (upload, deep
+     research, image), mode toggles (Pensar, Buscar en la web), a hidden file input that shows a chip per
+     file and keeps each file's sha256 in window.__received, "Publicar" and "Compartir" buttons, and a
+     download (blob) in each answer; the answer says which model, modes and files it got. Every click on the
+     page is logged in window.__clicks. ?selectorroto=1: choosing a model does not change it.
+     ?sinarchivos=1: no file input. ?modelooculto=1: the model selector is a nameless "⚙" (for "Enséñame").
      The same modes work as a path (/login/, /captcha/...): "+ Añadir otra IA" keeps only the path. -->
 <div id="app"></div>
 <script>
+// Every click, by anyone (webllm included): the discovery must press no option.
+window.__clicks = [];
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("button,[role]") || e.target;
+  window.__clicks.push((el.getAttribute("aria-label") || el.textContent || el.id || el.tagName).trim().slice(0, 40));
+}, true);
+window.__model = "Modelo Rápido";
+window.__modes = {};
+const modesOn = () => Object.keys(window.__modes).filter((m) => window.__modes[m]);
+const setModo = (modo, on, name) => {
+  window.__modes[modo] = on;
+  const area = document.getElementById("modos");  // a chip per mode on, like real chats show
+  if (area) area.innerHTML = Object.entries(window.__modes).filter(([, v]) => v).map(([k]) => `<span class="chip">${window.__modeNames[k]}</span>`).join(" ");
+};
+window.__modeNames = { pensar: "Pensar", buscar: "Buscar en la web", investigar: "Investigación profunda", imagen: "Crear imagen" };
+function menu(trigger, items) {
+  const m = document.createElement("div");
+  m.setAttribute("role", "menu");
+  m.style.cssText = "position:absolute;background:#fff;border:1px solid #999;padding:4px;z-index:5";
+  for (const it of items) m.appendChild(it);
+  const close = () => { m.remove(); trigger.setAttribute("aria-expanded", "false"); document.removeEventListener("keydown", esc); };
+  const esc = (e) => { if (e.key === "Escape") close(); };
+  trigger.onclick = () => {
+    if (m.isConnected) return close();
+    trigger.after(m);
+    trigger.setAttribute("aria-expanded", "true");
+    document.addEventListener("keydown", esc);
+  };
+  return close;
+}
+function full() {
+  const q = new URLSearchParams(location.search);
+  for (const m of ["selectorroto", "sinarchivos", "modelooculto"]) if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
+  const bar = document.createElement("div");
+  bar.id = "herramientas";
+  bar.innerHTML = (q.get("modelooculto") === "1" ? '<button id="modelo">⚙</button>' : '<button id="modelo" aria-haspopup="menu" aria-expanded="false"></button>') +
+    '<button id="mas" aria-label="Adjuntar y más" aria-haspopup="menu" aria-expanded="false">+</button>' +
+    '<button data-modo="pensar" aria-pressed="false">Pensar</button>' +
+    '<button data-modo="buscar" aria-pressed="false">Buscar en la web</button>' +
+    '<span id="modos"></span><span id="adjuntos"></span>' +
+    (q.get("sinarchivos") === "1" ? "" : '<input type="file" id="archivos" multiple accept=".pdf,.txt,.bin,image/*" style="display:none">') +
+    '<button id="publicar">Publicar</button><button aria-label="Compartir conversación">⤴</button>';
+  document.getElementById("app").prepend(bar);
+  const mb = document.getElementById("modelo");
+  const label = () => { if (q.get("modelooculto") === "1") { mb.dataset.model = window.__model; mb.title = ""; } else mb.textContent = window.__model + " ▾"; };
+  label();
+  const models = ["Modelo Rápido", "Modelo Pro", "Modelo Ultra"].map((name) => {
+    const o = document.createElement("div");
+    o.setAttribute("role", "menuitemradio");
+    o.textContent = name;
+    o.onclick = () => { if (q.get("selectorroto") !== "1") window.__model = name; label(); closeModels(); };
+    return o;
+  });
+  const closeModels = menu(mb, models);
+  mb.addEventListener("click", () => models.forEach((o) => o.setAttribute("aria-checked", String(o.textContent === window.__model))), true);
+  const item = (name, modo) => {
+    const o = document.createElement("div");
+    o.setAttribute("role", modo ? "menuitemcheckbox" : "menuitem");
+    o.textContent = name;
+    if (modo) {
+      o.dataset.modo = modo;
+      o.setAttribute("aria-checked", "false");
+      o.onclick = () => { const on = o.getAttribute("aria-checked") !== "true"; o.setAttribute("aria-checked", String(on)); setModo(modo, on); };
+    }
+    else o.onclick = () => document.getElementById("archivos") && document.getElementById("archivos").click();
+    return o;
+  };
+  menu(document.getElementById("mas"), [item("Subir archivo"), item("Investigación profunda", "investigar"), item("Crear imagen", "imagen")]);
+  for (const t of document.querySelectorAll("button[data-modo]")) {
+    t.onclick = () => { const on = t.getAttribute("aria-pressed") !== "true"; t.setAttribute("aria-pressed", String(on)); setModo(t.dataset.modo, on); };
+  }
+  const input = document.getElementById("archivos");
+  if (input) input.addEventListener("change", async () => {
+    window.__received = [];
+    for (const f of input.files) {
+      const sha = [...new Uint8Array(await crypto.subtle.digest("SHA-256", await f.arrayBuffer()))].map((b) => b.toString(16).padStart(2, "0")).join("");
+      window.__received.push({ name: f.name, size: f.size, sha256: sha });
+    }
+    document.getElementById("adjuntos").innerHTML = [...input.files].map((f) => `<span class="chip">${f.name}</span>`).join(" ");
+  });
+}
 // Tests can make the page "not seen", as Chrome reports it when the window is covered or
 // minimized (headless Chromium never does): window.__setCovered(true / false).
 let covered = false;
@@ -30,7 +117,7 @@ const realHidden = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")
 Object.defineProperty(document, "hidden", { configurable: true, get: () => covered || realHidden.call(document) });
 window.__setCovered = (v) => { covered = v; document.dispatchEvent(new Event("visibilitychange")); };
 const q = new URLSearchParams(location.search);
-for (const m of ["login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre"]) {
+for (const m of ["completa", "selectorroto", "sinarchivos", "modelooculto", "login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre"]) {
   if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
 }
 const es = ["stopfijo", "stopfuera", "clasestop", "detenersiempre"].some((m) => q.get(m) === "1");
@@ -58,6 +145,7 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     ? '<div id="box" contenteditable="true" aria-label="Message"></div>'
     : `<textarea id="box" placeholder="Message"></textarea><button id="send" aria-label="${es ? "Enviar mensaje" : "Send message"}">➤</button>`);
   if (q.get("clasestop") === "1") app.insertAdjacentHTML("afterbegin", '<button class="nonstop-toggle">∞</button>');
+  if (q.get("completa") === "1") full();
   if (q.get("detenersiempre") === "1") app.insertAdjacentHTML("afterbegin", '<button aria-label="Detener lectura en voz alta">🔇</button>');
   const box = document.getElementById("box");
   const read = () => (box.value !== undefined ? box.value : box.innerText).trim();
@@ -76,7 +164,8 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     answer.className = "msg assistant";
     log.appendChild(answer);
     const slow = q.get("lento") === "1" && !/pong/i.test(text);
-    const words = /pong/i.test(text) ? ["**pong**"] : slow ? "esta respuesta tarda en escribirse del todo".split(" ") : ["hola", "qué", "tal"];
+    const got = q.get("completa") === "1" ? `modelo=${window.__model}; modos=${modesOn().join(",") || "ninguno"}; archivos=${(window.__received || []).map((f) => f.name).join(",") || "ninguno"}` : "";
+    const words = /pong/i.test(text) ? ["**pong**"] : got ? ("Recibido: " + got).split(" ") : slow ? "esta respuesta tarda en escribirse del todo".split(" ") : ["hola", "qué", "tal"];
     let i = 0;
     const write = () => { const tick = setInterval(() => {
       if (slow && document.hidden) return;
@@ -91,6 +180,11 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
           copy.textContent = "⧉";
           copy.onclick = () => navigator.clipboard.writeText(words.join(" "));
           answer.after(copy);
+        }
+        if (got) {  // what the chat produced: a file made in the page
+          const blob = new Blob(["Informe de prueba de webllm\n" + got + "\n"], { type: "text/plain" });
+          answer.insertAdjacentHTML("beforeend", ` <a download="informe.txt" href="${URL.createObjectURL(blob)}">informe.txt</a>`);
+          window.__lastDownload = "Informe de prueba de webllm\n" + got + "\n";
         }
       }
     }, slow ? 900 : 400); };

@@ -9,22 +9,31 @@
 # private   false = what you write can be published or used by the site (never used by Automático or
 #           the Committee; only when Iván picks it, and its name says so)
 # daily_cap lower daily message cap than the guard's default (sites with few free messages)
+# models    the order of its models (PLAN-v5 F4): name fragments (compared without spaces, dashes or case)
+#           with a rank, 1 = strongest; models_source / models_checked say where from and when. Only what
+#           the plan's research says is here; a model not listed is "nuevo, sin datos" (never taken as the
+#           strongest on its own) until Iván marks it or this table is updated (F8 measures them).
 checked: "2026-09-25"
 ais:
   # --- the ones Iván already uses (their selectors are in extension/sites.js) ---
   - {key: qwen, name: Qwen, by: Alibaba, url: "https://chat.qwen.ai/", group: tuyas, builtin: true,
-     purpose: "general, código", family: Qwen, tags: [general, codigo], account: si, private: true}
+     purpose: "general, código", family: Qwen, tags: [general, codigo], account: si, private: true,
+     models: [{match: "qwen3.8", rank: 1}], models_source: "PLAN-v5 sección 6 (pruebas públicas)",
+     models_checked: "2026-09-25"}
   - {key: deepseek, name: DeepSeek, by: DeepSeek, url: "https://chat.deepseek.com/", group: tuyas, builtin: true,
      purpose: "razonar, código", family: DeepSeek, tags: [razonar, codigo], account: si, private: true}
   - {key: zai, name: z.ai, by: Zhipu, url: "https://chat.z.ai/", group: tuyas, builtin: true,
-     purpose: "general, código", family: GLM, tags: [general, codigo], account: si, private: true}
+     purpose: "general, código", family: GLM, tags: [general, codigo], account: si, private: true,
+     models: [{match: "glm-5.2", rank: 1}], models_source: "PLAN-v5 sección 6 (pruebas públicas)",
+     models_checked: "2026-09-25"}
   - {key: meta, name: Meta AI, by: Meta, url: "https://www.meta.ai/", group: tuyas, builtin: true,
      purpose: general, family: Llama, tags: [general], account: si, private: true}
 
   # --- group 1: plain chat, works from Spain ---
   - {key: kimi, name: Kimi, by: Moonshot, url: "https://www.kimi.com/", group: "1",
      purpose: "documentos largos, investigar, código", family: Kimi, tags: [documentos, investigar, codigo],
-     account: desconocido, private: true}
+     account: desconocido, private: true, models: [{match: "k3", rank: 1}],
+     models_source: "PLAN-v5 sección 6 (pruebas públicas)", models_checked: "2026-09-25"}
   - {key: mistral, name: Le Chat, by: Mistral, url: "https://chat.mistral.ai/", group: "1",
      purpose: "general, código, rápida", family: Mistral, tags: [general, codigo, rapida], account: desconocido,
      private: true, note: "su conector de GitHub no se activa (sección 9 del plan)"}

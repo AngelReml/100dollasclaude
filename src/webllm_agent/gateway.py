@@ -222,12 +222,25 @@ class Gateway:
         data = []
         for p in providers:
             today, cap = self.bridge.app_api.usage(cfg, p)  # the same numbers the app shows
+            kind = {"bridge": "chat", "omniroute": "api", "local": "local"}[p.gateway]
+            tail = f" ({KIND_LABEL[p.gateway]}" + ("" if p.private else ", no privada") + ")"  # its name warns (F3)
+            view = self.bridge.app_api.ficha_view(p, site_of(p)) if site_of(p) else None
+            default = (f" Sin elegir modelo usa el más potente: «{view['strongest']}»." if view and view["strongest"]
+                       else " Sin elegir modelo usa el que tenga puesto su web." if view else "")
             data.append({
                 "id": p.name, "object": "model", "owned_by": "webllm",
-                "name": f"{p.display.removesuffix(' (chat)')} ({KIND_LABEL[p.gateway]}"
-                        + ("" if p.private else ", no privada") + ")",  # its name warns (PLAN-v5 F3)
-                "webllm": {"kind": {"bridge": "chat", "omniroute": "api", "local": "local"}[p.gateway], "label": p.display,
-                           "card": card(p, cap), "daily_cap": cap, "used_today": today}})
+                "name": f"{p.display.removesuffix(' (chat)')}{tail}",
+                "webllm": {"kind": kind, "label": p.display, "card": card(p, cap) + default,
+                           "daily_cap": cap, "used_today": today}})
+            # each model of its selector (PLAN-v5 D18/D22), strongest first and saying so
+            for m in (view or {}).get("models") or []:
+                note = " — el más potente" if m["strongest"] else "" if m["known"] else " (nuevo, sin datos)"
+                data.append({
+                    "id": f"{p.name}@{m['slug']}", "object": "model", "owned_by": "webllm",
+                    "name": f"{p.display.removesuffix(' (chat)')} · {m['name']}{tail}{note}",
+                    "webllm": {"kind": kind, "label": p.display, "model": m["name"], "strongest": m["strongest"],
+                               "card": card(p, cap) + f" Modelo «{m['name']}» de su selector.",
+                               "daily_cap": cap, "used_today": today}})
         return web.json_response({"object": "list", "data": data})
 
     # ----------------------------------------------------------------- stop
@@ -263,9 +276,22 @@ class Gateway:
         ext = body.get("webllm") if isinstance(body.get("webllm"), dict) else {}
         cfg = await self.bridge.app_api._cfg()
         name = str(body.get("model") or "")
-        p = cfg.providers.get(name)
-        if p is None or not p.enabled:
+        base, _, slug = name.partition("@")  # "qwen@qwen3.8max": that chat, that model of its selector
+        p = cfg.providers.get(base)
+        if p is None or not p.enabled or (slug and not site_of(p)):
             raise RequestError(404, "model_not_found", f"No conozco esta IA: {name}.")
+        want_model, strongest, use_page = None, False, False
+        if site_of(p):
+            view = self.bridge.app_api.ficha_view(p, site_of(p))
+            if slug:
+                hit = next((m for m in view["models"] if m["slug"] == slug), None)
+                if hit is None:
+                    raise RequestError(404, "model_not_found", f"Ese modelo ya no está en la ficha de {p.display}: "
+                                                               "pulsa Descubrir en webllm → Conectores.")
+                want_model, strongest = hit["name"], hit["strongest"]
+            elif view["strongest"]:  # by default, the strongest (D21.3)
+                want_model, strongest = view["strongest"], True
+            use_page = bool(view.get("use_page_model")) and not slug
         if ext.get("task") and p.gateway == "bridge":
             raise RequestError(400, "task_for_web_chat", problem_text("task_for_web_chat", p.display))
         messages = body.get("messages") if isinstance(body.get("messages"), list) else []
@@ -278,6 +304,7 @@ class Gateway:
         files = decode_files([*(ext.get("files") or []), *_inline_images(messages)])
         modes = [str(m)[:40] for m in (ext.get("modes") or []) if isinstance(m, str)][:10]
         return cfg, p, {"question": question, "conversation": conversation, "files": files, "modes": modes,
+                        "want_model": want_model, "strongest": strongest, "use_page_model": use_page,
                         "chat_id": str(ext.get("chat_id") or "")[:100], "message_id": str(ext.get("message_id") or "")[:100],
                         "task": str(ext.get("task") or "")[:60], "tools": bool(body.get("tools"))}
 
@@ -313,20 +340,35 @@ class Gateway:
             steps=(flows.Step(id="respuestas", title="Respuesta", to=(p.name,), message="{{conversacion}}"),))
 
     async def _before(self, reply: Reply, p: ProviderConfig, req: dict[str, Any]) -> None:
-        """Say what came with the question and what of it the AI will not get (yet)."""
+        """Say what came with the question and what the AI will get of it."""
         direct = p.gateway != "bridge"
-        unseen = [f for f in req["files"] if not (direct and f["inline"])]
-        for f in req["files"]:
-            used = direct and f["inline"]
-            await reply.say(f"Recibido «{f['name']}» ({_size(f['size'])}, huella {f['sha256'][:12]}). " +
-                            ("Va dentro del mensaje, tal cual." if used else
-                             f"Todavía no se lo paso a {p.display}: subir archivos a las IAs llega en la fase F4."))
-        if unseen:
-            names = ", ".join(f"«{f['name']}»" for f in unseen)
-            reply.avisos.append(f"{p.display} no ha visto {names}: pasar archivos a las IAs llega en la fase F4.")
-        if req["modes"]:
-            await reply.say(f"Pediste: {', '.join(req['modes'])}. Todavía no se activa en {p.display}: llega en la fase F4.")
-            reply.avisos.append(f"{', '.join(req['modes']).capitalize()}: aún no se activa en {p.display} (fase F4).")
+        if not direct:  # a chat site (PLAN-v5 F4): the files go up with its own button, checked on its page
+            for f in req["files"]:
+                await reply.say(f"Recibido «{f['name']}» ({_size(f['size'])}, huella {f['sha256'][:12]}). "
+                                f"Se sube a {p.display} con su propio botón y se comprueba que queda adjunto.")
+            if req["want_model"]:
+                await reply.say(f"Modelo: «{req['want_model']}»" + (" (el más potente)." if req["strongest"] else "."))
+            elif req["use_page_model"]:
+                await reply.say(f"Modelo: el que tenga puesto {p.display} (lo elegiste tú en su Ficha).")
+            else:
+                await reply.say(f"Modelo: el que tenga puesto {p.display} (aún no sé cuál es su más potente: "
+                                "márcalo en su Ficha, en webllm).")
+            if req["modes"]:
+                await reply.say(f"Pediste: {', '.join(req['modes'])}. Se pone en {p.display} y se comprueba en su "
+                                "web antes de enviar; si no se puede, no se envía.")
+        else:
+            for f in req["files"]:
+                await reply.say(f"Recibido «{f['name']}» ({_size(f['size'])}, huella {f['sha256'][:12]}). " +
+                                ("Va dentro del mensaje, tal cual." if f["inline"] else
+                                 f"{p.display} no lo recibe: por API solo van imágenes dentro del mensaje."))
+            unseen = [f for f in req["files"] if not f["inline"]]
+            if unseen:
+                names = ", ".join(f"«{f['name']}»" for f in unseen)
+                reply.avisos.append(f"{p.display} no ha visto {names}: por API solo van imágenes. Para un PDF u "
+                                    "otro archivo, pregúntaselo a un chat web.")
+            if req["modes"]:
+                reply.avisos.append(f"{', '.join(req['modes']).capitalize()}: son modos de los chats web; "
+                                    f"{p.display} (por API) no los tiene.")
         if req["tools"] and not direct:
             reply.avisos.append(f"{p.display} todavía no puede usar herramientas: llega en la fase F9.")
 
@@ -357,7 +399,7 @@ class Gateway:
         beat = asyncio.create_task(reply.heartbeat())
         try:
             if p.gateway == "bridge":
-                return await self._through_flow(reply, cfg, p, flow, run_dir)
+                return await self._through_flow(reply, cfg, p, flow, run_dir, req)
             return await self._direct(reply, cfg, p, flow, run_dir, req, body)
         finally:
             beat.cancel()
@@ -379,7 +421,8 @@ class Gateway:
             await asyncio.sleep(0.5)
 
     # A chat site: the same engine as the app.
-    async def _through_flow(self, reply: Reply, cfg: Any, p: ProviderConfig, flow: flows.Flow, run_dir: Any):
+    async def _through_flow(self, reply: Reply, cfg: Any, p: ProviderConfig, flow: flows.Flow, run_dir: Any,
+                            req: dict[str, Any]):
         done: dict[str, Any] = {}
 
         async def emit(ev: dict[str, Any]) -> None:
@@ -400,8 +443,12 @@ class Gateway:
         except Exception:
             api_key = ""
         guard = Guard(cfg.paths.state_dir / "guard.json", cfg.guard)
+        extra = {"model": req["want_model"], "modes": req["modes"],
+                 "files": [{"name": f["name"], "mime": f["mime"], "sha256": f["sha256"],
+                            "data": base64.b64encode(f["bytes"]).decode("ascii")} for f in req["files"]]}
         work = asyncio.create_task(flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
-                                                  emit=emit, run_id=reply.run_id))
+                                                  emit=emit, run_id=reply.run_id,
+                                                  bridge_extra={k: v for k, v in extra.items() if v}))
         self.running[reply.run_id] = (work, p)
         watch = asyncio.create_task(self._watch(reply, work, p))
         try:
@@ -429,10 +476,35 @@ class Gateway:
             return await reply.error(code, problem_text(code, p.display, str(done.get("error") or "")))
         if done.get("provider") and done.get("provider") != p.name:
             reply.avisos.append(f"Respondió {done.get('provider_label')} en lugar de {p.display} (tu reserva).")
-        label = str(done.get("model") or "").partition(" · ")[2]
-        if label:
-            reply.avisos.append(f"Respondió {p.display} con el modelo «{label}» (leído en su web).")
+        reply.avisos.extend(self._used_avisos(p, done))
         return await self._finish_text(reply, str(done.get("text") or ""))
+
+    def _used_avisos(self, p: ProviderConfig, done: dict[str, Any]) -> list[str]:
+        """What the chat's page really used (read back from it) and what it produced (PLAN-v5 D21/D22)."""
+        used = done.get("used") or {}
+        out = []
+        label = str(done.get("model") or "").partition(" · ")[2]
+        model = used.get("model") or label
+        modes = [str(m.get("name") or m.get("mode")) for m in used.get("modes") or [] if isinstance(m, dict)]
+        what = (f"con el modelo «{model}»" if model else "con el modelo que tenía puesto su web") + (
+            f" y {'el modo' if len(modes) == 1 else 'los modos'} {', '.join(f'«{m}»' for m in modes)}" if modes else "")
+        out.append(f"Respondió {p.display} {what}" + (" (comprobado en su web)." if used.get("model") or modes else "."))
+        extra_on = [m for m in used.get("modes_on") or [] if m not in modes]
+        if extra_on:
+            out.append(f"En su web también estaba puesto: {', '.join(f'«{m}»' for m in extra_on)} (no lo pediste; "
+                       "webllm no lo quita).")
+        files = [f for f in used.get("files") or [] if isinstance(f, dict)]
+        if files:
+            entry = self.bridge.app_api.catalog.get(site_of(p) or "")
+            who = f"{p.display} ({entry.by})" if entry and entry.by and entry.by != p.display else p.display
+            names = ", ".join("«" + str(f.get("name")) + "»" for f in files)
+            out.append(f"{names} se {'subió' if len(files) == 1 else 'subieron'} a {who}, con la misma huella.")
+        for d in done.get("downloads") or []:
+            if d.get("path"):
+                out.append(f"{p.display} generó «{d.get('name')}»: guardado en {d['path']}.")
+            elif d.get("url"):
+                out.append(f"{p.display} dejó «{d.get('name')}» en su web: {d['url']}")
+        return out
 
     def _journal_stop(self, run_dir: Any, run_id: str, p: ProviderConfig) -> None:
         journal.append(run_dir / journal.JOURNAL_NAME, {

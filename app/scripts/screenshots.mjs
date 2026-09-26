@@ -150,6 +150,35 @@ async function conectores(page, tag) {
   await shot(page, `${tag}-28-no-funcionan`);
 }
 
+// Each chat's card (PLAN-v5 F4): "Descubrir" (read-only), a tie in the catalog's table that Iván resolves,
+// and "Enséñame dónde está" for a chat whose model selector webllm cannot find.
+async function fichas(page, tag) {
+  const api = (path, body) => fetch(`http://127.0.0.1:${port}${path}`, { method: "POST",
+    headers: { Authorization: "Bearer demo-token", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  await api("/api/ficha/qwen/potente", { model: null }); // a previous run chose one
+  await api("/api/ficha/meta/olvidar", {});
+  await page.goto(base);
+  const dialog = page.getByRole("dialog");
+  await page.locator('[data-card="qwen"]').getByRole("button", { name: "Ficha: modelos y modos" }).click();
+  await dialog.getByRole("button", { name: /^Descubrir/ }).click();
+  await dialog.getByText("Empate: dime cuál").first().waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-29-ficha-empate`);
+  await dialog.locator('[data-model="Qwen3.8-Max"]').getByRole("button", { name: "Este es el más potente" }).click();
+  await dialog.getByText("El más potente (tú)").waitFor();
+  await shot(page, `${tag}-30-ficha-elegido`);
+  await page.keyboard.press("Escape");
+  await page.locator('[data-card="meta"]').getByRole("button", { name: "Ficha: modelos y modos" }).click();
+  await dialog.getByRole("button", { name: /^Descubrir/ }).click();
+  await dialog.getByText("¿Falta algo? Enséñame dónde está").waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-31-ficha-ensename`);
+  await dialog.getByRole("button", { name: "El selector de modelos" }).click();
+  await page.getByText("Aprendido. Pulsa Descubrir otra vez.").waitFor({ timeout: 15000 });
+  await dialog.getByRole("button", { name: "Descubrir otra vez" }).click();
+  await dialog.locator('[data-model="Llama 5"]').waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-32-ficha-aprendida`);
+  await page.keyboard.press("Escape");
+}
+
 // An API AI out of free quota (OpenRouter's 429, F0): it says so, shows what the service answered
 // and offers to ask another AI, which only happens when Iván presses it.
 async function apiLimit(page, tag) {
@@ -241,6 +270,7 @@ async function run(theme, width, full) {
     await apiLimit(page, tag);
     await stopAll(page, tag);
     await conectores(page, tag);
+    await fichas(page, tag);
   }
   await browser.close();
 }

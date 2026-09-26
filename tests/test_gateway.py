@@ -214,12 +214,30 @@ def b64(data: bytes) -> str:
     return base64.b64encode(data).decode()
 
 
-def test_files_arrive_whole_are_hashed_and_the_answer_says_they_are_not_used_yet(tmp_path, mock_server):
+def parts_of(app, job) -> dict[str, bytes]:
+    """The files of a job as the extension receives them: in parts, before the job."""
+    got: dict[str, dict[int, bytes]] = {}
+    for m in app.ext.seen:
+        if m.get("type") == "file_part" and m["job"] == job["id"]:
+            got.setdefault(m["key"], {})[m["n"]] = base64.b64decode(m["data"])
+    return {f["name"]: b"".join(got[f["key"]][i] for i in range(f["parts"])) for f in job["files"]}
+
+
+def page_that_uses(job):
+    """Extension 0.7.0 after it attached the files and put the modes on the page: it says what it used."""
+    return {"ok": True, "text": "answer from qwen", "via": "copy-button",
+            "used": {"model": (job.get("want") or {}).get("model"),
+                     "modes": [{"mode": m, "name": m.capitalize()} for m in (job.get("want") or {}).get("modes") or []],
+                     "files": [{"name": f["name"], "sha256": f["sha256"], "size": 0} for f in job.get("files") or []],
+                     "modes_on": [m.capitalize() for m in (job.get("want") or {}).get("modes") or []] + ["Buscar"]}}
+
+
+def test_files_and_modes_go_to_the_web_chat_and_the_answer_says_what_was_used(tmp_path, mock_server):
     pdf = b"%PDF-1.4\n" + bytes(range(256)) * 300
     png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 1000
 
     async def go():
-        async with App(tmp_path, mock_server.base_url) as app:
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": page_that_uses}) as app:
             body = ask("qwen", files=[{"name": "informe.pdf", "mime": "application/pdf", "data": b64(pdf),
                                        "sha256": hashlib.sha256(pdf).hexdigest()}], modes=["pensar"])
             body["messages"] = [{"role": "user", "content": [
@@ -228,19 +246,138 @@ def test_files_arrive_whole_are_hashed_and_the_answer_says_they_are_not_used_yet
             status, lines, headers = await gw(app, body)
             assert status == 200 and content(lines) == "answer from qwen"
             notes = reasoning(lines)
-            assert "Recibido «informe.pdf»" in notes and "Todavía no se lo paso a Qwen" in notes and "pensar" in notes
+            assert "Recibido «informe.pdf»" in notes and "Se sube a Qwen con su propio botón" in notes
+            assert "Pediste: pensar" in notes and "si no se puede, no se envía" in notes
+            (job,) = app.ext.jobs
+            assert job["want"] == {"modes": ["pensar"]} and "data:image" not in job["prompt"]
+            assert parts_of(app, job) == {"informe.pdf": pdf, "imagen-2.png": png}  # whole, same bytes
+            assert [f["sha256"] for f in job["files"]] == [hashlib.sha256(pdf).hexdigest(), hashlib.sha256(png).hexdigest()]
             avisos = next(x for x in lines if isinstance(x, dict) and x.get("webllm"))["webllm"]["avisos"]
-            assert avisos == ["Qwen no ha visto «informe.pdf», «imagen-2.png»: pasar archivos a las IAs llega en la fase F4.",
-                              "Pensar: aún no se activa en Qwen (fase F4)."]
-            assert "data:image" not in app.ext.jobs[0]["prompt"]  # the picture is a file, not text
+            assert avisos == [
+                "Respondió Qwen con el modelo que tenía puesto su web y el modo «Pensar» (comprobado en su web).",
+                "En su web también estaba puesto: «Buscar» (no lo pediste; webllm no lo quita).",
+                "«informe.pdf», «imagen-2.png» se subieron a Qwen (Alibaba), con la misma huella."]
             run_dir = app.cfg.paths.runs_dir / headers["x-webllm-run"]
-            files = journal_lines(app, headers["x-webllm-run"])[0]["files"]
+            lines_j = journal_lines(app, headers["x-webllm-run"])
+            files = lines_j[0]["files"]
             assert [(f["name"], f["sha256"]) for f in files] == [
                 ("informe.pdf", hashlib.sha256(pdf).hexdigest()), ("imagen-2.png", hashlib.sha256(png).hexdigest())]
+            call = next(x for x in lines_j if x["kind"] == "flow")
+            assert [f["sha256"] for f in call["used"]["files"]] == [f["sha256"] for f in files]  # the record says it
             assert (run_dir / files[0]["file"]).read_bytes() == pdf
             assert verify_run(run_dir).ok
             (run_dir / files[0]["file"]).write_bytes(pdf + b"x")  # someone changes the saved file
             assert not verify_run(run_dir).ok
+    run(go())
+
+
+def test_a_big_file_travels_in_parts(tmp_path, mock_server):
+    big = bytes(range(256)) * (20 * 1024 * 4)  # 20 MB
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": page_that_uses}) as app:
+            body = ask("qwen", files=[{"name": "grande.bin", "mime": "application/octet-stream", "data": b64(big)}])
+            status, lines, _ = await gw(app, body)
+            (job,) = app.ext.jobs
+            assert status == 200 and job["files"][0]["parts"] == 40  # 512 KB each
+            assert max(len(m.get("data", "")) for m in app.ext.seen if m.get("type") == "file_part") < 700_000
+            assert parts_of(app, job)["grande.bin"] == big
+    run(go())
+
+
+def test_the_strongest_model_by_default_or_the_one_you_pick(tmp_path, mock_server):
+    from webllm_agent import fichas
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": page_that_uses}) as app:
+            fichas.save_discovery(app.cfg.paths, "qwen", {"model_button": "Modelo", "models": [
+                {"name": "Qwen3-Max"}, {"name": "Qwen3.8-Max"}, {"name": "QwQ-32B"}]})
+            _, models, _ = await app.get("/gw/v1/models")
+            names = [m["name"] for m in models["data"] if m["id"].startswith("qwen")]
+            assert names == ["Qwen (web)", "Qwen · Qwen3.8-Max (web) — el más potente",
+                             "Qwen · Qwen3-Max (web) (nuevo, sin datos)", "Qwen · QwQ-32B (web) (nuevo, sin datos)"]
+            await gw(app, ask("qwen"))
+            await gw(app, ask("qwen@qwen3max"))
+            assert [j.get("want") for j in app.ext.jobs] == [{"model": "Qwen3.8-Max"}, {"model": "Qwen3-Max"}]
+            status, lines, _ = await gw(app, ask("qwen@nada"))
+            assert status == 404 and "Descubrir" in lines[0]["error"]["message"] and len(app.ext.jobs) == 2
+            # Iván says another one is the strongest: it goes first and is the default
+            status, _ = await app.post("/api/ficha/qwen/potente", {"model": "QwQ-32B"})
+            await gw(app, ask("qwen"))
+            assert status == 200 and app.ext.jobs[-1]["want"] == {"model": "QwQ-32B"}
+            # the escape hatch: a page where webllm cannot confirm a model must not become unusable
+            status, ficha = await app.post("/api/ficha/qwen/potente", {"model": None, "page": True})
+            _, lines, _ = await gw(app, ask("qwen"))
+            assert status == 200 and ficha["use_page_model"] and ficha["strongest"] is None
+            assert "want" not in app.ext.jobs[-1] and "lo elegiste tú en su Ficha" in reasoning(lines)
+            await gw(app, ask("qwen@qwen3max"))  # a model picked by name still goes
+            assert app.ext.jobs[-1]["want"] == {"model": "Qwen3-Max"}
+            status, ficha = await app.post("/api/ficha/qwen/potente", {"model": None})  # back to the table
+            assert not ficha["use_page_model"] and ficha["strongest"] == "Qwen3.8-Max"
+    run(go())
+
+
+def test_a_file_the_chat_made_is_saved_said_and_checked(tmp_path, mock_server):
+    """PLAN-v5 F4: what a chat produced in its page comes back whole to data/descargas/<question>/, the answer
+    says where, the record keeps its sha256, and the green lock notices if it is changed afterwards."""
+    made = b"<html><body>Mi web</body></html>"
+
+    def page(job):
+        return {**page_that_uses(job), "downloads": [
+            {"name": "../web final.html", "type": "text/html", "b64": b64(made)},
+            {"name": "enlace.zip", "url": "https://ejemplo.test/descarga.zip"},
+            {"name": "raro", "url": "javascript:alert(1)"}]}
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": page}) as app:
+            status, lines, headers = await gw(app, ask("qwen"))
+            run_id = headers["x-webllm-run"]
+            saved = app.cfg.paths.data_dir / "descargas" / run_id / "_web final.html"
+            avisos = [x for x in lines if isinstance(x, dict) and x.get("webllm")][-1]["webllm"]["avisos"]
+            assert saved.read_bytes() == made  # its name cannot leave the folder
+            assert f"Qwen generó «_web final.html»: guardado en {saved}." in avisos
+            assert "Qwen dejó «enlace.zip» en su web: https://ejemplo.test/descarga.zip" in avisos
+            assert not any("javascript" in a for a in avisos)  # only https links
+            call = next(x for x in journal_lines(app, run_id) if x["kind"] == "flow")
+            assert call["downloads"][0]["sha256"] == hashlib.sha256(made).hexdigest()
+            run_dir = app.cfg.paths.runs_dir / run_id
+            assert verify_run(run_dir).ok
+            saved.write_bytes(made + b"<!-- cambiado -->")
+            assert not verify_run(run_dir).ok
+    run(go())
+
+
+def test_expensive_modes_are_counted_apart(tmp_path, mock_server):
+    """Deep research / builder have few uses a day on the sites: webllm counts them apart, per chat."""
+    import dataclasses
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": page_that_uses}) as app:
+            app.bridge.cfg = dataclasses.replace(app.bridge.cfg, guard=dataclasses.replace(app.bridge.cfg.guard,
+                                                                                          expensive_daily_cap=1))
+            status, _, _ = await gw(app, ask("qwen", modes=["investigar"]))
+            status2, lines, _ = await gw(app, ask("qwen", modes=["investigar"]))
+            err = next(x for x in lines if isinstance(x, dict) and "error" in x)["error"]
+            assert status == 200 and err["code"] == "expensive_cap" and "modos caros" in err["message"]
+            assert len(app.ext.jobs) == 1  # the second one never went out
+            status3, lines, _ = await gw(app, ask("qwen", modes=["pensar"]))  # a cheap mode still works
+            assert status3 == 200 and len(app.ext.jobs) == 2
+            assert app.bridge.guard.status()["qwen:investigar"]["count_today"] == 1
+    run(go())
+
+
+def test_what_the_page_did_not_confirm_is_never_sent_and_says_why(tmp_path, mock_server):
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={
+                "qwen": {"ok": False, "error": "not_confirmed", "detail": "{\"what\": \"model\"}"},
+                "zai": {"ok": False, "error": "file_not_shown", "detail": "chip missing"}}) as app:  # by site
+            status, lines, _ = await gw(app, ask("qwen", modes=["pensar"]))
+            err = next(x for x in lines if isinstance(x, dict) and "error" in x)["error"]
+            assert err["code"] == "not_confirmed" and "no se envió" in err["message"].lower()
+            status, lines, _ = await gw(app, ask("zai-chat", files=[{"name": "a.txt", "data": b64(b"hola")}]))
+            err = next(x for x in lines if isinstance(x, dict) and "error" in x)["error"]
+            assert err["code"] == "file_not_attached"
+            assert not app.bridge.guard.status().get("qwen", {}).get("cooldown_until")  # not an account limit
     run(go())
 
 

@@ -19,7 +19,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import httpx
 
@@ -129,9 +129,12 @@ async def _run_target(
     notify: Callable[[str], None],
     bridge_key: str | None = None,
     run_tag: str | None = None,
+    bridge_extra: dict[str, Any] | None = None,
 ) -> Outcome:
     # A chat job carries the question it belongs to, so "parar" stops that one and no other.
     tag = {"x-webllm-run": run_tag} if run_tag and t.gateway == "bridge" else None
+    # ...and what Iván chose for it (model, modes, files: PLAN-v5 F4); only a chat site gets it.
+    extra_body = {"webllm": bridge_extra} if bridge_extra and t.gateway == "bridge" else None
     if t.gateway == "bridge":
         base_url, key = cfg.bridge_url, bridge_key or ""
     elif t.gateway == "local":
@@ -158,7 +161,8 @@ async def _run_target(
             async with server:
                 res = await chat(client, base_url=base_url, api_key=key,
                                  model=t.remote_model or model if t.gateway == "local" else model,
-                                 prompt=prompt, timeout_s=timeout_s or client_timeout(t), extra_headers=tag)
+                                 prompt=prompt, timeout_s=timeout_s or client_timeout(t), extra_headers=tag,
+                                 extra_body=extra_body)
             outcome.result = res
             if t.guarded:
                 notice = guard.report(t, res)
@@ -271,6 +275,12 @@ def verify_run(run_dir: Path) -> journal.VerifyResult:
                 f = run_dir / line[name_key]
                 if not f.exists() or journal.sha256_text(f.read_bytes().decode("utf-8")) != line[sha_key]:
                     return journal.VerifyResult(False, len(lines), n, f"{line[name_key]} does not match {sha_key}")
+        # files a chat produced (PLAN-v5 F4), kept in data/descargas/: still there, and unchanged
+        for d in line.get("downloads") or []:
+            if isinstance(d, dict) and d.get("path") and d.get("sha256"):
+                f = Path(str(d["path"]))
+                if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != d["sha256"]:
+                    return journal.VerifyResult(False, len(lines), n, f"{d.get('name')} (descarga) does not match its sha256")
     return res
 
 

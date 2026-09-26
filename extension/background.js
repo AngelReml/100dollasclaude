@@ -230,7 +230,7 @@ async function call(tabId, op, ...args) {
     });
     const out = res && res.result;
     if (out && out.__missing) {
-      await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["driver.js"] });
+      await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN", files: ["common.js", "driver.js"] });
       continue;
     }
     return out;
@@ -298,6 +298,44 @@ async function runJob(job) {
     if (boxClock() > 30000) throw new JobError("no_input", st.url);
     await sleep(1000);
   }
+
+  // 1b. what Iván chose (PLAN-v5 D21/D22): the model, the modes and the files, each one put through the
+  //     page's own controls and confirmed there. If the page does not confirm it, nothing is sent.
+  const used = { model: null, modes: [], files: [], modes_on: [] };
+  const want = job.want || {};
+  if (want.model) {
+    stillWanted(job);
+    const r = await call(tabId, "chooseModel", site, want.model);
+    if (!r || !r.ok) {
+      throw new JobError(r && r.error === "model_not_found" ? "model_not_in_page" : "not_confirmed",
+        JSON.stringify({ what: "model", wanted: want.model, ...(r || {}) }).slice(0, 2000));
+    }
+    used.model = r.model;
+  }
+  for (const mode of want.modes || []) {
+    stillWanted(job);
+    const r = await call(tabId, "setMode", site, mode, true);
+    if (!r || !r.ok) {
+      throw new JobError(r && r.error === "mode_not_found" ? "mode_not_in_page" : "not_confirmed",
+        JSON.stringify({ what: "mode", wanted: mode, ...(r || {}) }).slice(0, 2000));
+    }
+    used.modes.push({ mode, name: r.name });
+  }
+  if ((job.files || []).length) {
+    const got = incoming[job.id] || {};
+    for (const f of job.files) {
+      const parts = got[f.key] || [];
+      for (let i = 0; i < f.parts; i++) {
+        stillWanted(job);
+        if (parts[i] === undefined) throw new JobError("file_incomplete", f.name);
+        await call(tabId, "fileChunk", f.key, i, parts[i]);
+      }
+    }
+    const r = await call(tabId, "attach", site, job.files.map((f) => ({ key: f.key, name: f.name, type: f.type, sha256: f.sha256, parts: f.parts })));
+    if (!r || !r.ok) throw new JobError(r && r.error ? r.error : "file_not_attached", JSON.stringify(r || {}).slice(0, 2000));
+    used.files = r.files;
+  }
+  used.modes_on = await call(tabId, "activeModes", site);  // what is really on when it is sent
 
   // 2. type and send
   stillWanted(job);
@@ -381,6 +419,9 @@ async function runJob(job) {
     throw new JobError("empty_answer", JSON.stringify({ out, diagnose: d }).slice(0, 6000));
   }
   out.modelName = st.modelName || null;
+  out.used = used;
+  const made = await call(tabId, "downloads", site).catch(() => null);
+  out.downloads = made && made.ok ? made.files : [];
   return out;
 }
 
@@ -392,7 +433,8 @@ async function handleJob(job) {
     beat(job.site);
     try {
       const out = await runJob(job);
-      sendToBridge({ type: "result", id: job.id, ok: true, text: out.text, via: out.via, model_label: out.modelName });
+      sendToBridge({ type: "result", id: job.id, ok: true, text: out.text, via: out.via, model_label: out.modelName,
+                     used: out.used, downloads: out.downloads });
     } catch (e) {
       const code = e instanceof JobError ? e.code : "extension_error";
       const detail = e instanceof JobError ? e.detail : String(e && e.message || e);
@@ -406,6 +448,7 @@ async function handleJob(job) {
       sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
     } finally {
       delete runningJob[job.site];
+      delete incoming[job.id];
       cancelled.delete(job.id);
       humanEnd(job.site);
       jobFinished(job.site);
@@ -426,11 +469,86 @@ async function handleDiagnose(msg) {
   }
 }
 
+// Files for a job arrive in parts before the job (big ones too): job id -> file key -> parts.
+const incoming = {};
+function onFilePart(msg) {
+  const job = (incoming[msg.job] = incoming[msg.job] || {});
+  (job[msg.key] = job[msg.key] || [])[msg.n] = msg.data;
+}
+
+// "Descubrir" (PLAN-v5 F4): open the chat, read its card (models, modes, "+" menu, files) and close every
+// menu again. Nothing is pressed but the menus' own buttons, and nothing is sent.
+function inQueue(site, fn) {
+  const prev = siteQueue[site] || Promise.resolve();
+  const run = prev.catch(() => {}).then(async () => {
+    jobStarted(site);
+    try { return await fn(); } finally { jobFinished(site); }
+  });
+  siteQueue[site] = run;
+  return run;
+}
+function handleDiscover(msg) {
+  return inQueue(msg.site, async () => {
+    try {
+      const site = SITES[msg.site];
+      if (!site) throw new JobError("unknown_site", msg.site);
+      const tabId = await siteTab(msg.site);
+      await chrome.tabs.update(tabId, { url: site.newChat });
+      await sleep(800);
+      await waitLoaded(tabId, 45000);
+      let st;
+      for (const t0 = Date.now(); ; ) {
+        st = await call(tabId, "state", site);
+        if (st.challenge) throw new JobError("challenge", st.challenge);
+        if (st.loginWall) throw new JobError("login_required", st.url);
+        if (st.input || Date.now() - t0 > 30000) break;
+        await sleep(1000);
+      }
+      if (!st.input) throw new JobError("no_input", st.url);
+      const card = await call(tabId, "discover", site);
+      sendToBridge({ type: "result", id: msg.id, ok: true, text: JSON.stringify(card), via: "discover" });
+    } catch (e) {
+      sendToBridge({ type: "result", id: msg.id, ok: false, error: e instanceof JobError ? e.code : "extension_error",
+                     detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
+    }
+  });
+}
+
+// "Enséñame dónde está": the chat comes to the front with a banner; Iván's next click there does nothing
+// on the page and tells webllm where that thing is.
+function handleTeach(msg) {
+  return inQueue(msg.site, async () => {
+    try {
+      const tabId = await siteTab(msg.site);
+      await waitLoaded(tabId, 30000);
+      humanStart(msg.site, "teach");
+      const tab = await chrome.tabs.get(tabId);
+      await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+      await chrome.tabs.update(tabId, { active: true });
+      const out = await call(tabId, "teach", msg.what, msg.text, Number(msg.wait_ms) || 180000);
+      sendToBridge({ type: "result", id: msg.id, ok: !!(out && out.ok), text: JSON.stringify(out || {}), via: "teach",
+                     error: out && out.ok ? undefined : (out && out.error) || "teach_failed" });
+    } catch (e) {
+      sendToBridge({ type: "result", id: msg.id, ok: false, error: "extension_error", detail: String(e && e.message || e) });
+    } finally {
+      humanEnd(msg.site);
+    }
+  });
+}
+
 // Sites you added from the app are not in sites.js: the bridge sends their
 // name and address with every message, and driver.js detects them generically.
 function ensureSite(msg) {
   if (msg.site && !SITES[msg.site] && msg.site_config && parseChatUrl(msg.site_config.url).ok) {
     SITES[msg.site] = genericSite(msg.site_config.name, parseChatUrl(msg.site_config.url).url);
+  }
+  // What Iván showed with "Enséñame dónde está" goes first, before the site's own and the generic rules.
+  const patch = msg.site_patch;
+  if (msg.site && SITES[msg.site] && patch && typeof patch === "object") {
+    for (const k of ["modelButton", "plusButton", "fileInput", "input", "send", "copy", "answer"]) {
+      const sels = Array.isArray(patch[k]) ? patch[k].filter((x) => typeof x === "string" && x.length < 300) : [];
+      if (sels.length) SITES[msg.site][k] = [...new Set([...sels, ...(SITES[msg.site][k] || [])])];
+    }
   }
 }
 
@@ -607,6 +725,9 @@ function onMessage(msg) {
   ensureSite(msg);
   if (msg.type === "add_site") handleAddSite(msg);
   else if (msg.type === "add_many") handleAddMany(msg);
+  else if (msg.type === "file_part") onFilePart(msg);
+  else if (msg.type === "discover") handleDiscover(msg);
+  else if (msg.type === "teach") handleTeach(msg);
   else if (msg.type === "add_check") handleAddCheck(msg);
   else if (msg.type === "job") handleJob(msg);
   else if (msg.type === "diagnose") handleDiagnose(msg);

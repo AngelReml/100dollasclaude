@@ -57,6 +57,7 @@ def test_no_private_file_is_committed():
     assert not [f for f in files_to_commit() if FORBIDDEN.match(f)]
     # where webllm writes its private files, git ignores them before anyone can add them
     private = ["extension/config.json", "data/state/guard.json", "data/state/api_budget.json", "data/runs/x/journal.jsonl",
-               "data/logs/bridge.log", "data/state/custom_ais.json", "data/state/icons/x.png"]
+               "data/logs/bridge.log", "data/state/custom_ais.json", "data/state/icons/x.png",
+               "data/descargas/x/informe.txt", "data/state/fichas/qwen.json", "data/state/patches/qwen.json"]
     out = subprocess.run(["git", "check-ignore", "--no-index", *private], cwd=ROOT, capture_output=True, text=True).stdout
     assert out.split() == private
