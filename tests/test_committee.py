@@ -13,7 +13,7 @@ import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from test_appapi import AUTH, App, DiagnosingExtension, run
+from test_appapi import App, DiagnosingExtension, run
 from test_gateway import content, gw, journal_lines, reasoning
 from webllm_agent import committee, fichas, vault
 from webllm_agent.broadcaster import verify_run

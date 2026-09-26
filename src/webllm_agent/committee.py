@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 import httpx
 
 from . import journal
-from .broadcaster import SKIPPED, Outcome, _run_target, check_gateway, new_run_id
+from .broadcaster import Outcome, _run_target, check_gateway, new_run_id
 from .client import CANCELLED, ChatResult
 from .flows import FAILED, OK, STOPPED, Flow, Step, close_run, journal_call, to_vault, write_flow
 

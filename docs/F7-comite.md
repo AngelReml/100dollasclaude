@@ -12,7 +12,7 @@ Falta lo que solo se ve en tu PC: un Comité real de 5 sobre una idea tuya. Desp
 
 ## Cómo se usa
 
-1. En Open WebUI, arriba, elige **webllm · Comité** (sale el primero de la lista).
+1. En Open WebUI, arriba, elige **webllm · Comité**. Está justo después de los chats web; también lo encuentras escribiendo «Comité» en el buscador del selector.
 2. Escribe la idea o el problema que quieres evaluar, y adjunta archivos si hace falta.
 3. webllm contesta con **el plan, y no envía nada todavía**:
    - quién participa, con qué rol y cómo: su modelo más potente, y «pensar» si su web lo tiene;
@@ -171,6 +171,7 @@ Es decir: con la regla vieja, un modelo que tarda en empezar a escribir devolví
    Tu «adelante» vale para lo que el plan dice, y nada más. Ahora el plan lo dice todo, con una prueba que falla si vuelve la regla vieja (comprobado).
 8. **La misma empresa salía con dos nombres** («Zhipu (z.ai)» en el chat y «z.ai» en la API), así que se contaba dos veces. Ahora es una.
 9. **«Dos chats web a la vez» dejaba escribir a todos a la vez.** Con 3 chats web en el Comité, escribían los 3 a la vez. Ahora son dos como mucho, que es lo que dice el interruptor y lo que probarás. Una prueba mide cuántos escriben a la vez: 1 con el interruptor apagado, 2 encendido; con el código anterior medía 3.
+10. **El Comité habría pasado a ser tu modelo por defecto.** Open WebUI abre cada chat nuevo con el primer modelo de la lista, y yo había puesto el Comité el primero. Una pregunta rápida en un chat nuevo te habría devuelto un plan del Comité. Lo encontró la prueba de F1 en el Open WebUI de verdad. Ahora va después de los chats web, y nunca el primero, así que tu chat nuevo se abre con el mismo modelo que antes de F7.
 
 ## Límites (dichos claros)
 

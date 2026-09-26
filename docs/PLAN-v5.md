@@ -495,6 +495,7 @@ Cada fase tiene:
 >   - el vault usa `Comités/AAAA-MM-DD <tema>.md`, como sus otras notas;
 >   - las confirmaciones de rol no van al vault como respuestas;
 >   - «dos chats web a la vez» son dos como mucho;
+>   - «webllm · Comité» va después de los chats web en el selector, nunca el primero: Open WebUI abre cada chat nuevo con el primer modelo de la lista, y eso no debe cambiar sin ti;
 >   - en el turno 2 la extensión no toca el modelo ni los modos.
 >
 > **Falta la salida en tu PC:** un Comité real de 5, y 3 seguidos con dos chats a la vez. Detalle: `docs/F7-comite.md`.

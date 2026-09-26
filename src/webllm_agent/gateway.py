@@ -277,7 +277,10 @@ class Gateway:
                     "webllm": {"kind": kind, "label": p.display, "model": m["name"], "strongest": m["strongest"],
                                "card": card(p, cap) + f" Modelo «{m['name']}» de su selector.",
                                "daily_cap": cap, "used_today": today}})
-        data.insert(0, committee_face.model_entry(cfg))  # "webllm · Comité" (D4), first in the selector
+        # "webllm · Comité" (D4) right after the web chats it is made of, and never first: Open WebUI opens a new chat
+        # on the first model of the list, and that must not change without Iván (D21)
+        at = min(len(data), max(1, sum(m["webllm"]["kind"] == "chat" for m in data)))
+        data.insert(at, committee_face.model_entry(cfg))
         return web.json_response({"object": "list", "data": data})
 
     # ----------------------------------------------------------------- stop

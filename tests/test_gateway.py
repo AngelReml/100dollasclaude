@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 import hashlib
 import json
 import re
@@ -63,9 +64,16 @@ def test_models_are_every_ai_with_a_spanish_name(tmp_path, mock_server):
             got = {m["id"]: (m["name"], m["webllm"]["kind"]) for m in body["data"]}
             assert got["qwen"] == ("Qwen (web)", "chat") and got["zai"][1] == "api" and got["zai"][0].endswith("(API)")
             kinds = [m["webllm"]["kind"] for m in body["data"]]
-            # the Committee first (D4), then chats, then APIs, then this PC
-            assert kinds == sorted(kinds, key=["comite", "chat", "api", "local"].index) and kinds.count("comite") == 1
+            # chats, the Committee (D4), APIs, this PC; never the Committee first: Open WebUI opens new chats on the first
+            assert kinds == sorted(kinds, key=["chat", "comite", "api", "local"].index) and kinds.count("comite") == 1
+            assert kinds[0] != "comite"
             assert got["comite"] == ("webllm · Comité", "comite")
+            for name, p in list(app.cfg.providers.items()):  # no web chat connected: still not first
+                if p.gateway == "bridge":
+                    app.cfg.providers[name] = dataclasses.replace(p, enabled=False)
+            _, body, _ = await app.get("/gw/v1/models")
+            kinds = [m["webllm"]["kind"] for m in body["data"]]
+            assert "chat" not in kinds and kinds[0] != "comite" and kinds.count("comite") == 1
     run(go())
 
 
