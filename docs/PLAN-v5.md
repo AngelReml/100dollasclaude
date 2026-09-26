@@ -41,6 +41,7 @@
 | D20 | **Todas las IAs con chat web que hemos encontrado vienen precargadas** (catálogo de la sección 6): no escribes ninguna dirección. Lo único que nadie puede hacer por ti es **entrar una vez con tu cuenta** en las que la pidan (regla dura 3). Chrome da permiso solo a las que dejas marcadas | Petición de Iván: "quiero tenerlas todas". Mínimo privilegio: nada de permisos fijos para 27 webs que quizá no uses |
 | D21 | **Tu control, lo primero.** Nada cambia a escondidas. Cada respuesta dice lo que se usó de verdad. El modelo de partida lo eliges tú. Nada sale de tu PC sin un gesto tuyo. webllm nunca pulsa botones que publican, comparten, borran, regeneran o despliegan (sección "Tu control") | Petición de Iván: "prioriza mi control absoluto" |
 | D22 | **Todo lo que sabe hacer cada chat, a tu alcance:** sus modelos (con el más potente marcado), sus modos (pensar, buscar, investigación profunda, constructor…), cada opción de su botón "+" y subir archivos igual que en su web. webllm lo descubre sin pulsar nada peligroso y lo pone en la cara estándar. Lo que no sepa manejar lo usas tú en la web y queda registrado (D16) (sección 3) | Petición de Iván. Las comprobaciones 11 y 12 de F1 deciden cómo llegan archivos e interruptores desde Open WebUI |
+| D24 | **El taller de código puede cambiar cualquier archivo tuyo, pero nunca dejarte sin Windows.** Todo lo que lanza la IA corre **sin permisos de administrador**, así que es Windows, no la IA, quien le impide tocar C:\Windows, los programas instalados, el arranque y los ajustes de todo el equipo. webllm no arranca el taller si se abrió como administrador o si el Control de cuentas (UAC) está apagado o en «No notificarme nunca» (así Windows daría administrador sin preguntar). Deniega pedir administrador, apagar, reiniciar o cerrar sesión, cerrar programas que no lanzó el taller y borrar carpetas enteras fuera del proyecto; lo demás de fuera del proyecto te lo pregunta. El taller va dentro de un contenedor de procesos de Windows (Job Object: no necesita administrador) con tope de memoria y de CPU, que «Parar todo» cierra entero de golpe, y se para si el disco C: baja de 10 GB libres. Lo que cambia en el proyecto se deshace con git. Fuera del proyecto la red es lo que la IA no puede borrar: las «versiones anteriores» de Windows (puntos de restauración; hay que tener activada la Protección del sistema en C:) y la papelera de Drive. Si durante una tarea sale la ventana de Windows que pide permiso de administrador, la respuesta es **No** | Petición de Iván (26-sep-2026): «no quiero que pueda borrar mi C:, no quiero quedarme sin Windows a medio trabajo por un error; por lo demás, que pueda modificar cualquier cosa». Sustituye al «aislamiento: solo worktree o WSL2/Docker» de F11: una caja que solo ve el proyecto no le deja cambiar lo demás, y un worktree solo no protege nada fuera del proyecto |
 
 ### La cara (D18): cómo se ve todo lo de webllm sin salir del estándar
 
@@ -518,10 +519,15 @@ Cada fase tiene:
   - Comité opcional para revisar el plan;
   - **Aceptar / Deshacer**;
   - modelos principales: GLM-5.x por API.
-  - Antes de empezar se decide el aislamiento (solo worktree o WSL2/Docker), con una prueba de qué se puede romper en cada caso.
+  - Seguridad: D24 (sin administrador, contenedor de procesos con topes, espacio en disco vigilado, borrados de carpetas
+    enteras fuera del proyecto denegados).
 - **Probado aquí:** un proyecto de prueba con una tarea y sus tests (de rojo a verde) y Deshacer, que funcionan.
-- **En tu PC:** 5 tareas reales tuyas.
-- **Salida:** tareas resueltas de 5, apuntadas. Es la base del banco de pruebas pequeño.
+- **En tu PC:**
+  - primero, las pruebas de D24 con órdenes dañinas a propósito, lanzadas desde el taller: borrar algo de C:\Windows y de
+    Archivos de programa, apagar el PC, pedir administrador, llenar el disco y comerse la memoria. Todas deben fallar o
+    pararse, y Windows debe seguir igual (si tu Windows es Pro, antes en el Windows Sandbox, que se tira al cerrarlo);
+  - después, 5 tareas reales tuyas.
+- **Salida:** las 6 pruebas de D24 fallan o se paran; tareas resueltas de 5, apuntadas. Es la base del banco de pruebas pequeño.
 
 ### F12 — Después (no se empieza sin nueva decisión)
 

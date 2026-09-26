@@ -20,7 +20,9 @@ program in his folders through those chats.
   nothing leaves his PC without his gesture, and webllm never clicks publish/share/delete/
   regenerate/deploy. Each chat's models (strongest first), modes (think, search, deep research,
   builder…), "+" menu tools and file uploads are discovered read-only and offered in the standard
-  UI (D22) via a webllm "pipe" in Open WebUI. Phases F0 (stabilize; Meta) → F1 (face spike,
+  UI (D22) via a webllm "pipe" in Open WebUI. The code workshop (F11) may change any of Iván's files but never
+  runs elevated, so Windows itself protects the OS (D24: refuse to start if elevated or UAC off/never-notify, Job
+  Object with memory/CPU caps, no shutdown/logoff/elevation/recursive deletes outside the project). Phases F0 (stabilize; Meta) → F1 (face spike,
   12 checks) → F2 (gateway) → F3 (catalog) → F4 (each chat's capabilities) → F5 … F12, each with
   an entry gate and a measurable exit.
 - `docs/PLAN-v3.md` still holds the design rules, contract and evidence rules (and what 3b, 7a, 7b
