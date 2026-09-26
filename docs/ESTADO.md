@@ -43,6 +43,17 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F9: acciones y conectores)
+
+- **Las IAs pueden pedir hacer cosas (GitHub, tu terminal), y nada se hace sin tu «Permitir».**
+  - La misma tarjeta de Open WebUI «¿Permitir …?» para las IAs por API y para los chats web.
+- **Los chats web también pueden pedir herramientas:** webllm les da una lista escrita con una marca única. Una petición que no encaja exactamente se rechaza, no se adivina.
+- **GitHub, solo leer y proponer:** issues, comentarios, ramas `webllm/…` y PR. Nunca fusionar, borrar, publicar ni administrar: esas herramientas ni se le enseñan a la IA.
+- **Terminal:** cada comando te pregunta; los que podrían dejarte sin Windows (administrador, apagar, discos, borrar carpetas enteras, registro…) ni siquiera se pueden pedir.
+- **«Borra el repo»:** webllm lo deniega antes de preguntarte, lo dice en la respuesta y lo apunta en el registro.
+- **Probado aquí:** 48 pruebas nuevas; el Open WebUI de verdad con un GitHub de prueba: 5 de 5; la suite rápida: 445 pasan.
+- **Falta tu PC:** conectar tu GitHub (token limitado) y tu terminal, y los dos issues de prueba. Guía en `docs/F9-acciones.md`.
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F8: «Automático»)
 
 - **«webllm · Automático» elige la IA por ti**, con reglas escritas que ves en la app (Inicio → «Que webllm elija la IA»).

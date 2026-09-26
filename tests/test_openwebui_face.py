@@ -3,7 +3,9 @@ the checks on the real screen: tests/openwebui/f1_checks.mjs (10), then f2_check
 tool, tests/openwebui/mcp_hora.py, used by an AI through webllm only after "Allow"; Open WebUI's
 "Detener" stops a web chat's long answer; a web chat, an API and a model on this PC all answer),
 then f5_checks.mjs (6: the memory in Obsidian, written while it happens, in the Open WebUI folder's name, each
-answer in its own file identical to the record), then f6_checks.mjs (5: «Continuar en la web»), then f7_checks.mjs (5: the Committee), then f8_checks.mjs (4: «Automático»), then f4_checks.mjs (6, with the real extension: the chat's models,
+answer in its own file identical to the record), then f6_checks.mjs (5: «Continuar en la web»), then f7_checks.mjs (5: the Committee), then f8_checks.mjs (4: «Automático»), then f9_checks.mjs (5: GitHub through Open WebUI's MCP connection,
+a stand-in in tests/openwebui/mcp_github.py: an API and a web chat create an issue only after "Permitir", "Denegar"
+runs nothing, "borra el repo" is refused before Iván is asked), then f4_checks.mjs (6, with the real extension: the chat's models,
 a whole file, a switch that changes the mode). Skipped unless
 WEBLLM_OPENWEBUI_PY points at a Python that has Open WebUI (it is 7 GB: `uv venv -p 3.11 .venv &&
 uv pip install open-webui`; it brings the `mcp` package the tool server needs)."""
@@ -67,7 +69,7 @@ def post(url: str, body: dict, token: str = "") -> dict:
 
 
 def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
-    ow_port, demo_port, mcp_port = free_port(), free_port(), free_port()
+    ow_port, demo_port, mcp_port, gh_port = free_port(), free_port(), free_port(), free_port()
     ow_url, demo_url = f"http://127.0.0.1:{ow_port}", f"http://127.0.0.1:{demo_port}"
     env = {**os.environ, "DATA_DIR": str(tmp_path / "ow"), "WEBUI_SECRET_KEY": "prueba", "OFFLINE_MODE": "true",
            "HF_HUB_OFFLINE": "1", "ENABLE_OLLAMA_API": "false", "ENABLE_OPENAI_API": "false", "DEFAULT_LOCALE": "es-ES",
@@ -78,7 +80,9 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
              subprocess.Popen([sys.executable, str(ROOT / "scripts" / "app_demo.py"), "--port", str(demo_port),
                                "--data", str(tmp_path / "demo")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
              subprocess.Popen([OWPY, str(ROOT / "tests" / "openwebui" / "mcp_hora.py"), str(mcp_port)],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+             subprocess.Popen([OWPY, str(ROOT / "tests" / "openwebui" / "mcp_github.py"), str(gh_port),
+                               str(tmp_path / "github.jsonl")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
     try:
         wait_up(f"{ow_url}/health", 240)
         wait_up(f"{demo_url}/health", 30)
@@ -139,6 +143,18 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
         print("\n".join(lines))  # the evidence, shown with pytest -rP
         assert out.returncode == 0 and len(lines) == 4 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
+        # F9 (5): GitHub's tools (a stand-in that writes down what really runs): an API and a web chat each create an
+        # issue only after "Permitir"; "Denegar" runs nothing; "borra el repo" is refused by webllm before Open WebUI
+        # asks, nothing runs, the answer says why and the record keeps it.
+        wait_port(gh_port, 30)
+        out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f9_checks.mjs")], capture_output=True, text=True,
+                             timeout=600, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
+                                               "WEBLLM_DATA": str(tmp_path / "demo"), "OUT": str(tmp_path / "capturas-f9"),
+                                               "MCP_GITHUB_URL": f"http://127.0.0.1:{gh_port}/mcp",
+                                               "MCP_LOG": str(tmp_path / "github.jsonl")})
+        lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        print("\n".join(lines))  # the evidence, shown with pytest -rP
+        assert out.returncode == 0 and len(lines) == 5 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F4 (6): the same Open WebUI, now pointed at a webllm with the REAL extension in Chromium and the
         # extended test chat page: the chat's models in the selector, a file whole, a switch that changes the mode.
         out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f4_checks.mjs")], capture_output=True, text=True,
