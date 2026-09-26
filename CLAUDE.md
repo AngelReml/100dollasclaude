@@ -43,6 +43,8 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 | `extension/common.js`, `add.html`, `add.js` | Address rules shared with the server (`parseChatUrl`, `siteKey`, blocked hosts, `genericSite`), and the "Añadir … a webllm" page: `chrome.permissions.request` for that one origin (needs Iván's click), then `add_test` → open the site, find the box, `add_ready` (the bridge sends the "pong" test through the guard). |
 | `extension/driver.js` | Injected in the chat page (MAIN world): state, insert, send, capture (hooks the page's own copy button → exact markdown), HTML→markdown fallback, diagnose. |
 | `extension/sites.js` | Per-site selectors (qwen, deepseek, zai, meta). Qwen/DeepSeek/Meta selectors are first drafts. |
+| `src/webllm_agent/gateway.py`, `problems.py` | PLAN-v5 D2 (F1): `/gw/v1/models` + `/gw/v1/chat/completions`, webllm as Open WebUI's one connection. Each question is a one-step flow (guard, journal, history "Desde Open WebUI", error codes); notes stream as `reasoning_content` (incl. `WAITING_SHORT` "te espera"); SSE keep-alive comments; the last chunk carries `webllm.avisos` (must-see: files/modes not used yet, a stand-in answered). Body extension `webllm: {chat_id, message_id, task, files[b64+sha256], modes}`; a `task` never reaches a web chat; files are checked, saved under the run (`kind: gateway` journal line, verified by `verify_run`). `problems.py` = the app's Spanish texts (a test keeps it in sync with `app/src/fix.ts`). |
+| `openwebui/` | Functions Open WebUI runs: `webllm_pipe.py` (manifold pipe: models from the gateway, current message's files from `metadata.user_message` read whole from Open WebUI storage, `webllm_modes`, local answers for Open WebUI's background tasks, notes on the status line, whole-answer mode for `stream: false`), `webllm_modo_*.py` (filters with `self.toggle` = switches in the "+"). Installed by `scripts/openwebui_setup.py` (idempotent: functions + valves, per-model `file_context` off / `filterIds`, background tasks and compaction off, bypass embedding, Spanish suggestions, no Arena, tool permissions on; finds Open WebUI on 8080/3000/8081). Iván: `herramientas\poner-en-openwebui.cmd`. Results: `docs/F1-cara.md`. |
 | `src/webllm_agent/broadcaster.py` | `webllm ask`: one prompt to many targets, concurrent across upstreams, journal. `verify_run` checks chain + manifest + response/message files. |
 | `src/webllm_agent/flows.py` | Chain engine ("Mesa de IAs", PLAN-v3 phase 1): steps with `{{input}}` / `{{step}}` / `{{step.ai}}` placeholders (single pass), parallel when independent, one call at a time per upstream, `on_error` stop / wait / fallback, `error_code()`, journal per call + `flow_end`, `estimate_messages()`, templates (consejo, reparto, debate, cadena). `webllm cadena`. |
 | `src/webllm_agent/appapi.py` | The app's server side, mounted by the bridge: `/app/` (built app, token injected, strict CSP) and `/api/estado`, `/api/preguntar` (SSE; a one-step flow), `/api/historial[/<id>[/exportar]]`, `/api/reanudar`, `/api/comprobar` (reads a chat's login state, sends nothing), `/api/conectar` (same + `show` when there is no session; the app then polls `comprobar` every 3 s up to 3 min), `/api/encender-omniroute`, `/api/encender-local`, `/api/anadir` (+ `GET /api/anadir/<id>` progress), `/api/quitar`, `/api/icono/<key>`. Added sites live in `data/state/custom_ais.json` (+ `icons/`), never in `data/config.yaml` (in git). `estado` gives each AI `custom`, `icon`, `waiting`. |
@@ -80,7 +82,9 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ```bash
 python -m pip install -e .
-python -m pytest -q          # 180 passing on 2026-09-26 (clean venv, no OmniRoute key; the 4 real-Chromium tests need node, app/node_modules, Chromium, openssl)
+python -m pip install -e ".[test]"   # pytest + pydantic (the openwebui/ functions use it)
+python -m pytest -q          # see the latest count in docs/ESTADO.md (the real-Chromium tests need node, app/node_modules, Chromium, openssl;
+                             # tests/test_openwebui_face.py also needs WEBLLM_OPENWEBUI_PY = a Python with open-webui)
 ```
 
 App (only for whoever programs it; Iván's PC never needs npm):
@@ -133,6 +137,13 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   whole words, enabled and on screen; `background.js` ignores a stop already there before sending and
   ends when a new copy button has been stable for 12 s. A timeout logs the page's `diagnose`.
   (`desktop` does NOT contain `stop`: check such claims, the test caught it.)
+- **Open WebUI (0.11.4) facts that shaped F1** (read in its code, checked on screen): it sends background
+  jobs (title, tags, follow-ups, emoji, query, autocomplete; `__task__`) to the SAME model, so the pipe
+  answers them itself and the gateway refuses them for web chats; `__files__` holds every file of the
+  conversation (use `metadata.user_message.files`); the reasoning block is folded, so must-see notes go
+  to the status line (`__event_emitter__` status); API keys are OFF by default (`ENABLE_API_KEYS`);
+  the "$" skill picker inserts `<$id|name>` tags (plain "$name" text is not a mention); with
+  `stream: false` a pipe must return text, not the SSE lines.
 - **A provider's `error.code` is its own vocabulary** (OpenRouter: 429/402 numbers, z.ai: "1302"):
   `flows.error_code` only passes webllm's own codes (`OWN_ERROR_CODES`) and reads the rest like the
   HTTP status; a 429 that mentions credits is still a limit. Unknown codes made the app say

@@ -14,7 +14,9 @@ Everything the app talks to is real (bridge, app API, chain engine, journal, gua
 - a question with "(demo: verificación)" in it makes Qwen "wait for Iván" 8 s (a verification),
   as extension 0.5.0 reports it, before answering;
 - a question with "(demo: límite)" in it makes Nemotron fail the way OpenRouter does when its free
-  quota is used up (HTTP 429, the number 429 in error.code), to see the card Iván gets.
+  quota is used up (HTTP 429, the number 429 in error.code), to see the card Iván gets;
+- a question with "(demo: N minutos)" in it makes the chat take N minutes to answer, saying
+  "still on it" every 10 s like the real extension (PLAN-v5 F1, check 3: long answers are not cut).
 Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
 where Iván's Chrome and OmniRoute are not reachable. Open http://127.0.0.1:<port>/app/
 """
@@ -25,6 +27,7 @@ import argparse
 import asyncio
 import base64
 import json
+import re
 import sys
 import tempfile
 import time
@@ -165,6 +168,12 @@ async def fake_extension(port: int) -> None:
                 if not logged_in.get(site, True):
                     asyncio.create_task(log_in_later(site))
                 return
+            slow = re.search(r"\(demo: (\d+) minutos?\)", job.get("prompt", ""))
+            if slow:
+                until = time.monotonic() + 60 * int(slow.group(1))
+                while time.monotonic() < until:
+                    await ws.send_json({"type": "job_alive", "id": job["id"], "site": site, "waiting": None})
+                    await asyncio.sleep(min(10, max(0.1, until - time.monotonic())))
             if site == "qwen" and "(demo: verificación)" in job.get("prompt", ""):
                 for waiting in ["challenge"] * 8 + [None]:
                     await ws.send_json({"type": "job_alive", "id": job["id"], "site": site, "waiting": waiting})

@@ -301,6 +301,8 @@ Cada fase tiene:
 
 ### F1 — Prueba de la cara (decide D1 con datos)
 
+> **Estado (26-sep-2026):** en la nube pasan la 1, 2, 3, 4, 7 (el mecanismo), 9, 11 y 12; la 5 llega con F2. Faltan en tu PC la 6, 7 (con tu prompt-forge), 8 y 10. Detalle: `docs/F1-cara.md`.
+
 - **Puerta:** F0 cerrada.
 - **Qué:** conectar Open WebUI a webllm con una pipe mínima de webllm y pasar esta lista de 12 comprobaciones:
   1. Salen los modelos de webllm en el selector.

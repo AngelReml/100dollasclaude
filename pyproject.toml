@@ -14,6 +14,10 @@ dependencies = [
     "rich>=13.0",
 ]
 
+[project.optional-dependencies]
+# Only to run the tests (pydantic: the Open WebUI functions in openwebui/ use it; Open WebUI has it).
+test = ["pytest>=8", "pydantic>=2"]
+
 [project.scripts]
 webllm = "webllm_agent.cli.main:main"
 

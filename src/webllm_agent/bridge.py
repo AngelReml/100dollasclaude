@@ -26,6 +26,7 @@ from typing import Any, Callable
 from aiohttp import WSMsgType, web
 
 from .appapi import AppApi
+from .gateway import Gateway
 from .client import _content_text
 from .config import JOB_HARD_CAP_S, PROJECT_ROOT, AppConfig, ProviderConfig
 from .guard import Guard, GuardBlocked
@@ -80,6 +81,8 @@ def flatten_messages(messages: list[dict[str, Any]]) -> str:
         text = _content_text(m.get("content")) or ""
         if text.strip():
             parts.append((m.get("role", "user"), text))
+    if not any(role == "user" for role, _ in parts):
+        return ""  # nothing to ask: never send just the closing instruction to a chat
     if len(parts) == 1 and parts[0][0] == "user":
         return parts[0][1]
     labels = {"system": "SYSTEM INSTRUCTIONS", "user": "USER", "assistant": "ASSISTANT (your earlier reply)"}
@@ -123,6 +126,7 @@ class Bridge:
         self._last_launch = -1e9
         self._panel_running = False
         self.app_api = AppApi(self)
+        self.gateway = Gateway(self)
 
     # ------------------------------------------------------------------ app
 
@@ -135,7 +139,8 @@ class Bridge:
         return await handler(request)
 
     def app(self) -> web.Application:
-        app = web.Application(client_max_size=64 * 1024 * 1024, middlewares=[self._local_only])
+        # Files travel as base64 inside the JSON body (gateway.py): 100 MB of files is ~134 MB of body.
+        app = web.Application(client_max_size=160 * 1024 * 1024, middlewares=[self._local_only])
         app.router.add_get("/", self.panel)
         app.router.add_get("/panel/state", self.panel_state)
         app.router.add_get("/panel/run", self.panel_run)
@@ -148,6 +153,7 @@ class Bridge:
         app.router.add_post("/admin/resume", self.resume)
         app.router.add_post("/admin/diagnose", self.diagnose)
         self.app_api.register(app)
+        self.gateway.register(app)
         return app
 
     def site_names(self) -> dict[str, str]:

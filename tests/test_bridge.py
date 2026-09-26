@@ -99,6 +99,13 @@ def test_flatten_single_user_message_is_verbatim():
     assert flatten_messages([{"role": "user", "content": "hola\n\tmundo"}]) == "hola\n\tmundo"
 
 
+def test_flatten_with_nothing_to_ask_is_empty():
+    """Blank or assistant-only messages: nothing to send (it used to send only the closing instruction)."""
+    assert flatten_messages([{"role": "user", "content": "   "}]) == ""
+    assert flatten_messages([{"role": "system", "content": "sé breve"}, {"role": "assistant", "content": "hola"}]) == ""
+    assert flatten_messages([]) == ""
+
+
 def test_flatten_conversation_keeps_roles_and_order():
     text = flatten_messages([
         {"role": "system", "content": "be terse"},

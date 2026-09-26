@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import secrets
 from dataclasses import dataclass, field
@@ -252,6 +253,10 @@ def verify_run(run_dir: Path) -> journal.VerifyResult:
             return journal.VerifyResult(False, len(lines), min(len(lines), int(m.get("lines", 0))) + 1,
                                         "journal does not match run.json (lines removed or appended)")
     for n, line in enumerate(lines, start=1):
+        for f in (line.get("files") or []) if line.get("kind") == "gateway" else []:
+            path = run_dir / str(f.get("file") or "")
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != f.get("sha256"):
+                return journal.VerifyResult(False, len(lines), n, f"{f.get('file')} does not match its sha256")
         for name_key, sha_key in (("response_file", "response_sha256"), ("message_file", "prompt_sha256")):
             if line.get(name_key):
                 f = run_dir / line[name_key]

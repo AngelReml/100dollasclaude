@@ -43,6 +43,22 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F1: Open WebUI como cara)
+
+- **Todo lo que se puede probar en la nube, bien.** Open WebUI 0.11.4 muestra tus IAs de webllm en su selector y les pregunta a través de webllm, con el guardián de tus cuentas y el registro de siempre.
+  - Las respuestas largas (6 minutos) no se cortan.
+  - Los archivos llegan enteros.
+  - El interruptor "Pensar más" llega a webllm.
+  - "Te espera" se ve sin abrir nada.
+- **Los resultados y tu guía paso a paso están en `docs/F1-cara.md`.** Resumen de la guía:
+  1. instala Open WebUI Desktop;
+  2. activa "Enable API Keys" en Administración → Ajustes → General;
+  3. crea una clave;
+  4. doble clic en `herramientas\poner-en-openwebui.cmd`.
+- **Aún no:**
+  - los archivos y los modos llegan a webllm, pero todavía no se pasan a las webs (fase F4). La respuesta lo dice a la vista;
+  - la prueba de una herramienta con permiso (comprobación 5) llega con F2.
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F0)
 
 **Una vez, después de ACTUALIZAR:** la extensión cambia a la versión **0.5.1**. Abre `chrome://extensions` y pulsa la flecha ↻ en "webllm puente".
