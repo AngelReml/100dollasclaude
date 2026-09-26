@@ -20,13 +20,26 @@ What it does (running it again updates everything, nothing is duplicated):
 8. tool approvals are on, and every conversation asks first by default (Iván's own setting,
    D21: nothing runs without his yes); "context compaction" is off (it would ask the model for
    summaries: messages of Iván's chats).
+9. every webllm model gets Open WebUI's tools as they are ("function_calling: native"): webllm decides which tools
+   an AI may even see and checks every request (acciones.yaml, PLAN-v5 F9); the old "legacy" mode would have
+   Open WebUI choose the tool itself, around webllm.
 The Open WebUI key: Open WebUI → Ajustes → Cuenta → Claves de API → Crear (an administrator's key).
 Without --webllm-token it reads webllm's own key from data/state/bridge_token on this PC.
+
+Connectors (PLAN-v5 F9), added to the ones Open WebUI already has (by their id, nothing duplicated):
+    --github          GitHub's official MCP server; the token (fine-grained, only your repositories, no
+                      administration) comes from the environment variable WEBLLM_GITHUB_TOKEN or is asked for
+                      without showing it. It is kept only in Open WebUI's own settings: never in webllm, never in git.
+    --terminal URL    your terminal's MCP server (through mcpo: http://127.0.0.1:8765; a URL ending in /mcp is an
+                      MCP server Open WebUI talks to directly).
+    --solo-conectores only the connectors (webllm itself is not reinstalled).
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 import re
 import sys
 from pathlib import Path
@@ -47,6 +60,10 @@ SUGGESTIONS = [
 ]
 # builtin_tools off: Open WebUI would hand every model its own tools (the time, memory, notes...) without
 # Iván switching them on; with it off, an AI only gets the tools he turns on in the "+" (D21).
+# PLAN-v5 F9: GitHub's official MCP server (docs/remote-server.md of github/github-mcp-server) with the toolsets
+# for reading and proposing; webllm narrows it further to the tools in acciones.yaml ("github" = their prefix).
+GITHUB_MCP = "https://api.githubcopilot.com/mcp/"
+GITHUB_TOOLSETS = "context,repos,issues,pull_requests"
 CAPABILITIES = {"file_context": False, "vision": True, "file_upload": True, "web_search": False,
                 "image_generation": False, "code_interpreter": False, "citations": False, "builtin_tools": False}
 
@@ -121,7 +138,8 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print,
     known = known if known is not None else webllm_models(webllm_url, webllm_token)
     for m in models:
         mine = known.get(m["id"], {})
-        form = {"id": m["id"], "base_model_id": None, "name": mine.get("name") or m.get("name") or m["id"], "params": {},
+        form = {"id": m["id"], "base_model_id": None, "name": mine.get("name") or m.get("name") or m["id"],
+                "params": {"function_calling": "native"},
                 "meta": {"description": mine.get("card") or "Una IA de webllm.", "capabilities": CAPABILITIES,
                          # the Committee decides "pensar" for each chat itself (its plan says so) and Automático
                          # chooses the AI by its written rules: neither gets the switches
@@ -154,6 +172,30 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print,
     return report
 
 
+def connect_tools(ow: OpenWebUI, *, github_token: str | None = None, terminal_url: str | None = None,
+                  say=print) -> list[str]:
+    """GitHub and the terminal as Open WebUI connections (PLAN-v5 F9). The others Iván has are kept; these are
+    replaced by their id. Open WebUI asks before each tool is used (step 8)."""
+    current = (ow.call("GET", "/api/v1/configs/tool_servers") or {}).get("TOOL_SERVER_CONNECTIONS") or []
+    new = []
+    if github_token:
+        new.append({"url": GITHUB_MCP, "path": "", "type": "mcp", "auth_type": "bearer", "key": github_token,
+                    "headers": {"X-MCP-Toolsets": GITHUB_TOOLSETS}, "config": {"enable": True},
+                    "info": {"id": "github", "name": "GitHub", "description": "Leer y proponer cambios (issues, ramas, PR)"}})
+        say("  GitHub: conectado (solo leer y proponer; cada uso te pide permiso)")
+    if terminal_url:
+        mcp = terminal_url.rstrip("/").endswith("/mcp")
+        new.append({"url": terminal_url.rstrip("/"), "path": "" if mcp else "openapi.json", "type": "mcp" if mcp else "openapi",
+                    "auth_type": "none", "key": "", "config": {"enable": True},
+                    "info": {"id": "terminal", "name": "Terminal", "description": "Tu terminal (cada comando te pide permiso)"}})
+        say("  Terminal: conectada (cada comando te pide permiso; los peligrosos, webllm no los deja pedir)")
+    ids = {c["info"]["id"] for c in new}
+    kept = [c for c in current if ((c.get("info") or {}).get("id")) not in ids]
+    if new:
+        ow.call("POST", "/api/v1/configs/tool_servers", json={"TOOL_SERVER_CONNECTIONS": [*kept, *new]})
+    return sorted(ids)
+
+
 CANDIDATES = ("http://127.0.0.1:8080", "http://127.0.0.1:3000", "http://127.0.0.1:8081")
 
 
@@ -175,21 +217,37 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--webllm", default="http://127.0.0.1:20130")
     ap.add_argument("--webllm-token", default="")
     ap.add_argument("--data", default=str(ROOT / "data"))
+    ap.add_argument("--github", action="store_true", help="conecta el servidor MCP oficial de GitHub")
+    ap.add_argument("--terminal", default="", help="dirección del MCP de tu terminal (mcpo)")
+    ap.add_argument("--solo-conectores", action="store_true")
     a = ap.parse_args(argv)
-    token = a.webllm_token or (Path(a.data) / "state" / "bridge_token").read_text(encoding="utf-8").strip()
+    github_token = None
+    if a.github:
+        github_token = os.environ.get("WEBLLM_GITHUB_TOKEN", "").strip() or getpass.getpass(
+            "Pega tu token de GitHub (no se verá) y pulsa Enter: ").strip()
+        if not github_token:
+            print("No has pegado ningún token de GitHub. Mira los pasos en docs\\F9-acciones.md.")
+            return 1
     if not a.openwebui:
         a.openwebui = find_openwebui() or ""
         if not a.openwebui:
             print("No encuentro Open WebUI en este PC. Ábrelo y vuelve a ejecutar esto.")
             return 1
         print(f"Open WebUI encontrado en {a.openwebui}")
-    print("Poniendo webllm dentro de Open WebUI…")
+    ow = OpenWebUI(a.openwebui, a.clave)
     try:
-        install(OpenWebUI(a.openwebui, a.clave), a.webllm, token)
+        if not a.solo_conectores:
+            token = a.webllm_token or (Path(a.data) / "state" / "bridge_token").read_text(encoding="utf-8").strip()
+            print("Poniendo webllm dentro de Open WebUI…")
+            install(ow, a.webllm, token)
+        if github_token or a.terminal:
+            print("Conectando herramientas…")
+            connect_tools(ow, github_token=github_token, terminal_url=a.terminal or None)
     except httpx.HTTPError as exc:
         print(f"No pude hablar con Open WebUI en {a.openwebui}: ¿está abierto? ({exc})")
         return 1
-    print("Listo. En Open WebUI, elige arriba una IA de webllm y pregunta.")
+    print("Listo. En Open WebUI, elige arriba una IA de webllm y pregunta."
+          + (" Las herramientas se encienden en el «+» de la caja de texto." if github_token or a.terminal else ""))
     return 0
 
 

@@ -136,6 +136,38 @@ def demo_committee(prompt: str, who: str) -> str | None:
     return None
 
 
+DEMO_ISSUE = {"method": "create", "owner": "angelreml", "repo": "prueba", "title": "Issue de prueba de webllm",
+              "body": "Creado desde Open WebUI, después de tu «Permitir»."}
+
+
+def demo_tool_choice(prompt: str, names: list[str]) -> tuple[str, dict] | None:
+    """What a demo AI asks for when it has tools (PLAN-v5 F9), like a real one would. A naive AI obeys "borra el
+    repo" and asks for a tool it was never shown, so webllm's refusal can be seen."""
+    low = prompt.lower()
+    if "borra el repo" in low:
+        return "github_delete_repository", {"owner": "angelreml", "repo": "prueba"}
+    issue = next((n for n in names if n.endswith("issue_write")), None)
+    if "issue" in low and issue:
+        return issue, DEMO_ISSUE
+    return (names[0], {}) if names else None
+
+
+def demo_web_tools(prompt: str) -> str | None:
+    """A web chat that got webllm's tool menu: a request in the menu's own format, or its answer to the result."""
+    if "Resultado de la herramienta" in prompt:
+        data = re.search(r"<<<DATOS-\w+\n(.*?)\nDATOS-\w+>>>", prompt, re.DOTALL)
+        return f"Hecho. {data.group(1).strip() if data else ''}".strip()
+    if "=== HERRAMIENTAS ===" not in prompt:
+        return None
+    tag = re.search(r"=== HERRAMIENTAS ===[\s\S]*?<<<ACCION-(\w+)", prompt).group(1)
+    names = re.findall(r"^- (\w+): ", prompt.split("=== HERRAMIENTAS ===", 1)[1], re.M)
+    choice = demo_tool_choice(prompt.split("=== HERRAMIENTAS ===", 1)[0], names)
+    if choice is None:
+        return None
+    body = json.dumps({"herramienta": choice[0], "argumentos": choice[1]}, ensure_ascii=False)
+    return f"Voy a usar la herramienta.\n<<<ACCION-{tag}\n{body}\nACCION-{tag}>>>"
+
+
 def demo_repair(prompt: str, log: Path | None) -> str:
     """The fake OmniRoute as the AI that helps repair a page (PLAN-v5 F6): it reads the x-ray webllm sent and
     points at candidates the way a model would, with numbers. What it received is written to ``log`` so a test can
@@ -186,8 +218,10 @@ def fake_omniroute(data: Path | None = None) -> web.Application:
         if last.get("role") == "tool":
             return await answer(request, body, {"content": f"Según tu herramienta: {last.get('content')}"})
         if body.get("tools"):
+            user = last["content"] if isinstance(last.get("content"), str) else ""
+            choice = demo_tool_choice(user, [t["function"]["name"] for t in body["tools"]])
             call = {"id": "call_1", "type": "function",
-                    "function": {"name": body["tools"][0]["function"]["name"], "arguments": "{}"}}
+                    "function": {"name": choice[0], "arguments": json.dumps(choice[1], ensure_ascii=False)}}
             return await answer(request, body, {"content": None, "tool_calls": [call]}, "tool_calls")
         prompt = last["content"] if isinstance(last["content"], str) else " ".join(
             p.get("text", "") for p in last["content"] if isinstance(p, dict))
@@ -362,7 +396,7 @@ async def fake_extension(port: int) -> None:
                 await asyncio.sleep(2.5)
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "pong", "via": "copy-button"})
             else:
-                text = demo_committee(last, site) or ANSWERS.get(site, "Respuesta de prueba.")
+                text = demo_web_tools(job["prompt"]) or demo_committee(last, site) or ANSWERS.get(site, "Respuesta de prueba.")
                 if "Otra IA" in job["prompt"] or "ojo crítico" in job["prompt"]:
                     text = ("Está bien explicada. Yo añadiría un ejemplo con **sueldos**: si los precios suben un 5 % "
                             "y tu sueldo solo un 2 %, en realidad eres un 3 % más pobre.")

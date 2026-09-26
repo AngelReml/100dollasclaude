@@ -28,6 +28,9 @@ class FakeOpenWebUI:
         self.config: dict = {}
         self.settings = {"ui": {"theme": "dark", "params": {"temperature": 0.5}}}  # Iván's own choices
         self.calls: list[str] = []
+        # a connection Iván made himself, which must stay
+        self.tool_servers = [{"url": "http://127.0.0.1:9000", "path": "openapi.json", "type": "openapi", "auth_type": "none",
+                              "key": "", "config": {"enable": True}, "info": {"id": "suyo", "name": "La suya"}}]
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
@@ -71,6 +74,10 @@ class FakeOpenWebUI:
         if path == "/api/v1/users/user/settings/update":
             self.settings = body
             return httpx.Response(200, json=body)
+        if path == "/api/v1/configs/tool_servers":
+            if method == "POST":
+                self.tool_servers = body["TOOL_SERVER_CONNECTIONS"]
+            return httpx.Response(200, json={"TOOL_SERVER_CONNECTIONS": self.tool_servers})
         if path in ("/api/v1/retrieval/config/update", "/api/v1/configs/suggestions", "/api/v1/evaluations/config"):
             self.config[path] = body
             return httpx.Response(200, json=body)
@@ -172,3 +179,51 @@ def test_every_conversation_asks_before_using_a_tool_and_ivans_settings_stay():
     run_install(fake)
     assert fake.settings["ui"]["params"] == {"temperature": 0.5, "tool_approval_mode": "ask"}
     assert fake.settings["ui"]["theme"] == "dark"
+
+
+# ------------------------------------------------------------------ PLAN-v5 F9: the connectors
+
+
+def test_every_webllm_model_gets_the_tools_as_they_are_so_webllm_checks_them():
+    """"legacy" function calling would have Open WebUI choose the tool itself, around webllm's rules (acciones.yaml)."""
+    fake = FakeOpenWebUI(models=("webllm.qwen", "webllm.zai", "webllm.automatico"))
+    run_install(fake)
+    assert all(m["params"] == {"function_calling": "native"} for m in fake.models.values())
+
+
+def test_github_is_connected_for_reading_and_proposing_and_other_connections_stay():
+    fake = FakeOpenWebUI()
+    ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
+    assert setup.connect_tools(ow, github_token="github_pat_prueba", say=lambda _m: None) == ["github"]
+    by_id = {c["info"]["id"]: c for c in fake.tool_servers}
+    gh = by_id["github"]
+    assert (gh["url"], gh["type"], gh["auth_type"], gh["key"]) == ("https://api.githubcopilot.com/mcp/", "mcp", "bearer", "github_pat_prueba")
+    assert gh["headers"] == {"X-MCP-Toolsets": "context,repos,issues,pull_requests"}
+    assert "suyo" in by_id  # his own connection is kept
+    # running it again replaces GitHub's, never duplicates it
+    setup.connect_tools(ow, github_token="github_pat_nuevo", say=lambda _m: None)
+    assert [c["info"]["id"] for c in fake.tool_servers].count("github") == 1
+    assert next(c for c in fake.tool_servers if c["info"]["id"] == "github")["key"] == "github_pat_nuevo"
+
+
+def test_the_terminal_is_connected_through_mcpo_or_directly():
+    fake = FakeOpenWebUI()
+    ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
+    setup.connect_tools(ow, terminal_url="http://127.0.0.1:8765/", say=lambda _m: None)
+    t = next(c for c in fake.tool_servers if c["info"]["id"] == "terminal")
+    assert (t["url"], t["path"], t["type"]) == ("http://127.0.0.1:8765", "openapi.json", "openapi")
+    setup.connect_tools(ow, terminal_url="http://127.0.0.1:9100/mcp", say=lambda _m: None)
+    t = next(c for c in fake.tool_servers if c["info"]["id"] == "terminal")
+    assert (t["type"], t["path"]) == ("mcp", "")
+
+
+def test_the_github_token_comes_from_the_environment_and_is_never_printed(monkeypatch, capsys):
+    fake = FakeOpenWebUI()
+    real = setup.OpenWebUI
+    monkeypatch.setattr(setup, "OpenWebUI", lambda url, key: real(url, key, transport=httpx.MockTransport(fake.handler)))
+    monkeypatch.setenv("WEBLLM_GITHUB_TOKEN", "github_pat_secreto")
+    assert setup.main(["--clave", "clave", "--openwebui", "http://ow.test", "--github", "--solo-conectores"]) == 0
+    assert next(c for c in fake.tool_servers if c["info"]["id"] == "github")["key"] == "github_pat_secreto"
+    out = capsys.readouterr().out
+    assert "github_pat_secreto" not in out and "GitHub: conectado" in out
+    assert not any("functions" in c for c in fake.calls)  # "--solo-conectores": webllm itself is not reinstalled
