@@ -100,6 +100,7 @@
 | Pantallas de la app: claro/oscuro × 1280/1920, 87 capturas, 0 problemas de diseño | **Bien** | `docs/capturas/f6/` |
 | Open WebUI: las 4 capturas del botón | **Bien** | `docs/capturas/f6/openwebui/` |
 | El mismo recorrido de Chromium con la extensión anterior (0.7.0) | **Falla en cada caso** (abajo) | Chromium |
+| **Todas las pruebas de webllm juntas** (`python -m pytest -q`, con Chromium y el Open WebUI de verdad): `300 passed` en 19 min | **Bien** | aquí |
 | Una web de verdad que cambia de diseño | Pendiente | tu PC |
 
 ### El registro de un arreglo (simulado)
