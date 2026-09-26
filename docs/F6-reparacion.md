@@ -17,19 +17,20 @@
    2. una IA por API (la que elijas; por defecto z.ai) contesta **solo con números** de esa lista;
       - cualquier otra cosa se rechaza y no se usa: código, selectores, texto, un número que no existe, un botón donde se pedía una caja, o tu propio mensaje donde se pedía la respuesta;
    3. webllm **lo prueba en la página, sin enviar nada**:
-      - ¿hay exactamente una caja visible?
-      - ¿el bloque elegido contiene la respuesta que ya está en la página, y no tu mensaje?
+      - la caja: existe, se ve y se puede escribir en ella;
+      - la respuesta: tiene texto, va después de tu mensaje y no es tu mensaje;
+      - un botón: es un botón de verdad, y nunca uno de publicar, compartir o borrar;
    4. **si pasa, se guarda como arreglo de esa web**, con fecha y quién lo hizo, y el trabajo sigue;
       - si faltaba la caja, **tu pregunta se envía entonces, una sola vez** (antes no se había enviado nada);
       - si faltaba la respuesta, **se vuelve a leer, nunca se vuelve a enviar**;
-      - la respuesta te lo dice: «La web de X había cambiado y webllm no encontraba …: z.ai señaló dónde está, se comprobó en la página sin enviar nada y queda guardado en su Ficha».
+      - la respuesta te lo dice: «La web de X había cambiado y webllm no encontraba su respuesta: z.ai señaló dónde está, se comprobó en la página sin enviar nada y queda guardado (lo puedes deshacer en su Ficha, en webllm)».
 4. **«Enséñame esta web (3 clics)».** En la Ficha de ese chat (y en «Conectores», en las webs que «No funcionan todavía»):
    - webllm te pide tres clics en su ventana: en la caja de texto, en el botón de enviar y en la última respuesta;
    - tus clics no hacen nada en la web, y cada uno se prueba en la página antes de guardarse.
 
 **En la Ficha de cada chat, «Arreglos de esta web»:** cada arreglo con su fecha, qué arregla y quién lo hizo («tú» o «una IA (z.ai)»). **«Deshacer»** en cada uno y «Deshacer todos». Deshacer vale desde la siguiente pregunta.
 
-**En «Conectores», la tarjeta «Webs que cambian»:**
+**En «Conectores», arriba, la tarjeta con «Comprobación diaria» y «Reparar solas con IA»:**
 - **Comprobación diaria.** Una vez al día, cuando no estás preguntando nada, webllm abre cada chat conectado y mira que siga todo en su sitio. **No envía nada.** «Comprobar ahora» la hace en el momento. Si a una web le falta la caja, la repara ahí mismo (sin enviar nada).
 - **«Reparar solas con IA».** Encendida o apagada, y qué IA ayuda. Solo pueden ayudar IAs por API o de tu PC, privadas y nunca un chat web. Apagada, webllm te dice qué pasó y te pide los 3 clics.
 
@@ -137,13 +138,14 @@ Con la extensión 0.8.0, el mismo guion da 16 BIEN y ningún FALLO. La primera l
 
 ## Lo que encontré y arreglé por el camino
 
-Las pruebas y las capturas sacaron seis fallos antes de que llegaran a ti:
+Las pruebas, las capturas y la revisión del código sacaron siete fallos antes de que llegaran a ti:
 1. **Un error de una web se leía como «está saturada».** El diagnóstico de la página era tan largo que se comía el código del error. Ahora el código va primero y el diagnóstico largo queda solo en el registro.
 2. **El observador perdía un mensaje pegado y enviado al instante.** Solo miraba la caja cada segundo y medio. Ahora nota tu mensaje justo al enviarlo, y empieza a escuchar antes de poner la marca «registrando».
-3. **En un chat que abrías tú, cada turno era una conversación distinta.** Ahora todos los turnos de esa pestaña van a la misma.
+3. **En un chat que abrías tú, cada turno era una conversación distinta.** Ahora todos los turnos de esa pestaña van a la misma, también si cierras y abres webllm entre medias.
 4. **En Open WebUI, pulsar el botón tapaba la línea «Respondió Qwen…»** de esa respuesta (la que dice qué se usó de verdad). Ahora solo sale un aviso.
 5. **En el Historial, un turno escrito a mano ponía «Cadena» y «Respondió en 0 s».** Ahora pone «En la web» y el tiempo medido.
 6. **«Enséñame esta web» salía también en webs que se han cambiado de dirección**, donde tres clics no arreglan nada. Ahora solo sale cuando el problema es la página.
+7. **Con webllm cerrado, lo que escribías a mano en la web se perdía**, y el icono de la extensión decía que se guardaría. Ahora espera en Chrome y se guarda al abrir webllm.
 
 ## Lo que no está hecho
 
@@ -164,7 +166,7 @@ Las pruebas y las capturas sacaron seis fallos antes de que llegaran a ti:
    5. **qué deberías ver:** en el Historial de la app y en la nota de tu vault, tus dos mensajes («Escrita por ti en la web de Kimi») y sus respuestas;
    6. vuelve a Open WebUI y pregunta otra cosa en la misma conversación: bajo la respuesta pondrá «Con tu pregunta van también los 2 mensajes que escribiste directamente en la web de Kimi…».
 5. **Webs que no funcionaban:**
-   1. en la app, **Conectores** → las que dicen «No funciona todavía» → **«Conectar»** otra vez;
+   1. en la app, **Conectores** → las que dicen «No funciona todavía» → **«Probar otra vez»**;
    2. si alguna sigue sin funcionar, pulsa **«Enséñame esta web»** y haz los 3 clics que te pide.
    3. Apúntame cuántas funcionan ahora. En su Ficha verás si lo arregló una IA o tú.
-6. **Comprobación diaria:** Conectores → tarjeta «Webs que cambian» → **«Comprobar ahora»**. Deberías ver «N de N bien».
+6. **Comprobación diaria:** Conectores → arriba, «Comprobación diaria» → **«Comprobar ahora»**. Deberías ver «N de N bien».

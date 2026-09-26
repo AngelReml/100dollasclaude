@@ -51,7 +51,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   3. webllm lo prueba en la página, y si vale lo guarda en la Ficha de ese chat, con fecha y **«Deshacer»**;
   4. si nada de eso basta, **«Enséñame esta web»**: tres clics tuyos (caja, enviar, respuesta).
 - **Una pregunta nunca se envía dos veces:** si faltaba la caja, no se había enviado; si faltaba la respuesta, se vuelve a leer.
-- **Comprobación diaria** (Conectores → «Webs que cambian»): webllm abre cada chat conectado y mira que siga bien, sin enviar nada. También con «Comprobar ahora».
+- **Comprobación diaria** (Conectores, arriba): webllm abre cada chat conectado y mira que siga bien, sin enviar nada. También con «Comprobar ahora».
 - **«Parar» pulsa también el botón de parar de la web.**
 - **«Continuar en la web»**, bajo cada respuesta de un chat web (en Open WebUI y en la app):
   - abre esa conversación en tu Chrome;
