@@ -167,6 +167,15 @@ class Bridge:
                 out[p.model[len(MODEL_PREFIX):]] = p.display
         return out
 
+    def site_cap(self, site: str) -> int | None:
+        """A chat site's own daily cap (its provider, else webllm's catalog: sites with few free messages);
+        None = the guard's default."""
+        for p in self.cfg.providers.values():
+            if p.model == MODEL_PREFIX + site and p.daily_cap is not None:
+                return p.daily_cap
+        entry = self.app_api.catalog.get(site)
+        return entry.daily_cap if entry else None
+
     def site_payload(self, site: str) -> dict[str, Any]:
         """What the extension needs about a site; an added one travels with its name and address."""
         for p in self.cfg.providers.values():
@@ -212,6 +221,8 @@ class Bridge:
                             self.waiting.pop(site, None)
                 elif data.get("type") in ("add_progress", "add_ready", "add_done"):
                     self.app_api.on_add_event(data)
+                elif data.get("type") == "add_many_permission":
+                    self.app_api.on_batch_permission(data)
                 elif data.get("type") == "notice":
                     self.log(f"AVISO {data.get('site')}: {data.get('message')}")
         finally:
@@ -307,7 +318,7 @@ class Bridge:
         """One message to a chat site, always through the account guard (one at a time per site,
         spacing, daily cap, pause on account limits). ``site_config`` is for a site being added
         that is not saved yet. On failure: {"ok": False, "status", "error", "message", "detail"}."""
-        provider = ProviderConfig(name=site, model=MODEL_PREFIX + site, kind="browser")
+        provider = ProviderConfig(name=site, model=MODEL_PREFIX + site, kind="browser", daily_cap=self.site_cap(site))
         timeout_s = timeout_s or self.timeout_s
         payload = {"site": site, "site_config": site_config} if site_config else self.site_payload(site)
         async with self.locks.setdefault(site, asyncio.Lock()):  # one message at a time per site

@@ -1,7 +1,8 @@
-import { History, House, Laptop, MessageSquare, Moon, Sun } from "lucide-react";
+import { History, House, Laptop, MessageSquare, Moon, Plug, Sun } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AddAiContext, GuideContext, useRoute } from "./nav";
 import { Bienvenida, GUIDE_DONE_KEY } from "./screens/Bienvenida";
+import { Conectores } from "./screens/Conectores";
 import { Historial } from "./screens/Historial";
 import { Inicio } from "./screens/Inicio";
 import { Preguntar } from "./screens/Preguntar";
@@ -77,6 +78,7 @@ const NAV = [
   { path: "", label: "Inicio", icon: House },
   { path: "preguntar", label: "Preguntar", icon: MessageSquare },
   { path: "historial", label: "Historial", icon: History },
+  { path: "conectores", label: "Conectores", icon: Plug },
 ];
 
 function Logo() {
@@ -145,7 +147,8 @@ function Shell() {
           <main className="min-w-0 flex-1 overflow-y-auto">
             {screen === "preguntar" && <Preguntar />}
             {screen === "historial" && <Historial id={route[1]} />}
-            {screen !== "preguntar" && screen !== "historial" && <Inicio />}
+            {screen === "conectores" && <Conectores />}
+            {screen !== "preguntar" && screen !== "historial" && screen !== "conectores" && <Inicio />}
             <div className="px-5 pb-6 md:hidden">
               <ThemeSwitch />
             </div>

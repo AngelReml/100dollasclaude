@@ -449,6 +449,29 @@ async function handleAddSite(msg) {
   sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "add" });
 }
 
+// A page on another address where you log in (accounts.google.com, login.live.com, …/signin).
+const LOGIN_PAGE = /^(accounts|login|auth|signin|sso|id|account|passport)\.|\/(log-?in|sign-?in|signup|auth|oauth|sso)(\/|$|\?)/i;
+
+// "Conectar varias" (PLAN-v5 F3): ONE page, ONE Chrome permission prompt for every marked site.
+async function handleAddMany(msg) {
+  const sites = (msg.sites || []).filter((s) => s && s.key && parseChatUrl(s.url).ok);
+  if (!sites.length || sites.length !== (msg.sites || []).length) {
+    sendToBridge({ type: "result", id: msg.id, ok: false, error: "bad_url" });
+    return;
+  }
+  const q = new URLSearchParams({ batch: msg.batch_id, sites: JSON.stringify(sites.map((s) => ({ key: s.key, name: s.name, url: s.url }))) });
+  const tab = await chrome.tabs.create({ url: chrome.runtime.getURL("add.html?" + q), active: true });
+  await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {});
+  sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "add_many" });
+}
+
+// One site of "Conectar varias" (permission already granted): the same check as "+ Añadir otra IA",
+// but a site that asks Iván to log in waits for him (wait_login_s) instead of failing at once.
+function handleAddCheck(msg) {
+  sendToBridge({ type: "result", id: msg.id, ok: true, text: "", via: "add_check" });
+  testSite({ add_id: msg.add_id, key: msg.key, name: msg.name, url: parseChatUrl(msg.url).url, waitLoginS: Number(msg.wait_login_s) || 0 });
+}
+
 function addProgress(addId, step, ok, text) {
   sendToBridge({ type: "add_progress", add_id: addId, step, ok, text });
 }
@@ -484,14 +507,56 @@ async function testSite(m) {
     await chrome.tabs.update(tabId, { url: m.url });
     await sleep(800);
     await waitLoaded(tabId, 45000);
+    const origin = new URL(m.url).origin;
+    // A site that sends you to another address to log in (Google, Microsoft…): webllm has no permission
+    // there and must not read that page anyway; it counts as "asks you to log in".
+    // Another address that is not a login page means the chat has moved: webllm has no permission
+    // there, so it says so (with the new address) instead of waiting for a login that is not coming.
+    const look = async () => {
+      const t = await chrome.tabs.get(tabId);
+      let where = null;
+      try { where = new URL(t.url || t.pendingUrl || ""); } catch (e) { where = null; }
+      if (where && where.origin !== origin && /^https?:$/.test(where.protocol)) {
+        return LOGIN_PAGE.test(where.hostname + where.pathname) ? { loginWall: true, url: t.url } : { moved: t.url };
+      }
+      return call(tabId, "state", SITES[m.key]);
+    };
     let st;
     const t0 = Date.now();
     for (;;) {
-      st = await call(tabId, "state", SITES[m.key]);
-      if (st.challenge || st.loginWall || st.input || Date.now() - t0 > 20000) break;
+      if (cancelled.has(m.add_id)) return done(false, { error: "cancelled" });
+      st = await look();
+      if (st.moved || st.challenge || st.loginWall || st.input || Date.now() - t0 > 20000) break;
       await sleep(1000);
     }
     addProgress(m.add_id, "open", true, "Web abierta");
+    if (st.moved) return done(false, { error: "moved", detail: String(st.moved).slice(0, 300) });
+    if ((st.challenge || st.loginWall) && m.waitLoginS > 0) {
+      // Show it to Iván and wait: he logs in (or solves the verification) himself; webllm never types
+      // credentials and never touches a verification.
+      const kind = st.challenge ? "challenge" : "login";
+      humanStart(m.key, kind);
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
+        await chrome.tabs.update(tabId, { active: true });
+        const mins = Math.max(1, Math.round(m.waitLoginS / 60));
+        const minutes = mins === 1 ? "1 minuto" : `${mins} minutos`;
+        addProgress(m.add_id, "login", null, st.challenge
+          ? `Te espera: resuelve la verificación en la ventanita de webllm (hasta ${minutes})`
+          : `Te espera: entra con tu cuenta en la ventanita de webllm (hasta ${minutes})`);
+        notify(m.key, kind, `${m.name} te pide ${st.challenge ? "una verificación" : "entrar con tu cuenta"}. Hazlo tú en la ventana de webllm; te espero ${minutes}.`);
+        const t1 = Date.now();
+        while ((st.challenge || st.loginWall || !st.input) && Date.now() - t1 < m.waitLoginS * 1000) {
+          await sleep(2000);
+          if (cancelled.has(m.add_id)) return done(false, { error: "cancelled" });
+          st = await look().catch(() => ({ loginWall: true }));
+        }
+      } finally {
+        humanEnd(m.key);
+      }
+      if (!st.challenge && !st.loginWall && st.input) addProgress(m.add_id, "login", true, "Has entrado");
+    }
     if (st.challenge || st.loginWall) {
       const tab = await chrome.tabs.get(tabId);
       await chrome.windows.update(tab.windowId, { focused: true, state: "normal" });
@@ -509,6 +574,7 @@ async function testSite(m) {
     done(false, { error: code, detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
   } finally {
     jobFinished(m.key);
+    cancelled.delete(m.add_id);
   }
 }
 
@@ -517,6 +583,9 @@ chrome.runtime.onMessage.addListener((m) => {
   if (m.type === "add_test") testSite(m);
   else if (m.type === "add_denied") sendToBridge({ type: "add_done", add_id: m.add_id, ok: false, error: "permission_denied" });
   else if (m.type === "add_cancel") sendToBridge({ type: "add_done", add_id: m.add_id, ok: false, error: "cancelled" });
+});
+chrome.runtime.onMessage.addListener((m) => {
+  if (m && m.type === "add_many_permission" && m.batch_id) sendToBridge({ type: "add_many_permission", batch_id: m.batch_id, ok: !!m.ok });
 });
 
 // "Conectar" in the app: bring the chat's tab forward so you can log in there.
@@ -537,6 +606,8 @@ function onMessage(msg) {
   if (msg.type === "cancel") { cancelled.add(msg.id); return; }
   ensureSite(msg);
   if (msg.type === "add_site") handleAddSite(msg);
+  else if (msg.type === "add_many") handleAddMany(msg);
+  else if (msg.type === "add_check") handleAddCheck(msg);
   else if (msg.type === "job") handleJob(msg);
   else if (msg.type === "diagnose") handleDiagnose(msg);
   else if (msg.type === "show") handleShow(msg);

@@ -354,6 +354,8 @@ Cada fase tiene:
 
 ### F3 — Todas las IAs con chat web, precargadas
 
+> **Estado (26-sep-2026):** hecho y probado en la nube, incluida la extensión de verdad con 5 webs de prueba (13 de 13). La pantalla es «Conectores» en la app. Cambio a propósito: Google AI Studio también es «no privada» (su propia nota lo dice). Falta la salida, que solo puede venir de tu PC: la tabla del catálogo con tu resultado («Copiar el resumen») y que cada conectada responda desde Open WebUI. Detalle: `docs/F3-catalogo.md`.
+
 - **Puerta:** F2.
 - **Qué:**
   - `catalog.yaml` en el proyecto (en git) con las 27 IAs del catálogo (sección 6). Para cada una: dirección, para qué sirve, familia de modelo, si pide cuenta, si es privada, límite diario propio y fecha de la última comprobación.

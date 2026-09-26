@@ -133,7 +133,8 @@ def test_local_models_show_in_status_and_answer(tmp_path, mock_server):
             assert local == [{
                 "name": "lmstudio:qwen2.5-1.5b-instruct", "label": "LM Studio · qwen2.5-1.5b-instruct", "kind": "local",
                 "state": "lista", "detail": "", "until": None, "url": None, "today": 0, "cap": None,
-                "server": "lmstudio", "server_name": "LM Studio", "custom": False, "icon": False, "waiting": None}]
+                "server": "lmstudio", "server_name": "LM Studio", "custom": False, "icon": False, "waiting": None,
+                "catalog": False}]
             assert body["local_servers"] == [{"key": "lmstudio", "name": "LM Studio", "up": True, "installed": True,
                                               "models": 1}]
             status, events = await a.ask("hola", ["lmstudio:qwen2.5-1.5b-instruct", "zai"])

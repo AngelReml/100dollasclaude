@@ -158,10 +158,11 @@ class Guard:
                 f"{provider.name}: en pausa de protección hasta el {self._fmt(until)} "
                 f"({st.get('cooldown_reason', '')}). No se envía nada.",
             )
-        if st.get("day") == self._today() and st.get("count_today", 0) >= self.cfg.daily_cap:
+        cap = provider.daily_cap if provider.daily_cap is not None else self.cfg.daily_cap  # a site's own (catalog)
+        if st.get("day") == self._today() and st.get("count_today", 0) >= cap:
             raise GuardBlocked(
                 "daily_cap",
-                f"{provider.name}: tope diario alcanzado ({self.cfg.daily_cap} envíos). Vuelve mañana.",
+                f"{provider.name}: tope diario alcanzado ({cap} envíos). Vuelve mañana.",
             )
 
     async def acquire(self, provider: ProviderConfig, notify: Callable[[str], None] = print) -> Permit:

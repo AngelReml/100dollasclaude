@@ -12,6 +12,9 @@
     POST /api/anadir       add a chat site by its address (the extension asks permission and tests it)
     GET  /api/anadir/<id>  how that test is going, step by step
     POST /api/quitar       remove a site added that way; GET /api/icono/<key> its icon
+    GET  /api/catalogo     every web chat webllm knows (catalog.yaml) with what Iván did with it (PLAN-v5 F3)
+    POST /api/conectar-varias   connect several: one Chrome permission, then one by one (log in, "pong")
+    GET  /api/conectar-varias/<id>, POST /api/conectar-varias/<id>/parar
 
 Only answers on this PC (the bridge's local-only middleware) and only with the bridge token,
 which the app receives inside its HTML. Answers are untrusted text: the app renders them as
@@ -34,6 +37,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from . import catalog as catalog_mod
 from . import flows
 from .broadcaster import GatewayError, verify_run
 from .budget import budget_for
@@ -90,6 +94,10 @@ class AppApi:
         self.adding: dict[str, dict[str, Any]] = {}  # add_id -> progress of "+ Añadir otra IA"
         self._tasks: set[asyncio.Task] = set()  # test messages in flight (kept so they are not collected)
         self.asking: dict[str, asyncio.Event] = {}  # run_id -> its "parar" (questions from this app in progress)
+        self.catalog = catalog_mod.load()  # the web chats webllm knows (catalog.yaml, in git)
+        self.batches: dict[str, dict[str, Any]] = {}  # batch_id -> "Conectar varias" in progress / done
+        self.login_wait_s = 180.0  # how long a site waits for Iván to log in during "Conectar varias"
+        self.ack_wait_s = 15.0  # an extension that never acknowledges a message is too old for it
         self._last_omni_start = -1e9
 
     @property
@@ -123,6 +131,10 @@ class AppApi:
         app.router.add_get("/api/anadir/{add_id}", self.anadir_estado)
         app.router.add_post("/api/quitar", self.quitar)
         app.router.add_get("/api/icono/{key}", self.icono)
+        app.router.add_get("/api/catalogo", self.catalogo)
+        app.router.add_post("/api/conectar-varias", self.conectar_varias)
+        app.router.add_get("/api/conectar-varias/{batch_id}", self.conectar_varias_estado)
+        app.router.add_post("/api/conectar-varias/{batch_id}/parar", self.conectar_varias_parar)
 
     # ---------------------------------------------------------------- helpers
 
@@ -155,7 +167,8 @@ class AppApi:
         if site_of(p) or p.guarded:
             guard, key = self._guard_for(p)
             st = guard.status().get(key, {})
-            return (st.get("count_today", 0) if st.get("day") == time.strftime("%Y-%m-%d") else 0), cfg.guard.daily_cap
+            cap = p.daily_cap if p.daily_cap is not None else cfg.guard.daily_cap
+            return (st.get("count_today", 0) if st.get("day") == time.strftime("%Y-%m-%d") else 0), cap
         budget = budget_for(cfg)
         return budget.used(p.name), budget.cap(p)
 
@@ -231,7 +244,7 @@ class AppApi:
             ais.append({
                 "name": p.name, "label": p.display, "kind": "chat" if site else "local" if server else "api",
                 "state": state, "detail": detail, "until": until,
-                "url": p.url or SITE_URLS.get(site or ""), "today": today, "cap": cap,
+                "url": p.url or SITE_URLS.get(site or ""), "today": today, "cap": cap, "catalog": p.catalog,
                 "server": server.server.key if server else None,
                 "server_name": server.server.name if server else None,
                 "custom": p.custom,
@@ -577,18 +590,21 @@ class AppApi:
         for key, known in SITE_URLS.items():  # the built-in chats, configured or not
             if urlsplit(known).hostname == host:
                 return self._fail(409, f"{names.get(key, key)} ya viene con webllm: no hace falta añadirla.", "duplicate")
+        listed = self.catalog.by_host(host)  # an address from webllm's list: it is connected as that one
         for p in self.cfg.providers.values():
             if p.url and (urlsplit(p.url).hostname or "").lower() == host:
                 return self._fail(409, f"Ya tienes esta IA: {p.display}.", "duplicate")
         taken = {site_of(p) or p.name for p in self.cfg.providers.values()} | set(self.bridge.site_names())
-        key = site_key(host, taken)
+        key, name = (listed.key, listed.name) if listed else (site_key(host, taken), "")
+        url = listed.url if listed else url
         if is_blocked_model(self.cfg, f"browser/{key}"):
             return self._fail(400, ADD_ERRORS["blocked"], "blocked")
         if not await self.bridge._ensure_extension():
             return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm y vuelve a probar.", "sin_chrome")
         add_id = secrets.token_hex(6)
-        name = site_name(key)
+        name = name or site_name(key)
         self.adding[add_id] = {"add_id": add_id, "key": key, "name": name, "url": url, "status": "running",
+                               "catalog": listed is not None,
                                "steps": [{"step": "permission", "ok": None,
                                           "text": "Esperando tu permiso en Chrome…"}],
                                "error": "", "message": "", "detail": ""}
@@ -616,6 +632,8 @@ class AppApi:
             "site_busy": f"{st['name']} está saturada ahora mismo. Prueba en un rato.",
             "rate_limited": f"{st['name']} dice que has llegado a su límite de mensajes.",
             "old_extension": "La extensión de Chrome es antigua: en chrome://extensions pulsa la flecha ↻ de «webllm puente» y vuelve a probar.",
+            "moved": (f"{st['name']} te lleva a otra dirección ({detail[:120]}), y webllm solo tiene permiso para la de "
+                      "su lista. Si quieres usarla ya, añádela con «+ Añadir otra IA» pegando esa dirección."),
         }
         st.update(status="failed", error=code, detail=detail[:6000],
                   message=messages.get(code) or fallback or "Algo falló al probar la web.")
@@ -656,10 +674,11 @@ class AppApi:
         if not re.search(r"pong", text, re.IGNORECASE):
             self._add_failed(st["add_id"], "unexpected_answer", text[:300])
             return
-        save_custom_ai(self.cfg.paths, st["key"], st["name"], st["url"])
+        from_catalog = bool(st.get("catalog"))
+        save_custom_ai(self.cfg.paths, st["key"], st["name"], st["url"], catalog=from_catalog)
         self._save_icon(st["key"], icon)
-        self.bridge.cfg = dataclasses.replace(
-            self.cfg, providers={**self.cfg.providers, st["key"]: custom_provider(st["key"], st["name"], st["url"])})
+        self.bridge.cfg = dataclasses.replace(self.cfg, providers={
+            **self.cfg.providers, st["key"]: custom_provider(st["key"], st["name"], st["url"], catalog=from_catalog)})
         st.update(status="ok", via=str(res.get("via") or ""),
                   message=f"¡Listo! {st['name']} ya está entre tus IAs. Puedes preguntarle desde Preguntar.")
 
@@ -696,6 +715,9 @@ class AppApi:
         if p is None or not p.custom:
             return self._fail(400, "Solo se pueden quitar las IAs que añadiste tú.", "not_custom")
         remove_custom_ai(self.cfg.paths, name)
+        if p.catalog:
+            catalog_mod.save_state(self.cfg.paths, name, "sin_conectar", reason="quitada",
+                                   message="La quitaste de tus IAs. Puedes volver a conectarla cuando quieras.")
         icon = self._icon_path(name)
         if icon:
             icon.unlink(missing_ok=True)
@@ -715,6 +737,198 @@ class AppApi:
         return web.FileResponse(f, headers={"Content-Type": types.get(f.suffix, f"image/{f.suffix[1:]}"),
                                             "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff",
                                             "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
+
+    # ------------------------------------------------------------------ catalog (PLAN-v5 F3)
+
+    def _catalog_view(self) -> list[dict[str, Any]]:
+        """Each web chat of the catalog with what Iván did with it. "conectada" is what really holds now:
+        the built-in ones configured, a catalog one in his AIs, or the same address added by hand."""
+        states = catalog_mod.load_state(self.cfg.paths)
+        enabled = [p for p in self.cfg.providers.values() if p.enabled]
+        by_site = {p.model.removeprefix("browser/"): p.name for p in enabled if p.model.startswith("browser/")}
+        by_host = {(urlsplit(p.url).hostname or ""): p.name for p in enabled if p.url}
+        out = []
+        for ai in self.catalog.ais:
+            row = ai.public()
+            row["daily_cap"] = ai.daily_cap if ai.daily_cap is not None else self.cfg.guard.daily_cap
+            # a built-in chat is configured by its site (z.ai's chat is "zai-chat"; "zai" is the API)
+            provider = by_site.get(ai.key) if ai.builtin else by_host.get(urlsplit(ai.url).hostname or "")
+            st = states.get(ai.key, {})
+            state = "conectada" if provider else st.get("state", "sin_conectar")
+            if state == "conectada" and not provider:  # its entry in custom_ais.json was removed by hand
+                state = "sin_conectar"
+            row.update(state=state, provider=provider, when=st.get("when", ""),
+                       reason="" if provider else st.get("reason", ""),
+                       message="" if provider else st.get("message", ""),
+                       diagnosis_saved=bool(st.get("detail")) and not provider)
+            out.append(row)
+        return out
+
+    async def catalogo(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        running = next((b for b in self.batches.values() if b["status"] in ("permission", "running")), None)
+        return web.json_response({"checked": self.catalog.checked, "ais": self._catalog_view(),
+                                  "batch": self._batch_view(running) if running else None})
+
+    def _batch_view(self, b: dict[str, Any]) -> dict[str, Any]:
+        results = []
+        for key in b["keys"]:
+            r = dict(b["results"][key])
+            st = self.adding.get(r.get("add_id") or "")
+            if st is not None:
+                r["steps"] = st["steps"]
+            results.append(r)
+        return {k: v for k, v in b.items() if k not in ("results", "stop", "permission")} | {
+            "results": results, "done": sum(r["status"] not in ("pending", "running") for r in results),
+            "connected": sum(r["status"] == "ok" for r in results)}
+
+    async def conectar_varias(self, request: web.Request) -> web.Response:
+        """Connect several catalog chats: Chrome asks permission ONCE for all of them (Iván's click), then
+        the webllm window opens them one by one; one that asks to log in is shown to Iván and waits up to
+        3 minutes (he types his password himself); each one gets the "pong" test through the guard."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        try:
+            body = await request.json()
+            keys = list(dict.fromkeys(str(k) for k in body.get("keys") or []))
+            skip = list(dict.fromkeys(str(k) for k in body.get("skip") or []))
+        except (ValueError, TypeError, AttributeError):
+            return self._fail(400, "La petición no es válida.", "bad_request")
+        view = {r["key"]: r for r in self._catalog_view()}
+        bad = [k for k in keys + skip if k not in view or view[k]["builtin"] or view[k]["state"] == "conectada"]
+        if bad:
+            return self._fail(400, f"Estas no se pueden conectar desde aquí: {', '.join(bad)}.", "bad_keys")
+        if not keys:
+            return self._fail(400, "Marca al menos una IA.", "empty")
+        if any(b["status"] in ("permission", "running") for b in self.batches.values()):
+            return self._fail(409, "Ya hay una conexión en marcha: espera a que termine o párala.", "busy")
+        if not await self.bridge._ensure_extension():
+            return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm y vuelve a probar.", "sin_chrome")
+        for k in skip:
+            catalog_mod.save_state(self.cfg.paths, k, "no_la_quiero", reason="desmarcada",
+                                   message="La desmarcaste en «Conectar varias». Puedes conectarla cuando quieras.")
+        batch_id = secrets.token_hex(6)
+        b: dict[str, Any] = {
+            "batch_id": batch_id, "status": "permission", "keys": keys, "current": None, "error": "",
+            "message": "Chrome te pide permiso en la pestaña que se ha abierto: pulsa «Permitir y conectar».",
+            "results": {k: {"key": k, "name": view[k]["name"], "status": "pending", "error": "", "message": ""}
+                        for k in keys}}
+        self.batches[batch_id] = b
+        b["permission"] = asyncio.get_running_loop().create_future()
+        res = await self.bridge._send_to_extension({"type": "add_many", "batch_id": batch_id, "sites": [
+            {"key": k, "name": view[k]["name"], "url": view[k]["url"]} for k in keys]}, self.ack_wait_s)
+        if not res.get("ok"):
+            old = res.get("error") == "timeout"
+            b.update(status="failed", error="old_extension" if old else str(res.get("error") or "extension_error"),
+                     message=("La extensión de Chrome es antigua: en chrome://extensions pulsa la flecha ↻ de "
+                              "«webllm puente» y vuelve a probar.") if old else "Chrome no pudo abrir la página del permiso.")
+            b.pop("permission")
+            return web.json_response(self._batch_view(b))
+        task = asyncio.create_task(self._run_batch(b))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return web.json_response(self._batch_view(b))
+
+    def on_batch_permission(self, data: dict[str, Any]) -> None:
+        b = self.batches.get(str(data.get("batch_id")))
+        fut = b.get("permission") if b else None
+        if fut is not None and not fut.done():
+            fut.set_result(bool(data.get("ok")))
+
+    async def _run_batch(self, b: dict[str, Any]) -> None:
+        try:
+            granted = await asyncio.wait_for(b["permission"], 600)
+        except asyncio.TimeoutError:
+            granted = False
+        finally:
+            b.pop("permission", None)
+        if not granted:
+            for r in b["results"].values():
+                r.update(status="skipped", message="No se probó: no hubo permiso de Chrome.")
+            b.update(status="failed", error="permission_denied",
+                     message="No diste permiso en Chrome, así que no se ha conectado ninguna. Puedes volver a intentarlo.")
+            return
+        b.update(status="running", message="")
+        for key in b["keys"]:
+            r = b["results"][key]
+            if b.get("stop"):
+                r.update(status="skipped", message="No se probó: paraste «Conectar varias».")
+                continue
+            entry = self.catalog.get(key)
+            add_id = secrets.token_hex(6)
+            st = {"add_id": add_id, "key": key, "name": entry.name, "url": entry.url, "status": "running",
+                  "catalog": True, "steps": [{"step": "open", "ok": None, "text": "Abriendo la web…"}],
+                  "error": "", "message": "", "detail": ""}
+            self.adding[add_id] = st
+            b["current"] = key
+            r.update(status="running", add_id=add_id)
+            res = await self.bridge._send_to_extension({"type": "add_check", "add_id": add_id, "key": key,
+                                                        "name": entry.name, "url": entry.url,
+                                                        "wait_login_s": self.login_wait_s}, self.ack_wait_s)
+            if not res.get("ok"):
+                self._add_failed(add_id, "old_extension" if res.get("error") == "timeout"
+                                 else str(res.get("error") or "extension_error"), str(res.get("detail") or ""))
+            limit = time.monotonic() + self.login_wait_s + 300  # log in + the "pong" test (2 min) + margin
+            while st["status"] == "running" and time.monotonic() < limit:
+                await asyncio.sleep(0.25)
+            if st["status"] == "running":
+                self._add_failed(add_id, "timeout")
+            r.update(self._record_connect(entry, st))
+        b["current"] = None
+        n = sum(r["status"] == "ok" for r in b["results"].values())
+        b.update(status="done", message=(
+            f"Listo: {n} de {len(b['keys'])} conectadas. Ya salen en Open WebUI; para que allí reciban archivos y "
+            "los interruptores, vuelve a hacer doble clic en herramientas\\poner-en-openwebui.cmd."
+            if n else f"No se conectó ninguna de las {len(b['keys'])}. En cada una tienes el motivo."))
+
+    def _record_connect(self, entry: "catalog_mod.CatalogAI", st: dict[str, Any]) -> dict[str, Any]:
+        """What one connection attempt leaves in the catalog state, and the line Iván reads."""
+        if st["status"] == "ok":
+            catalog_mod.save_state(self.cfg.paths, entry.key, "conectada")
+            return {"status": "ok", "error": "", "message": "Conectada: contestó a la prueba."}
+        code = st["error"]
+        if code in ("login_required", "challenge"):
+            what = "entrar con tu cuenta" if code == "login_required" else "una verificación"
+            mins = max(1, round(self.login_wait_s / 60))
+            message = (f"Pedía {what} y no se hizo en {mins} minuto{'' if mins == 1 else 's'}. Queda sin conectar: "
+                       "pulsa «Conectar» cuando quieras.")
+            catalog_mod.save_state(self.cfg.paths, entry.key, "sin_conectar", reason=code, message=message)
+            return {"status": "sin_conectar", "error": code, "message": message}
+        if code in ("cancelled", "permission_denied", "old_extension"):
+            catalog_mod.save_state(self.cfg.paths, entry.key, "sin_conectar", reason=code, message=st["message"])
+            return {"status": "sin_conectar", "error": code, "message": st["message"]}
+        catalog_mod.save_state(self.cfg.paths, entry.key, "no_funciona", reason=code, message=st["message"],
+                               detail=st.get("detail", ""))  # the page's diagnosis, for self-repair (F6)
+        return {"status": "no_funciona", "error": code, "message": st["message"]}
+
+    async def conectar_varias_estado(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        b = self.batches.get(request.match_info["batch_id"])
+        if b is None:
+            return self._fail(404, "No encuentro esa conexión.", "not_found")
+        return web.json_response(self._batch_view(b))
+
+    async def conectar_varias_parar(self, request: web.Request) -> web.Response:
+        """Stop "Conectar varias": the one being tried now is let go, the rest are not tried."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        b = self.batches.get(request.match_info["batch_id"])
+        if b is None:
+            return self._fail(404, "No encuentro esa conexión.", "not_found")
+        b["stop"] = True
+        fut = b.get("permission")
+        if fut is not None and not fut.done():
+            fut.set_result(False)
+        current = b["results"].get(b.get("current") or "", {})
+        st = self.adding.get(current.get("add_id") or "")
+        if st is not None and st["status"] == "running":
+            if self.bridge.ws is not None and not self.bridge.ws.closed:
+                await self.bridge.ws.send_json({"type": "cancel", "id": st["add_id"]})  # the page check
+            self.bridge.cancel(st["key"])  # or its "pong" test, if it had got that far
+            self._add_failed(st["add_id"], "cancelled")
+        return web.json_response(self._batch_view(b))
 
     async def encender_local(self, request: web.Request) -> web.Response:
         if not self._authorized(request):

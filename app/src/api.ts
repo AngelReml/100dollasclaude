@@ -20,8 +20,10 @@ export interface Ai {
   /** Local AIs only: the program on this PC that runs it. */
   server: string | null;
   server_name: string | null;
-  /** Added by Iván with "+ Añadir otra IA" (can be removed). */
+  /** Added by Iván with "+ Añadir otra IA" or connected from webllm's list (can be removed). */
   custom: boolean;
+  /** Connected from webllm's list of chats (Conectores). */
+  catalog: boolean;
   /** The site's own icon is available at iconUrl(name). */
   icon: boolean;
   /** Its chat is waiting for Iván right now (a verification, a pop-up, or the webllm window is
@@ -45,6 +47,64 @@ export interface AddState {
   error: string;
   message: string;
   detail: string;
+}
+
+/** A web chat of webllm's catalog (PLAN-v5 F3) and what Iván did with it. */
+export type CatalogState = "sin_conectar" | "conectada" | "no_funciona" | "no_la_quiero";
+
+export interface CatalogAi {
+  key: string;
+  name: string;
+  by: string;
+  url: string;
+  /** tuyas = already used; 1 = plain chat, works from Spain; 2 = "puede fallar" (may_fail says why). */
+  group: "tuyas" | "1" | "2";
+  purpose: string;
+  family: string;
+  tags: string[];
+  account: "si" | "no" | "opcional" | "desconocido";
+  /** false = what you write can be published or used by the site. */
+  private: boolean;
+  /** Qwen, DeepSeek, z.ai, Meta: configured in webllm; "Conectar" for them is the session check. */
+  builtin: boolean;
+  daily_cap: number;
+  note: string;
+  may_fail: string;
+  state: CatalogState;
+  /** Its name among your AIs when it is connected. */
+  provider: string | null;
+  when: string;
+  reason: string;
+  message: string;
+  diagnosis_saved: boolean;
+}
+
+export interface BatchResult {
+  key: string;
+  name: string;
+  status: "pending" | "running" | "ok" | "sin_conectar" | "no_funciona" | "skipped";
+  error: string;
+  message: string;
+  add_id?: string;
+  steps?: AddStep[];
+}
+
+export interface Batch {
+  batch_id: string;
+  status: "permission" | "running" | "done" | "failed";
+  keys: string[];
+  current: string | null;
+  error: string;
+  message: string;
+  results: BatchResult[];
+  done: number;
+  connected: number;
+}
+
+export interface Catalogo {
+  checked: string;
+  ais: CatalogAi[];
+  batch: Batch | null;
 }
 
 export interface LocalServer {
@@ -176,6 +236,11 @@ export const api = {
   anadir: (url: string) => post<AddState>("/api/anadir", { url }),
   anadirEstado: (id: string) => call<AddState>(`/api/anadir/${encodeURIComponent(id)}`),
   quitar: (ia: string) => post<{ ok: boolean }>("/api/quitar", { ia }),
+  catalogo: () => call<Catalogo>("/api/catalogo"),
+  /** "Conectar varias": the marked ones are tried; `skip` = unmarked (they become "No la quiero"). */
+  conectarVarias: (keys: string[], skip: string[] = []) => post<Batch>("/api/conectar-varias", { keys, skip }),
+  conectarVariasEstado: (id: string) => call<Batch>(`/api/conectar-varias/${encodeURIComponent(id)}`),
+  conectarVariasParar: (id: string) => post<Batch>(`/api/conectar-varias/${encodeURIComponent(id)}/parar`, {}),
   iconUrl: (key: string) => `/api/icono/${encodeURIComponent(key)}?token=${encodeURIComponent(TOKEN)}`,
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),

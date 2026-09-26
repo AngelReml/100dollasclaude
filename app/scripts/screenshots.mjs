@@ -59,7 +59,7 @@ async function addAnAi(page, tag) {
   await dialog.getByText("no se puede añadir").waitFor();
   await shot(page, `${tag}-11-anadir-bloqueada`);
 
-  await address.fill("https://chat.mistral.ai");
+  await address.fill("https://openrouter.ai/chat"); // not in the catalog (the plan leaves it to "Añadir otra IA")
   await dialog.getByRole("button", { name: "Probar y añadir" }).click();
   await dialog.getByText("Permitir y probar").waitFor();
   await shot(page, `${tag}-12-anadir-permiso`);
@@ -69,7 +69,7 @@ async function addAnAi(page, tag) {
   await shot(page, `${tag}-14-anadir-lista`);
   await dialog.getByRole("button", { name: "Hecho" }).click();
 
-  const card = page.locator('[data-card="mistral"]');
+  const card = page.locator('[data-card="openrouter"]');
   await card.getByText("Añadida por ti").waitFor();
   await card.scrollIntoViewIfNeeded();
   await shot(page, `${tag}-15-inicio-anadida`);
@@ -82,7 +82,7 @@ async function addAnAi(page, tag) {
   await dialog.getByRole("button", { name: "Cerrar", exact: true }).last().click();
 
   await card.getByRole("button", { name: "Quitar" }).click();
-  await card.getByText("¿Quitar Mistral de webllm?").waitFor();
+  await card.getByText("¿Quitar Openrouter de webllm?").waitFor();
   await shot(page, `${tag}-17-quitar-confirmar`);
   await card.getByRole("button", { name: "Sí, quitar" }).click();
   await card.waitFor({ state: "detached" });
@@ -121,6 +121,33 @@ async function stopAll(page, tag) {
   await page.getByRole("link").filter({ hasText: "Resume este libro" }).first().click();
   await page.getByText(/Lo has parado tú/).first().waitFor({ timeout: 10000 });
   await shot(page, `${tag}-23-historial-parado`);
+}
+
+// "Conectores" (PLAN-v5 F3): the catalog, "Conectar varias" with four of them (one asks to log in and Iván
+// "logs in"; one has no text box; one sends you to another address), and the lists after.
+async function conectores(page, tag) {
+  const api = (path, body) => fetch(`http://127.0.0.1:${port}${path}`, { method: body ? "POST" : "GET",
+    headers: { Authorization: "Bearer demo-token", "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  for (const ia of ["kimi", "grok"]) await api("/api/quitar", { ia }); // a previous run connected them
+  await page.goto(base + "#/conectores");
+  const start = page.getByRole("button", { name: "Conectar varias" });
+  await start.waitFor();
+  await page.locator('[data-catalog="kimi"]').waitFor();
+  await shot(page, `${tag}-24-conectores`);
+  await start.click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Ninguna" }).waitFor();
+  await shot(page, `${tag}-25-conectar-varias`);
+  await dialog.getByRole("button", { name: "Ninguna" }).click();
+  for (const name of [/^Kimi/, /^Grok/, /^Felo/, /^Duck\.ai/]) await dialog.getByLabel(name).check();
+  await dialog.getByRole("button", { name: "Conectar 4" }).click();
+  await dialog.getByText(/Te espera: entra con tu cuenta/).waitFor({ timeout: 30000 });
+  await shot(page, `${tag}-26-conectando`);
+  await dialog.getByText(/^Listo: \d+ de 4 conectadas|^No se conectó/).waitFor({ timeout: 60000 }); // the X is "Cerrar" too
+  await shot(page, `${tag}-27-resultado`);
+  await dialog.getByRole("button", { name: "Cerrar" }).last().click();
+  await page.locator('[data-catalog="felo"]').scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-28-no-funcionan`);
 }
 
 // An API AI out of free quota (OpenRouter's 429, F0): it says so, shows what the service answered
@@ -213,6 +240,7 @@ async function run(theme, width, full) {
     await waitingForYou(page, tag);
     await apiLimit(page, tag);
     await stopAll(page, tag);
+    await conectores(page, tag);
   }
   await browser.close();
 }

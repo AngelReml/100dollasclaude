@@ -33,7 +33,9 @@ export function checks() {
   return { say, failed: () => failed };
 }
 
-export async function startWorld({ port = Number(process.env.WEBLLM_TEST_PORT ?? 20197), limitS = 30 } = {}) {
+/** `catalog(url)`: the web chats of a test catalog (PLAN-v5 F3), given `url(host, path)` of the fake site;
+ *  `loginWaitS`: how long a site of "Conectar varias" waits for the login. */
+export async function startWorld({ port = Number(process.env.WEBLLM_TEST_PORT ?? 20197), limitS = 30, catalog = null, loginWaitS = null } = {}) {
   const tmp = mkdtempSync(join(tmpdir(), "webllm-ext-"));
   const api = `http://127.0.0.1:${port}`;
   const world = { tmp, api, log: "", bridge: null, ctx: null, site: null };
@@ -89,8 +91,15 @@ export async function startWorld({ port = Number(process.env.WEBLLM_TEST_PORT ??
 
     // 2) The real bridge with the app API (no fake extension).
     if (await fetch(`${api}/health`).then(() => true, () => false)) throw new Error(`el puerto ${port} ya está ocupado`);
+    const extra = [];
+    if (catalog) {
+      // JSON is YAML too: the test catalog, with the fake site's addresses (and port)
+      writeFileSync(join(tmp, "catalog.yaml"), JSON.stringify({ checked: "2026-09-26", ais: catalog(world.url) }));
+      extra.push("--catalogo", join(tmp, "catalog.yaml"));
+    }
+    if (loginWaitS !== null) extra.push("--espera-login", String(loginWaitS));
     world.bridge = spawn(python, [join(root, "scripts", "app_demo.py"), "--sin-chrome", "--port", String(port),
-      "--data", join(tmp, "data"), "--limite", String(limitS)], { stdio: ["ignore", "pipe", "pipe"] });
+      "--data", join(tmp, "data"), "--limite", String(limitS), ...extra], { stdio: ["ignore", "pipe", "pipe"] });
     world.bridge.stdout.on("data", (d) => (world.log += d));
     world.bridge.stderr.on("data", (d) => (world.log += d));
     for (let i = 0; i < 60 && !(await fetch(`${api}/health`).then((r) => r.ok, () => false)); i++) await sleep(250);

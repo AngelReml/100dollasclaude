@@ -125,7 +125,9 @@ def card(p: ProviderConfig, cap: int | None) -> str:
     """One line about an AI for the face (its description under the name): what it costs, how it goes."""
     if p.gateway == "bridge":
         return (f"Chat de tu Chrome: gasta mensajes de tu cuenta (webllm la protege: como mucho {cap} al día). "
-                "Va despacio; puede pedirte una verificación.")
+                "Va despacio; puede pedirte una verificación."
+                + ("" if p.private else " No privada: lo que escribes puede publicarse o usarse; webllm nunca "
+                   "la elige por su cuenta."))
     if p.gateway == "local":
         return "En tu PC: gratis y privada; va a la velocidad de tu ordenador."
     return (f"Por API: gratis dentro del límite del servicio (y como mucho {cap} preguntas al día). "
@@ -222,7 +224,8 @@ class Gateway:
             today, cap = self.bridge.app_api.usage(cfg, p)  # the same numbers the app shows
             data.append({
                 "id": p.name, "object": "model", "owned_by": "webllm",
-                "name": f"{p.display.removesuffix(' (chat)')} ({KIND_LABEL[p.gateway]})",
+                "name": f"{p.display.removesuffix(' (chat)')} ({KIND_LABEL[p.gateway]}"
+                        + ("" if p.private else ", no privada") + ")",  # its name warns (PLAN-v5 F3)
                 "webllm": {"kind": {"bridge": "chat", "omniroute": "api", "local": "local"}[p.gateway], "label": p.display,
                            "card": card(p, cap), "daily_cap": cap, "used_today": today}})
         return web.json_response({"object": "list", "data": data})

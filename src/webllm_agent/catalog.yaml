@@ -1,0 +1,91 @@
+# The web chats webllm knows (PLAN-v5 F3; the list is PLAN-v5 section 6). In git: what Iván did with each
+# one (connected, not working yet and why, not wanted) lives in data/state/catalog_state.json.
+# Addresses and notes were checked with a search engine on 2026-09-24/25. Whether each site works with
+# webllm is only known on Iván's PC (from the cloud no real chat site can be opened).
+#
+# key       site key (the tab, the guard, the provider name); the built-in ones match extension/sites.js
+# group     tuyas (already used) | 1 (plain chat, works from Spain) | 2 (preloaded as "puede fallar")
+# account   si | no | opcional | desconocido (known once connected)
+# private   false = what you write can be published or used by the site (never used by Automático or
+#           the Committee; only when Iván picks it, and its name says so)
+# daily_cap lower daily message cap than the guard's default (sites with few free messages)
+checked: "2026-09-25"
+ais:
+  # --- the ones Iván already uses (their selectors are in extension/sites.js) ---
+  - {key: qwen, name: Qwen, by: Alibaba, url: "https://chat.qwen.ai/", group: tuyas, builtin: true,
+     purpose: "general, código", family: Qwen, tags: [general, codigo], account: si, private: true}
+  - {key: deepseek, name: DeepSeek, by: DeepSeek, url: "https://chat.deepseek.com/", group: tuyas, builtin: true,
+     purpose: "razonar, código", family: DeepSeek, tags: [razonar, codigo], account: si, private: true}
+  - {key: zai, name: z.ai, by: Zhipu, url: "https://chat.z.ai/", group: tuyas, builtin: true,
+     purpose: "general, código", family: GLM, tags: [general, codigo], account: si, private: true}
+  - {key: meta, name: Meta AI, by: Meta, url: "https://www.meta.ai/", group: tuyas, builtin: true,
+     purpose: general, family: Llama, tags: [general], account: si, private: true}
+
+  # --- group 1: plain chat, works from Spain ---
+  - {key: kimi, name: Kimi, by: Moonshot, url: "https://www.kimi.com/", group: "1",
+     purpose: "documentos largos, investigar, código", family: Kimi, tags: [documentos, investigar, codigo],
+     account: desconocido, private: true}
+  - {key: mistral, name: Le Chat, by: Mistral, url: "https://chat.mistral.ai/", group: "1",
+     purpose: "general, código, rápida", family: Mistral, tags: [general, codigo, rapida], account: desconocido,
+     private: true, note: "su conector de GitHub no se activa (sección 9 del plan)"}
+  - {key: huggingchat, name: HuggingChat, by: Hugging Face, url: "https://huggingface.co/chat", group: "1",
+     purpose: "general, modelos abiertos", family: varios abiertos, tags: [general, abiertos], account: "no",
+     private: true}
+  - {key: longcat, name: LongCat, by: Meituan, url: "https://longcat.chat/", group: "1",
+     purpose: "general, instrucciones", family: LongCat, tags: [general], account: desconocido, private: true}
+  - {key: grok, name: Grok, by: xAI, url: "https://grok.com/", group: "1",
+     purpose: "general, actualidad", family: Grok, tags: [general, actualidad], account: desconocido, private: true}
+  - {key: gemini, name: Gemini, by: Google, url: "https://gemini.google.com/", group: "1",
+     purpose: "general, documentos largos", family: Gemini, tags: [general, documentos], account: desconocido,
+     private: true}
+  - {key: dola, name: Dola, by: ByteDance, url: "https://www.dola.com/chat/", group: "1",
+     purpose: general, family: Seed (ByteDance), tags: [general], account: desconocido, private: true}
+  - {key: felo, name: Felo, by: Felo (Japón), url: "https://felo.ai/", group: "1",
+     purpose: "investigar, con fuentes", family: varios, tags: [investigar, fuentes], account: desconocido,
+     private: true}
+  - {key: brave, name: Ask Brave, by: Brave, url: "https://search.brave.com/", group: "1",
+     purpose: "investigar, con fuentes", family: varios, tags: [investigar, fuentes], account: "no", private: true,
+     note: "es el modo chat del buscador; la dirección exacta del modo chat se ve al conectar"}
+  - {key: ai2, name: Ai2 Playground, by: Allen Institute, url: "https://playground.allenai.org/", group: "1",
+     purpose: "general, modelos totalmente abiertos", family: OLMo, tags: [general, abiertos],
+     account: desconocido, private: true}
+  - {key: pi, name: Pi, by: Inflection, url: "https://pi.ai/", group: "1",
+     purpose: conversación, family: Inflection, tags: [conversacion], account: desconocido, private: true,
+     note: "apenas la mantienen; puede cerrar"}
+  - {key: inception, name: Inception Chat, by: Inception (Mercury), url: "https://chat.inceptionlabs.ai/",
+     group: "1", purpose: muy rápida, family: Mercury, tags: [rapida], account: desconocido, private: true,
+     note: "menos lista"}
+  - {key: duck, name: Duck.ai, by: DuckDuckGo, url: "https://duck.ai/", group: "1",
+     purpose: "Claude Haiku 4.5, GPT, Mistral Small, gpt-oss, Gemma", family: varios (Claude, GPT…),
+     tags: [general, elegir-modelo], account: "no", private: true}
+  - {key: arena, name: Arena (chat directo), by: LMArena, url: "https://arena.ai/direct", group: "1",
+     purpose: "elegir un modelo concreto, Claude incluido", family: varios, tags: [elegir-modelo],
+     account: desconocido, private: false, note: "lo que escribes puede publicarse"}
+  - {key: perplexity, name: Perplexity, by: Perplexity, url: "https://www.perplexity.ai/", group: "1",
+     purpose: "investigar, con fuentes", family: Sonar, tags: [investigar, fuentes], account: desconocido,
+     private: true, note: "gratis con su modelo propio"}
+  - {key: nous, name: Nous Chat, by: Nous Research, url: "https://chat.nousresearch.com/", group: "1",
+     purpose: Hermes 4, family: Hermes, tags: [general, abiertos], account: desconocido, private: true}
+  - {key: copilot, name: Copilot, by: Microsoft, url: "https://copilot.microsoft.com/", group: "1",
+     purpose: "general, actualidad; GPT por dentro", family: GPT, tags: [general, actualidad], account: opcional,
+     private: true, note: "sin cuenta; con cuenta de Microsoft, más mensajes"}
+
+  # --- group 2: preloaded as "puede fallar" ---
+  - {key: venice, name: Venice, by: Venice, url: "https://venice.ai/", group: "2", purpose: general,
+     family: varios abiertos, tags: [general, abiertos], account: desconocido, private: true, daily_cap: 10,
+     may_fail: "unos 10 mensajes gratis al día"}
+  - {key: aistudio, name: Google AI Studio, by: Google, url: "https://aistudio.google.com/", group: "2",
+     purpose: "Gemini, documentos largos", family: Gemini, tags: [documentos], account: desconocido,
+     private: false, may_fail: "página complicada", note: "Google puede usar lo que escribas"}
+  - {key: mimo, name: MiMo Studio, by: Xiaomi, url: "https://aistudio.xiaomimimo.com/", group: "2",
+     purpose: "probar los modelos MiMo", family: MiMo, tags: [general], account: si, private: true,
+     may_fail: "pide cuenta Xiaomi; es un escaparate de modelos, no un asistente"}
+  - {key: poe, name: Poe, by: Quora, url: "https://poe.com/", group: "2", purpose: "muchos modelos",
+     family: varios, tags: [elegir-modelo], account: desconocido, private: true, daily_cap: 15,
+     may_fail: "unos 300 puntos al día (15 a 30 mensajes cortos)"}
+  - {key: lingguang, name: LingGuang, by: Ant Group, url: "https://www.lingguang.com/chat", group: "2",
+     purpose: general, family: Ling, tags: [general], account: si, private: true,
+     may_fail: "puede pedir cuenta china"}
+  - {key: you, name: You.com, by: You.com, url: "https://you.com/", group: "2", purpose: "investigar, con fuentes",
+     family: varios, tags: [investigar, fuentes], account: desconocido, private: true,
+     may_fail: "la empresa se centra en sus APIs; el chat gratis puede desaparecer"}

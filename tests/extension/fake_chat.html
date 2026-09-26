@@ -9,7 +9,10 @@
 <body>
 <!-- A chat page nobody wrote selectors for. ?copy=0 removes the copy button,
      ?editable=1 uses a contenteditable box and Enter instead of a send button,
-     ?login=1 shows a login wall instead of the chat, ?nobox=1 has no text box at all,
+     ?login=1 shows a login wall instead of the chat, ?entrar=1 shows a login wall until someone clicks
+     "Sign in" (Iván logging in; nothing is typed), then the chat, ?redirige=1 sends you to another address
+     to log in (accounts.cuentas.test/signin/, like Google or Microsoft) and back, ?mudada=1 has moved to
+     another address that is not a login page (nueva.test), ?nobox=1 has no text box at all,
      ?captcha=1 shows a slider verification after each message (except "pong") and only
      answers once someone clicks "Resolver" in it, ?lento=1 writes a long answer slowly and,
      like real chat sites, does not write while the page cannot be seen.
@@ -27,13 +30,27 @@ const realHidden = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")
 Object.defineProperty(document, "hidden", { configurable: true, get: () => covered || realHidden.call(document) });
 window.__setCovered = (v) => { covered = v; document.dispatchEvent(new Event("visibilitychange")); };
 const q = new URLSearchParams(location.search);
-for (const m of ["login", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre"]) {
+for (const m of ["login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre"]) {
   if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
 }
 const es = ["stopfijo", "stopfuera", "clasestop", "detenersiempre"].some((m) => q.get(m) === "1");
 const app = document.getElementById("app");
-if (q.get("login") === "1") {
-  app.innerHTML = '<h1>Log in to continue</h1><input type="email"><input type="password"><button>Sign in</button>';
+const loggedIn = () => { try { return localStorage.getItem("fake-logged-in") === "1"; } catch (e) { return false; } };
+if (q.get("logged") === "1") { try { localStorage.setItem("fake-logged-in", "1"); } catch (e) { /* stays out */ } }
+if (location.pathname.includes("/signin/")) {  // the other address where you log in
+  app.innerHTML = '<h1>Choose an account</h1><input type="password" id="password"><button id="signin">Sign in</button>';
+  document.getElementById("signin").onclick = () => { location.href = q.get("back") + "?logged=1"; };
+} else if (q.get("redirige") === "1" && !loggedIn()) {
+  location.replace(`https://accounts.cuentas.test:${location.port}/signin/?back=${encodeURIComponent(location.origin + location.pathname)}`);
+} else if (q.get("mudada") === "1") {
+  location.replace(`https://nueva.test:${location.port}/`);
+} else if (q.get("login") === "1" || (q.get("entrar") === "1" && !loggedIn())) {
+  app.innerHTML = '<h1>Log in to continue</h1><input type="email" id="email"><input type="password" id="password"><button id="signin">Sign in</button>';
+  document.getElementById("signin").onclick = () => {
+    if (q.get("entrar") !== "1") return;
+    try { localStorage.setItem("fake-logged-in", "1"); } catch (e) { /* no storage: stays logged out */ }
+    location.reload();
+  };
 } else if (q.get("nobox") === "1") {
   app.innerHTML = '<h1>Welcome</h1><p>Download our app to chat.</p><button>Get the app</button>';
 } else {

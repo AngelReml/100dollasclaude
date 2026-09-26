@@ -24,14 +24,27 @@
   button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   #msg { margin-top:16px; font-weight:600; }
   #msg.ok { color:var(--ok); } #msg.bad { color:var(--bad); }
+  ul#list { list-style:none; padding:0; margin:0 0 16px; max-height:340px; overflow:auto; border:1px solid var(--line); border-radius:12px; }
+  ul#list li { padding:8px 14px; border-bottom:1px solid var(--line); }
+  ul#list li:last-child { border-bottom:0; }
+  ul#list .u { display:block; font-family:Consolas, monospace; font-size:15px; color:var(--ink2); word-break:break-all; }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Añadir <span id="name">esta IA</span> a webllm</h1>
-  <p class="url" id="url"></p>
-  <p>Para escribir en esta web y leer sus respuestas, webllm necesita tu permiso. Al pulsar el botón, Chrome te lo pedirá en un aviso: pulsa <b>Permitir</b>.</p>
-  <p class="muted">El permiso es solo para esta web. webllm no lee tus contraseñas ni tus cookies, y nunca se salta una verificación.</p>
+  <div id="one">
+    <h1>Añadir <span id="name">esta IA</span> a webllm</h1>
+    <p class="url" id="url"></p>
+    <p>Para escribir en esta web y leer sus respuestas, webllm necesita tu permiso. Al pulsar el botón, Chrome te lo pedirá en un aviso: pulsa <b>Permitir</b>.</p>
+    <p class="muted">El permiso es solo para esta web. webllm no lee tus contraseñas ni tus cookies, y nunca se salta una verificación.</p>
+  </div>
+  <div id="many" hidden>
+    <h1>Conectar <span id="count"></span> a webllm</h1>
+    <p>Para escribir en estas webs y leer sus respuestas, webllm necesita tu permiso. Al pulsar el botón, Chrome te lo pedirá <b>una sola vez</b> para todas: pulsa <b>Permitir</b>.</p>
+    <ul id="list"></ul>
+    <p class="muted">Después las abre de una en una en la ventanita de webllm. Si una te pide entrar, entras tú (webllm no escribe contraseñas). webllm no lee tus contraseñas ni tus cookies, y nunca se salta una verificación.</p>
+  </div>
   <div class="row">
     <button id="go" class="primary">Permitir y probar</button>
     <button id="cancel">Cancelar</button>

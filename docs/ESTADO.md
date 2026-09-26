@@ -43,6 +43,31 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F3: todos los chats web, precargados)
+
+- **En la app hay una pantalla nueva, «Conectores»,** con las 27 IAs de chat web de la lista del plan. Las que no están conectadas no salen en Open WebUI ni en Preguntar.
+- **«Conectar varias»:**
+  - vienen todas marcadas y desmarcas las que no quieras;
+  - Chrome pide permiso una sola vez;
+  - se abren de una en una;
+  - si una pide entrar, te la pone delante y te espera 3 minutos. Entras tú: webllm no escribe contraseñas;
+  - cada una recibe un «pong» por el guardián;
+  - al final ves el resultado de cada una con el motivo.
+- **Probado aquí con la extensión de verdad** (13 de 13): un solo permiso; conecta; espera a que entres (también si te manda a otra dirección para entrar, como Google); dice adónde lleva una web mudada; guarda el diagnóstico de la que no tiene caja.
+- **Falta lo importante, y solo puede ser en tu PC:** cuántas de las 27 funcionan de verdad. Guía en `docs/F3-catalogo.md`. Al terminar, pulsa **Copiar el resumen** en Conectores y pégamelo: con eso relleno esta tabla.
+- **Qué hacer:**
+  1. `ACTUALIZAR`;
+  2. ↻ en «webllm puente» (debe poner **0.6.0**);
+  3. app → **Conectores** → **Conectar varias**.
+
+**Catálogo en tu PC** (se rellena con tu resumen):
+
+| IA | En tu PC |
+|---|---|
+| Qwen, DeepSeek, z.ai, Meta AI | las de siempre |
+| Kimi, Le Chat, HuggingChat, LongCat, Grok, Gemini, Dola, Felo, Ask Brave, Ai2 Playground, Pi, Inception Chat, Duck.ai, Arena (no privada), Perplexity, Nous Chat, Copilot | pendiente |
+| Venice, Google AI Studio (no privada), MiMo Studio, Poe, LingGuang, You.com (grupo «puede fallar») | pendiente |
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F2: webllm, la única conexión de Open WebUI)
 
 - **La salida de F2 se cumple en la nube.** Desde Open WebUI responden una IA web, una por API y una de tu PC, y el registro de webllm tiene las tres. Detalle y tu guía: `docs/F2-pasarela.md`.

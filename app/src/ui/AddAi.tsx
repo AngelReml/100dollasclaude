@@ -20,7 +20,7 @@ const WAITING_TEXT: Record<string, string> = {
   read: "Leer la respuesta",
 };
 
-function StepRow({ step }: { step: AddStep | { step: string; ok: undefined; text: string } }) {
+export function StepRow({ step }: { step: AddStep | { step: string; ok: undefined; text: string } }) {
   const icon =
     step.ok === true ? (
       <CircleCheck size={20} className="text-ok-ink" aria-label="hecho" />

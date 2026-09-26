@@ -94,7 +94,13 @@ class ProviderConfig:
     url: str = ""
     custom: bool = False
     # Most questions per day (budget.py); None = the default for its kind (API: guard.api_daily_cap).
+    # A chat site: the account guard's daily cap for it (None = guard.daily_cap).
     daily_cap: int | None = None
+    # False = what you write can be published or used by the site (catalog.yaml): never picked by
+    # "Automático" or the Committee on their own (catalog.eligible_for_auto).
+    private: bool = True
+    # A chat site from webllm's catalog, connected with "Conectar" (PLAN-v5 F3).
+    catalog: bool = False
 
     @property
     def guarded(self) -> bool:
@@ -254,7 +260,9 @@ def _with_custom(configured: dict[str, ProviderConfig], paths: Paths) -> dict[st
 
 
 def load_custom_ais(paths: Paths) -> dict[str, ProviderConfig]:
-    """Chat sites added from the app. They live in data/state/ (not in git) so ACTUALIZAR never conflicts."""
+    """Chat sites added from the app ("+ Añadir otra IA") or connected from the catalog. They live in
+    data/state/ (not in git) so ACTUALIZAR never conflicts; a catalog one takes its daily cap and privacy
+    from the catalog as it is now."""
     path = paths.state_dir / CUSTOM_AIS_FILE
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -263,19 +271,29 @@ def load_custom_ais(paths: Paths) -> dict[str, ProviderConfig]:
     out: dict[str, ProviderConfig] = {}
     for key, spec in (raw.items() if isinstance(raw, dict) else []):
         if isinstance(spec, dict) and spec.get("url"):
-            out[str(key)] = custom_provider(str(key), str(spec.get("name") or key), str(spec["url"]))
+            out[str(key)] = custom_provider(str(key), str(spec.get("name") or key), str(spec["url"]),
+                                            catalog=bool(spec.get("catalog")))
     return out
 
 
-def custom_provider(key: str, name: str, url: str) -> ProviderConfig:
+def custom_provider(key: str, name: str, url: str, catalog: bool = False) -> ProviderConfig:
+    entry = None
+    if catalog:
+        from .catalog import load as load_catalog  # catalog imports nothing from here at run time
+        entry = load_catalog().get(key)
     return ProviderConfig(name=key, model=f"browser/{key}", kind="browser", gateway="bridge", timeout_s=420.0,
-                          label=name, url=url, custom=True)
+                          label=name, url=url, custom=True, catalog=catalog,
+                          daily_cap=entry.daily_cap if entry else None, private=entry.private if entry else True)
 
 
-def save_custom_ai(paths: Paths, key: str, name: str, url: str) -> None:
+def _custom_spec(p: ProviderConfig) -> dict[str, Any]:
+    return {"name": p.label, "url": p.url, **({"catalog": True} if p.catalog else {})}
+
+
+def save_custom_ai(paths: Paths, key: str, name: str, url: str, catalog: bool = False) -> None:
     path = paths.state_dir / CUSTOM_AIS_FILE
-    data = {k: {"name": p.label, "url": p.url} for k, p in load_custom_ais(paths).items()}
-    data[key] = {"name": name, "url": url}
+    data = {k: _custom_spec(p) for k, p in load_custom_ais(paths).items()}
+    data[key] = {"name": name, "url": url, **({"catalog": True} if catalog else {})}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -284,7 +302,7 @@ def remove_custom_ai(paths: Paths, key: str) -> bool:
     current = load_custom_ais(paths)
     if key not in current:
         return False
-    data = {k: {"name": p.label, "url": p.url} for k, p in current.items() if k != key}
+    data = {k: _custom_spec(p) for k, p in current.items() if k != key}
     (paths.state_dir / CUSTOM_AIS_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return True
 

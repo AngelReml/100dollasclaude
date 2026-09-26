@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "webllm puente",
-  "version": "0.5.2",
-  "description": "Lets webllm (on this PC) write to your Qwen, DeepSeek, z.ai and Meta AI chats (and any chat site you add) and read the answers.",
+  "version": "0.6.0",
+  "description": "Lets webllm (on this PC) write to the AI chat sites you connect (Qwen, DeepSeek, z.ai, Meta AI, the ones in webllm's list and any you add) and read the answers.",
   "background": {
     "service_worker": "background.js"
   },

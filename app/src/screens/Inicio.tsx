@@ -1,4 +1,4 @@
-import { AppWindow, Cpu, LifeBuoy, Plus, Power, Server, MessageSquarePlus, MonitorCheck, OctagonX, TestTube2, Unplug } from "lucide-react";
+import { AppWindow, Cpu, LifeBuoy, Plug, Plus, Power, Server, MessageSquarePlus, MonitorCheck, OctagonX, TestTube2, Unplug } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api, ApiError, type Ai } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
@@ -47,7 +47,7 @@ function aiLine(ai: Ai): { text: string; actions: FixAction[] } {
   }
 }
 
-function AiCard({ ai }: { ai: Ai }) {
+export function AiCard({ ai }: { ai: Ai }) {
   const line = aiLine(ai);
   return (
     <Card className="flex flex-col gap-3 p-5" data-card={ai.name}>
@@ -65,7 +65,7 @@ function AiCard({ ai }: { ai: Ai }) {
       {line.actions.length > 0 && <FixButtons actions={line.actions} ai={ai.name} />}
       {ai.custom && (
         <div className="-mb-1 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-          <span className="min-w-0 truncate text-[15px] text-muted">Añadida por ti · {ai.url?.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>
+          <span className="min-w-0 truncate text-[15px] text-muted">{ai.catalog ? "De la lista de webllm" : "Añadida por ti"} · {ai.url?.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>
           <RemoveAiButton name={ai.name} label={ai.label} />
         </div>
       )}
@@ -224,9 +224,14 @@ export function Inicio() {
           <section className="mb-10">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <SectionTitle className="">Tus IAs</SectionTitle>
-              <Button variant="soft" icon={<Plus size={19} aria-hidden />} onClick={openAdd}>
-                Añadir otra IA
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="soft" icon={<Plug size={19} aria-hidden />} onClick={() => go("conectores")}>
+                  Conectar más chats
+                </Button>
+                <Button variant="soft" icon={<Plus size={19} aria-hidden />} onClick={openAdd}>
+                  Añadir otra IA
+                </Button>
+              </div>
             </div>
             {GROUPS.map((g) => {
               const members = estado.ais.filter((a) => a.kind === g.kind);

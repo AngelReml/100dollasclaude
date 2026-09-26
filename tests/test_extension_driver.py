@@ -75,3 +75,12 @@ def test_a_misleading_stop_button_does_not_hide_a_finished_answer():
 def test_parar_stops_the_job_in_chrome_and_leaves_the_chat_ready():
     """PLAN-v5 "Parar": a slow chat stopped halfway; the extension lets go at once, the next question works."""
     assert len(run_real("parar_flow.mjs")) == 6
+
+
+@needs_chromium
+@needs_openssl
+def test_conectar_varias_with_the_real_extension():
+    """PLAN-v5 F3: one permission for five catalog sites; one connects, one waits for Iván's login and
+    connects, one has no text box and keeps its diagnosis, one sends you to another address to log in and
+    connects when you come back, one has moved and says where; webllm types nothing on the login page."""
+    assert len(run_real("catalog_flow.mjs")) == 13

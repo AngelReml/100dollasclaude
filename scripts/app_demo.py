@@ -1,6 +1,7 @@
 """Run the real webllm server + app with stand-ins for Chrome and OmniRoute (development only).
 
     python scripts/app_demo.py [--port 20199] [--data DIR] [--sin-chrome] [--limite SEGUNDOS]
+                               [--catalogo FILE] [--espera-login SEGUNDOS]
 
 Everything the app talks to is real (bridge, app API, chain engine, journal, guard) except:
 - a fake Chrome extension that answers each chat job with a canned Spanish answer
@@ -18,7 +19,11 @@ Everything the app talks to is real (bridge, app API, chain engine, journal, gua
 - the fake OmniRoute calls a tool when the question brings tools (the first one, no arguments) and answers
   with what the tool said; it streams when asked to (PLAN-v5 F2, check 5: a tool that asks first);
 - a question with "(demo: N minutos)" in it makes the chat take N minutes to answer, saying
-  "still on it" every 10 s like the real extension (PLAN-v5 F1, check 3: long answers are not cut).
+  "still on it" every 10 s like the real extension (PLAN-v5 F1, check 3: long answers are not cut);
+- "Conectar varias" (PLAN-v5 F3): the permission is "given" 2.5 s later; Grok asks to log in and
+  Iván "logs in" 6 s later; Felo has no text box; Duck.ai sends you to another address; the rest connect.
+  --catalogo uses another catalog (the real-extension test's *.test sites), --espera-login how long a
+  site waits for the login.
 Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
 where Iván's Chrome and OmniRoute are not reachable. Open http://127.0.0.1:<port>/app/
 """
@@ -41,6 +46,7 @@ from aiohttp import ClientSession, web
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from webllm_agent.bridge import Bridge  # noqa: E402
 from webllm_agent.config import load_config  # noqa: E402
+from webllm_agent.catalog import load as load_catalog  # noqa: E402
 
 TOKEN = "demo-token"
 
@@ -189,6 +195,32 @@ async def fake_extension(port: int) -> None:
 
         cancelled: set[str] = set()  # "parar" (like the real extension 0.5.2: the job just stops)
 
+        async def add_many(job):  # "Conectar varias": one permission for all (Iván's click)
+            await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "add_many"})
+            await asyncio.sleep(2.5)
+            await ws.send_json({"type": "add_many_permission", "batch_id": job["batch_id"], "ok": True})
+
+        async def add_check(job):  # one site of "Conectar varias"
+            await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "add_check"})
+            add_id, key = job["add_id"], job["key"]
+            await progress(add_id, "open", None, "Abriendo la web…")
+            await asyncio.sleep(1.5)
+            if key == "duck":
+                await ws.send_json({"type": "add_done", "add_id": add_id, "ok": False, "error": "moved",
+                                    "detail": "https://duckduckgo.com/?q=DuckDuckGo+AI+Chat&ia=chat"})
+                return
+            await progress(add_id, "open", True, "Web abierta")
+            if key == "felo":
+                await ws.send_json({"type": "add_done", "add_id": add_id, "ok": False, "error": "no_input",
+                                    "detail": json.dumps({"url": job["url"], "inputs": 0, "buttons": 5})})
+                return
+            if key == "grok":
+                await progress(add_id, "login", None, "Te espera: entra con tu cuenta en la ventanita de webllm (hasta 3 minutos)")
+                await asyncio.sleep(6)
+                await progress(add_id, "login", True, "Has entrado")
+            await progress(add_id, "input", True, "Caja de texto: encontrada")
+            await ws.send_json({"type": "add_ready", "add_id": add_id, "icon": None})
+
         async def answer(job):
             if job.get("type") == "add_site":
                 return await add_site(job)
@@ -237,11 +269,16 @@ async def fake_extension(port: int) -> None:
             job = json.loads(msg.data)
             if job.get("type") in ("job", "diagnose", "show", "add_site"):
                 asyncio.create_task(answer(job))
+            elif job.get("type") == "add_many":
+                asyncio.create_task(add_many(job))
+            elif job.get("type") == "add_check":
+                asyncio.create_task(add_check(job))
             elif job.get("type") == "cancel":
                 cancelled.add(str(job.get("id")))
 
 
-async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30) -> None:
+async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30, catalog_file: Path | None = None,
+               login_wait_s: float | None = None) -> None:
     omni = web.AppRunner(fake_omniroute())
     await omni.setup()
     site = web.TCPSite(omni, "127.0.0.1", 0)
@@ -267,6 +304,10 @@ async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30) 
                     log=lambda m: print(time.strftime("%H:%M:%S"), m, flush=True))
     bridge.app_api.omniroute_launcher = lambda: print("(demo) encender OmniRoute", flush=True)
     bridge.app_api.local.launcher = lambda cmd: print("(demo) encender", cmd, flush=True)
+    if catalog_file is not None:
+        bridge.app_api.catalog = load_catalog(catalog_file)
+    if login_wait_s is not None:
+        bridge.app_api.login_wait_s = login_wait_s
     runner = web.AppRunner(bridge.app())
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", port).start()
@@ -282,6 +323,8 @@ if __name__ == "__main__":
     ap.add_argument("--data", type=Path, default=None)
     ap.add_argument("--sin-chrome", action="store_true", help="no fake extension: Chrome shows as not connected")
     ap.add_argument("--limite", type=float, default=30, help="time limit for a chat's answer, in seconds")
+    ap.add_argument("--catalogo", type=Path, default=None, help="another catalog.yaml (tests)")
+    ap.add_argument("--espera-login", type=float, default=None, help="how long a site waits for the login, in seconds")
     a = ap.parse_args()
     asyncio.run(main(a.port, a.data or Path(tempfile.mkdtemp(prefix="webllm-demo-")), chrome=not a.sin_chrome,
-                     limit_s=a.limite))
+                     limit_s=a.limite, catalog_file=a.catalogo, login_wait_s=a.espera_login))

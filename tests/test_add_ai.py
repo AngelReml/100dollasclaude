@@ -119,25 +119,29 @@ def test_extension_and_server_apply_the_same_rules():
 # ------------------------------------------------------------------ the flow
 
 def test_add_a_site_end_to_end(tmp_path, mock_server):
+    """An address that is in webllm's catalog (Le Chat) is added as that catalog chat: its name, its address,
+    its privacy and cap, and the catalog says "conectada"."""
     async def go():
         async with AddApp(tmp_path, mock_server.base_url) as a:
             status, st = await a.post("/api/anadir", {"url": "https://chat.mistral.ai/chat"})
-            assert status == 200 and st["key"] == "mistral" and st["name"] == "Mistral"
-            assert a.ext.adds[0]["url"] == "https://chat.mistral.ai/chat" and a.ext.adds[0]["add_id"] == st["add_id"]
+            assert status == 200 and st["key"] == "mistral" and st["name"] == "Le Chat" and st["catalog"] is True
+            assert a.ext.adds[0]["url"] == "https://chat.mistral.ai/" and a.ext.adds[0]["add_id"] == st["add_id"]
             st = await a.wait_done(st["add_id"])
-            assert st["status"] == "ok" and "Mistral ya está entre tus IAs" in st["message"]
+            assert st["status"] == "ok" and "Le Chat ya está entre tus IAs" in st["message"]
             assert [x["step"] for x in st["steps"]] == ["permission", "open", "input", "send", "read"]
             assert all(x["ok"] for x in st["steps"])
             # the test message went like any other: through the bridge, guarded and counted
             (test,) = a.ext.jobs
             assert test["prompt"] == "Responde solo con la palabra: pong" and test["site_config"] == {
-                "name": "Mistral", "url": "https://chat.mistral.ai/chat"}
+                "name": "Le Chat", "url": "https://chat.mistral.ai/"}
             assert a.bridge.guard.status()["mistral"]["count_today"] == 1
 
             _, body, _ = await a.get("/api/estado")
             (m,) = [x for x in body["ais"] if x["name"] == "mistral"]
             assert (m["kind"], m["label"], m["custom"], m["icon"], m["url"]) == (
-                "chat", "Mistral", True, True, "https://chat.mistral.ai/chat")
+                "chat", "Le Chat", True, True, "https://chat.mistral.ai/")
+            _, cat, _ = await a.get("/api/catalogo")
+            assert next(x for x in cat["ais"] if x["key"] == "mistral")["state"] == "conectada"
             async with a.http.get(a.url(f"/api/icono/mistral?token={AUTH['Authorization'][7:]}")) as r:
                 assert r.status == 200 and r.headers["Content-Type"] == "image/png"
                 assert (await r.read()).startswith(b"\x89PNG")
@@ -146,13 +150,14 @@ def test_add_a_site_end_to_end(tmp_path, mock_server):
             _, events = await a.ask("hola", ["mistral"])
             assert [e["ok"] for e in events if e["type"] == "target_done"] == [True]
             job = a.ext.jobs[-1]
-            assert job["site"] == "mistral" and job["site_config"] == {"name": "Mistral",
-                                                                       "url": "https://chat.mistral.ai/chat"}
+            assert job["site"] == "mistral" and job["site_config"] == {"name": "Le Chat",
+                                                                       "url": "https://chat.mistral.ai/"}
             assert a.bridge.guard.status()["mistral"]["count_today"] == 2  # the test + this question
 
             # it survives a restart: kept in data/state (not in data/config.yaml, which is in git)
             saved = load_custom_ais(Paths.from_data_dir(tmp_path / "data"))
-            assert list(saved) == ["mistral"] and saved["mistral"].url == "https://chat.mistral.ai/chat"
+            assert list(saved) == ["mistral"] and saved["mistral"].url == "https://chat.mistral.ai/"
+            assert saved["mistral"].catalog and saved["mistral"].private
             (tmp_path / "data" / "config.yaml").write_text("{}", encoding="utf-8")
             assert "mistral" in load_config(tmp_path / "data").providers
 
