@@ -106,7 +106,8 @@ export async function startWorld({ port = Number(process.env.WEBLLM_TEST_PORT ??
 
     // 3) The real extension, pointed at that bridge.
     const ext = join(tmp, "extension");
-    cpSync(join(root, "extension"), ext, { recursive: true });
+    // WEBLLM_EXTENSION_DIR: another copy of the extension (the previous version, to show a test fails with it)
+    cpSync(process.env.WEBLLM_EXTENSION_DIR ?? join(root, "extension"), ext, { recursive: true });
     writeFileSync(join(ext, "config.json"), JSON.stringify({ bridge: `ws://127.0.0.1:${port}/ext`, token: TOKEN }));
     const manifest = JSON.parse(readFileSync(join(ext, "manifest.json"), "utf8"));
     manifest.host_permissions = [...manifest.host_permissions, "https://*.test/*"];

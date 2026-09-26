@@ -165,7 +165,13 @@ function waitingText(answer: TurnAnswer, ais: Ai[]): { mine: boolean; text: stri
       mine: true,
       text: `La ventanita de webllm está tapada o minimizada, y ${answer.label} no escribe la respuesta mientras no se vea. Déjala a la vista (pequeña en una esquina vale): la respuesta sigue sola.`,
     };
-  const other = me?.kind === "chat" ? ais.find((a) => a.waiting && a.name !== answer.target) : undefined;
+  if (me?.waiting === "repair")
+    return {
+      mine: true,
+      text: `La web de ${answer.label} ha cambiado y no encontraba lo que necesita. La estoy arreglando sin enviar nada; no tienes que hacer nada.`,
+    };
+  // a chat that webllm is repairing does not hold the others up
+  const other = me?.kind === "chat" ? ais.find((a) => a.waiting && a.waiting !== "repair" && a.name !== answer.target) : undefined;
   if (other?.waiting === "hidden") return { mine: false, text: "La ventanita de webllm está tapada o minimizada: déjala a la vista y sigue sola." };
   if (other) return { mine: false, text: `Esperando a que termines con ${other.label} en la ventanita de webllm; después ${answer.label} sigue sola.` };
   return null;

@@ -2,7 +2,8 @@
 files), read-only, and which model is the strongest.
 
     data/state/fichas/<site>.json    the last discovery + Iván's own "este es el más potente"
-    data/state/patches/<site>.json   where things are, as Iván showed them ("Enséñame dónde está")
+    data/state/patches/<site>.json   where things are, as Iván showed them ("Enséñame dónde está") or an AI
+                                     repaired them (PLAN-v5 F6), with a dated history ("_history") to undo them
 
 The order of the models comes from catalog.yaml (`models`: name fragments with a rank, their source and
 date). A model the table does not know is "nuevo, sin datos" and is never taken as the strongest on its
@@ -21,7 +22,11 @@ if TYPE_CHECKING:
     from .catalog import CatalogAI
     from .config import Paths
 
-TEACHABLE = {"model": "modelButton", "plus": "plusButton", "file": "fileInput"}
+TEACHABLE = {"model": "modelButton", "plus": "plusButton", "file": "fileInput",
+             # PLAN-v5 F6, layer 4 ("Enséñame" with 3 clicks): the text box, the send button, the answer
+             "input": "input", "send": "send", "answer": "answer"}
+# What a patch can say where it is (= extension/background.js PATCH_KEYS).
+PATCH_KEYS = ("modelButton", "plusButton", "fileInput", "input", "send", "stop", "copy", "answer")
 
 
 def norm(name: str) -> str:
@@ -121,26 +126,72 @@ def strongest(entry: "CatalogAI | None", card: dict[str, Any]) -> str | None:
 
 
 def load_patch(paths: "Paths", site: str) -> dict[str, list[str]]:
-    return _read(_path(paths, "patches", site))
+    """Where things are on this site, as Iván showed them or an AI repaired them (the extension puts these first)."""
+    data = _read(_path(paths, "patches", site))
+    return {k: [x for x in v if isinstance(x, str) and 0 < len(x) < 300][:5] for k, v in data.items()
+            if k in PATCH_KEYS and isinstance(v, list) and v}
 
 
-def forget_patch(paths: "Paths", site: str) -> bool:
-    """Undo what Iván showed ("Olvidar lo que te enseñé"): the site goes back to its own and generic rules."""
+def patch_history(paths: "Paths", site: str) -> list[dict[str, Any]]:
+    """Every change to the site's patch, dated: what, where, by whom (Iván or an AI), and whether it still holds."""
+    return [h for h in _read(_path(paths, "patches", site)).get("_history") or [] if isinstance(h, dict)]
+
+
+def add_patch(paths: "Paths", site: str, key: str, selector: str, by: str, why: str = "") -> dict[str, list[str]]:
+    """Keep where a thing is (first in the list, the old ones after, at most 5), with its date and who found it."""
+    if key not in PATCH_KEYS or not isinstance(selector, str) or not 0 < len(selector) < 300:
+        raise ValueError(f"{key}: {selector!r}")
     path = _path(paths, "patches", site)
-    existed = path.exists()
-    path.unlink(missing_ok=True)
-    return existed
+    data = _read(path)
+    data[key] = [selector, *[s for s in data.get(key) or [] if s != selector]][:5]
+    data.setdefault("_history", []).append({"when": time.strftime("%Y-%m-%d %H:%M:%S"), "key": key, "selector": selector,
+                                            "by": by, "why": why, "active": True})
+    _write(path, data)
+    return load_patch(paths, site)
 
 
 def teach(paths: "Paths", site: str, what: str, selector: str) -> dict[str, list[str]]:
-    """Keep where Iván showed a thing is (first in the list, the old ones after, at most 5)."""
-    key = TEACHABLE[what]
-    if not selector or len(selector) > 300:
-        raise ValueError(selector)
-    patch = load_patch(paths, site)
-    patch[key] = [selector, *[s for s in patch.get(key, []) if s != selector]][:5]
-    _write(_path(paths, "patches", site), patch)
-    return patch
+    """"Enséñame dónde está": Iván's click."""
+    return add_patch(paths, site, TEACHABLE[what], selector, by="ivan", why="Enséñame")
 
 
-__all__ = ["TEACHABLE", "forget_patch", "load", "load_patch", "norm", "rank", "save_discovery", "set_strongest", "strongest", "teach"]
+def undo_patch(paths: "Paths", site: str, index: int) -> dict[str, list[str]]:
+    """Undo one change of the history ("Deshacer"): its selector stops being used (unless another change that
+    still holds uses it too). Raises ValueError for a change that does not exist or was already undone."""
+    path = _path(paths, "patches", site)
+    data = _read(path)
+    hist = data.get("_history") or []
+    if not 0 <= index < len(hist) or not hist[index].get("active"):
+        raise ValueError(index)
+    entry = hist[index]
+    entry["active"], entry["undone"] = False, time.strftime("%Y-%m-%d %H:%M:%S")
+    still = any(h.get("active") and h.get("key") == entry["key"] and h.get("selector") == entry["selector"] for h in hist)
+    if not still:
+        left = [s for s in data.get(entry["key"]) or [] if s != entry["selector"]]
+        if left:
+            data[entry["key"]] = left
+        else:
+            data.pop(entry["key"], None)
+    _write(path, data)
+    return load_patch(paths, site)
+
+
+def forget_patch(paths: "Paths", site: str) -> bool:
+    """Undo everything ("Olvidar lo que te enseñé"): the site goes back to its own and generic rules. The history
+    stays, marked as undone."""
+    path = _path(paths, "patches", site)
+    data = _read(path)
+    existed = any(k in PATCH_KEYS for k in data)
+    for k in PATCH_KEYS:
+        data.pop(k, None)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    for h in data.get("_history") or []:
+        if isinstance(h, dict) and h.get("active"):
+            h["active"], h["undone"] = False, now
+    if data:
+        _write(path, data)
+    return existed
+
+
+__all__ = ["PATCH_KEYS", "TEACHABLE", "add_patch", "forget_patch", "load", "load_patch", "norm", "patch_history", "rank",
+           "save_discovery", "set_strongest", "strongest", "teach", "undo_patch"]

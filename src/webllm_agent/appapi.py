@@ -45,6 +45,7 @@ from aiohttp import web
 from . import catalog as catalog_mod
 from . import fichas
 from . import flows
+from . import repair
 from . import vault
 from .broadcaster import GatewayError, verify_run
 from .budget import budget_for
@@ -66,6 +67,10 @@ SITE_URLS = {
     "meta": "https://www.meta.ai/",
 }
 RUN_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
+# What each part of a site's patch is, in Iván's words (PLAN-v5 F6).
+PATCH_WHAT = {"input": "la caja de texto", "send": "el botón de enviar", "stop": "el botón de parar", "copy": "el botón de copiar",
+              "answer": "la respuesta", "modelButton": "el selector de modelos", "plusButton": "el botón «+»",
+              "fileInput": "la subida de archivos"}
 RECENT_S = 15 * 60
 MAX_PROMPT = 100_000
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
@@ -107,6 +112,10 @@ class AppApi:
         self.ack_wait_s = 15.0  # an extension that never acknowledges a message is too old for it
         self._last_omni_start = -1e9
         self._memory_retry = -1e9  # when the app last asked the memory to write again what it missed
+        self.observing: dict[int, dict[str, Any]] = {}  # Chrome tab -> the conversation Iván goes on with there
+        self.checking: asyncio.Task | None = None  # the daily check in progress
+        self._daily: asyncio.Task | None = None
+        self.daily_every_s = 24 * 3600.0
 
     @property
     def cfg(self):
@@ -152,6 +161,16 @@ class AppApi:
         app.router.add_post("/api/memoria", self.guardar_memoria)
         app.router.add_post("/api/memoria/reescribir", self.reescribir_memoria)
         app.router.add_post("/api/memoria/anteriores", self.memoria_anteriores)
+        # PLAN-v5 F6: webs that repair themselves, the daily check, and going on by hand in the web
+        app.router.add_get("/api/revision", self.revision)
+        app.router.add_post("/api/revisar", self.revisar)
+        app.router.add_get("/api/reparar", self.reparar_estado)
+        app.router.add_post("/api/reparar", self.reparar_guardar)
+        app.router.add_post("/api/ficha/{ai}/deshacer", self.ficha_deshacer)
+        app.router.add_post("/api/continuar", self.continuar)
+        app.router.add_post("/api/dejar-de-registrar", self.dejar_de_registrar)
+        app.on_startup.append(self._start_daily)
+        app.on_cleanup.append(self._stop_daily)
 
     # ---------------------------------------------------------------- helpers
 
@@ -273,7 +292,9 @@ class AppApi:
                   "models": len(st.models)}
                  for st in self.local._statuses if st.up or st.installed or st.models]
         return web.json_response({"chrome": chrome, "omniroute": omni, "extension_path": str(PROJECT_ROOT / "extension"),
-                                  "ais": ais, "local_servers": local})
+                                  "ais": ais, "local_servers": local,
+                                  # PLAN-v5 F6: the chats Iván is going on with by hand, recorded
+                                  "observing": list(self.observing.values())})
 
     # ------------------------------------------------------------------- ask
 
@@ -952,7 +973,19 @@ class AppApi:
     def _chat(self, name: str) -> tuple[ProviderConfig, str] | None:
         p = self.cfg.providers.get(name)
         site = site_of(p) if p is not None else None
+        if p is None:  # a chat of the catalog that does not work yet: its card, "Enséñame" and repairs (PLAN-v5 F6)
+            entry = self.catalog.get(name)
+            if entry is not None:
+                return custom_provider(entry.key, entry.name, entry.url, catalog=True), entry.key
         return (p, site) if p is not None and site else None
+
+    def _site_msg(self, site: str) -> dict[str, Any]:
+        """What the extension needs about a site; one of the catalog not connected yet travels with its address."""
+        out = self.bridge.site_payload(site)
+        entry = self.catalog.get(site)
+        if "site_config" not in out and entry is not None and not any(site_of(p) == site for p in self.cfg.providers.values()):
+            out["site_config"] = {"name": entry.name, "url": entry.url}
+        return out
 
     def ficha_view(self, p: ProviderConfig, site: str) -> dict[str, Any]:
         entry = self.catalog.get(site)
@@ -967,6 +1000,12 @@ class AppApi:
             "table": {"source": entry.models_source if entry else "", "checked": entry.models_checked if entry else "",
                       "known": [m["match"] for m in (entry.models if entry else ())]},
             "taught": sorted(fichas.load_patch(self.cfg.paths, site)),
+            # PLAN-v5 F6: every change to where things are on this site (by Iván or by an AI), dated, undoable
+            "arreglos": [{"index": i, "when": h.get("when"), "what": PATCH_WHAT.get(str(h.get("key")), str(h.get("key"))),
+                          "by": "tú" if h.get("by") == "ivan" else self._ai_label(str(h.get("by") or "")), "why": h.get("why") or "",
+                          "active": bool(h.get("active")), "undone": h.get("undone")}
+                         for i, h in enumerate(fichas.patch_history(self.cfg.paths, site))][::-1],
+            "revision": self._revision_of(site),
         }
 
     async def ficha(self, request: web.Request) -> web.Response:
@@ -1041,11 +1080,14 @@ class AppApi:
         p, site = chat
         text = {"model": "haz clic en el botón que elige el modelo",
                 "plus": "haz clic en el botón «+» (el que abre las opciones y adjuntar)",
-                "file": "haz clic en el botón para adjuntar archivos"}[what]
+                "file": "haz clic en el botón para adjuntar archivos",
+                "input": "haz clic en la caja donde se escribe el mensaje",
+                "send": "haz clic en el botón de enviar (no se enviará nada)",
+                "answer": "haz clic en la última respuesta de la IA"}[what]
         if not await self.bridge._ensure_extension():
             return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
         async with self.bridge.locks.setdefault(site, asyncio.Lock()):
-            res = await self.bridge._send_to_extension({"type": "teach", **self.bridge.site_payload(site), "what": what,
+            res = await self.bridge._send_to_extension({"type": "teach", **self._site_msg(site), "what": what,
                                                         "text": text, "wait_ms": 180000}, 200)
         try:
             out = json.loads(str(res.get("text") or "{}"))
@@ -1053,6 +1095,18 @@ class AppApi:
             out = {}
         if not res.get("ok") or not out.get("selector"):
             return self._fail(408, "No llegó tu clic (esperé 3 minutos). Vuelve a intentarlo.", "no_click")
+        if what in ("input", "send", "answer"):  # PLAN-v5 F6: the lesson is tried on the page first, sending nothing
+            async with self.bridge.locks.setdefault(site, asyncio.Lock()):
+                tried = await self.bridge._send_to_extension({"type": "try_patch", **self._site_msg(site),
+                                                              "patch": {fichas.TEACHABLE[what]: [str(out["selector"])]}, "sent": ""}, 60)
+            try:
+                checks = json.loads(str(tried.get("text") or "{}")) if tried.get("ok") else {}
+            except ValueError:
+                checks = {}
+            if not checks.get("ok"):
+                why = {"input": "la caja donde se escribe", "send": "el botón de enviar",
+                       "answer": "una respuesta de la IA (si en la ventanita no hay ninguna, pregúntale algo antes)"}[what]
+                return self._fail(422, f"Eso no parece {why}. Vuelve a pulsar Enséñame y haz clic justo encima.", "not_that")
         fichas.teach(self.cfg.paths, site, what, str(out["selector"]))
         return web.json_response({"ok": True, "what": what, "name": out.get("name"), **self.ficha_view(p, site)})
 
@@ -1112,6 +1166,226 @@ class AppApi:
             return self._fail(409, "La memoria está apagada: enciéndela primero.", "memory_off")
         vault.rewrite_all(self.cfg.paths)
         return web.json_response(self.memoria_view())
+
+    # ---------------------------------------------------------------- self-repair and daily check (PLAN-v5 F6)
+
+    def _ai_label(self, by: str) -> str:
+        name = by.split(":", 1)[1] if by.startswith("ia:") else by
+        p = self.cfg.providers.get(name)
+        return f"una IA ({p.display if p else name})"
+
+    async def ficha_deshacer(self, request: web.Request) -> web.Response:
+        """Undo one repair or lesson of a chat ("Deshacer"): the extension stops using it at once."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        chat = self._chat(request.match_info["ai"])
+        if chat is None:
+            return self._fail(404, "Solo los chats web tienen ficha.", "not_a_chat")
+        try:
+            fichas.undo_patch(self.cfg.paths, chat[1], int((await request.json()).get("index", -1)))
+        except (ValueError, TypeError):
+            return self._fail(400, "Ese arreglo ya estaba deshecho.", "bad_request")
+        return web.json_response(self.ficha_view(*chat))
+
+    def reparar_view(self) -> dict[str, Any]:
+        st = repair.settings(self.cfg.paths)
+        cfg = self.local.with_providers(self.cfg)
+        options = repair.helpers(cfg)
+        chosen = repair.helper(cfg)
+        return {"enabled": st["enabled"], "ai": chosen.name if chosen else None, "ai_label": chosen.display if chosen else None,
+                "options": [{"name": o.name, "label": o.display} for o in options],
+                "last": [{"when": x.get("when"), "site": x.get("site"), "result": x.get("result"), "why": x.get("why")}
+                         for x in repair.history(self.cfg.paths, limit=10)]}
+
+    async def reparar_estado(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        await self._cfg()
+        return web.json_response(self.reparar_view())
+
+    async def reparar_guardar(self, request: web.Request) -> web.Response:
+        """"Reparar solas con IA": on or off, and which AI looks at the pages' x-rays."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        cfg = await self._cfg()
+        ai = str(body.get("ai") or "")
+        if ai and ai not in {o.name for o in repair.helpers(cfg)}:
+            return self._fail(400, "Esa IA no puede ayudar a reparar (tiene que ser por API o de tu PC, y privada).", "bad_ai")
+        repair.configure(self.cfg.paths, bool(body.get("enabled", True)), ai)
+        return web.json_response(self.reparar_view())
+
+    def _revision_of(self, site: str) -> dict[str, Any] | None:
+        return (self._read_revision().get("sites") or {}).get(site)
+
+    def _read_revision(self) -> dict[str, Any]:
+        try:
+            data = json.loads((self.cfg.paths.state_dir / "revision.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _check_sites(self) -> list[tuple[ProviderConfig, str]]:
+        """The web chats to look at: the ones in use (built in or connected), each once."""
+        seen, out = set(), []
+        for p in self.cfg.providers.values():
+            site = site_of(p)
+            if site and site not in seen and (not p.catalog or catalog_mod.load_state(self.cfg.paths).get(site, {}).get("state") == "conectada"):
+                seen.add(site)
+                out.append((p, site))
+        return out
+
+    async def check_all(self) -> dict[str, Any]:
+        """The daily check (and "Comprobar ahora"): each web chat opened and looked at, nothing sent. A chat whose
+        text box is not found gets a repair (layer 3) on the spot, tried on its page without sending."""
+        results: dict[str, Any] = {}
+        for p, site in self._check_sites():
+            if not self.bridge.connected.is_set():
+                break
+            async with self.bridge.locks.setdefault(site, asyncio.Lock()):  # never while a question is being asked
+                res = await self.bridge._send_to_extension({"type": "check", **self.bridge.site_payload(site)}, 120)
+                try:
+                    out = json.loads(str(res.get("text") or "{}")) if res.get("ok") else {}
+                except ValueError:
+                    out = {}
+                state = ("bien" if out.get("input") else "sin_sesion" if out.get("login") else "verificacion" if out.get("challenge")
+                         else "saturada" if out.get("busy") else "limite" if out.get("limited") else "bloqueada" if out.get("banned")
+                         else "no_encuentro_la_caja" if res.get("ok") else "no_se_pudo_abrir")
+                fixed = None
+                if state == "no_encuentro_la_caja" and out.get("xray"):
+                    fixed = await self.bridge._repair(site, p.display, ["input"], out["xray"], "")
+                    if fixed:
+                        state = "reparada"
+            results[site] = {"state": state, "label": p.display, "when": time.strftime("%Y-%m-%d %H:%M:%S"),
+                             **({"repaired_by": fixed["ai"]} if fixed else {})}
+            self.bridge.log(f"Comprobación diaria: {p.display}: {state}")
+        data = {"when": time.strftime("%Y-%m-%d %H:%M:%S"), "sites": {**(self._read_revision().get("sites") or {}), **results}}
+        (self.cfg.paths.state_dir / "revision.json").write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+        return data
+
+    def revision_view(self) -> dict[str, Any]:
+        data = self._read_revision()
+        sites = [{"site": k, **v} for k, v in (data.get("sites") or {}).items()]
+        return {"when": data.get("when"), "running": bool(self.checking and not self.checking.done()), "sites": sites,
+                "ok": sum(1 for x in sites if x.get("state") in ("bien", "reparada")), "total": len(sites)}
+
+    async def revision(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        return web.json_response(self.revision_view())
+
+    async def revisar(self, request: web.Request) -> web.Response:
+        """"Comprobar ahora": the same check as every day, now (in the background; the app polls /api/revision)."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        if not await self.bridge._ensure_extension():
+            return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
+        if not (self.checking and not self.checking.done()):
+            self.checking = asyncio.create_task(self.check_all())
+        return web.json_response(self.revision_view())
+
+    async def _start_daily(self, app: web.Application) -> None:
+        self._daily = asyncio.create_task(self._daily_loop())
+
+    async def _stop_daily(self, app: web.Application) -> None:
+        for t in (self._daily, self.checking):
+            if t and not t.done():
+                t.cancel()
+
+    async def _daily_loop(self) -> None:
+        """Once a day, when Chrome is connected and nothing has been asked for 10 minutes."""
+        while True:
+            await asyncio.sleep(min(1800.0, self.daily_every_s / 4))
+            last = self._read_revision().get("when")
+            try:
+                age = time.time() - time.mktime(time.strptime(str(last), "%Y-%m-%d %H:%M:%S")) if last else 1e12
+            except ValueError:
+                age = 1e12
+            quiet = not self.bridge.jobs and time.monotonic() - self.bridge.last_job_at > 600
+            if age >= self.daily_every_s and quiet and self.bridge.connected.is_set() and not (self.checking and not self.checking.done()):
+                self.checking = asyncio.create_task(self.check_all())
+                try:
+                    await self.checking
+                except Exception as exc:  # noqa: BLE001 - logged; tomorrow again
+                    self.bridge.log(f"Comprobación diaria: falló ({exc})")
+
+    # ---------------------------------------------------------------- going on by hand in the web (PLAN-v5 F6, D16)
+
+    def _run_head(self, run_id: str) -> tuple[list[dict[str, Any]], Path] | None:
+        if not RUN_ID.match(run_id):
+            return None
+        d = self.cfg.paths.runs_dir / run_id
+        try:
+            lines = [json.loads(x) for x in (d / "journal.jsonl").read_text(encoding="utf-8").splitlines() if x.strip()]
+        except (OSError, ValueError):
+            return None
+        return lines, d
+
+    async def continuar(self, request: web.Request) -> web.Response:
+        """"Continuar en la web": that exact conversation, in a normal tab of Iván's Chrome, recorded as he goes on."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        return await self.continue_run(str(body.get("run_id") or ""), str(body.get("ai") or ""))
+
+    async def continue_run(self, run_id: str, ai: str = "") -> web.Response:
+        head = self._run_head(run_id)
+        if head is None:
+            return self._fail(404, "No encuentro esa pregunta en el historial.", "not_found")
+        lines, _ = head
+        calls = [x for x in lines if x.get("kind") in ("flow", None) and x.get("url") and (not ai or x.get("provider") == ai)]
+        if not calls:
+            return self._fail(409, "Esa respuesta no vino de un chat web (o es de antes de F6): no hay conversación que abrir.", "no_url")
+        call = calls[-1]
+        p = self.cfg.providers.get(str(call.get("provider")))
+        site = site_of(p) if p else None
+        if not site:
+            return self._fail(409, "Esa IA ya no está en webllm.", "no_site")
+        if not await self.bridge._ensure_extension():
+            return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
+        res = await self.bridge._send_to_extension({"type": "observe", **self.bridge.site_payload(site), "url": call["url"],
+                                                    "follows": run_id}, 60)
+        if not res.get("ok"):
+            return self._fail(502, f"No pude abrir la conversación de {p.display} ({res.get('error')}).", "no_abre")
+        return web.json_response({"ok": True, "label": p.display, "url": call["url"]})
+
+    async def dejar_de_registrar(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        tab = (await request.json()).get("tab")
+        if self.bridge.ws is not None and not self.bridge.ws.closed:
+            await self.bridge.ws.send_json({"type": "observe_stop", **({"tab": int(tab)} if tab else {})})
+        return web.json_response({"ok": True})
+
+    def on_observe_state(self, data: dict[str, Any]) -> None:
+        tab = int(data.get("tab") or 0)
+        if data.get("on"):
+            p = self._provider_of_site(str(data.get("site") or ""))
+            self.observing[tab] = {"tab": tab, "site": data.get("site"), "label": p.display if p else data.get("site"),
+                                   "follows": data.get("follows"), "since": time.strftime("%H:%M")}
+        else:
+            self.observing.pop(tab, None)
+
+    def _provider_of_site(self, site: str) -> ProviderConfig | None:
+        return next((p for p in self.cfg.providers.values() if site_of(p) == site), None)
+
+    async def on_observed(self, data: dict[str, Any]) -> None:
+        """A turn Iván wrote himself in the chat's page: recorded in the same conversation (history and vault)."""
+        site = str(data.get("site") or "")
+        p = self._provider_of_site(site)
+        user = str(data.get("user") or "").strip()
+        if p is None or not user:
+            self.bridge.log(f"Observador: turno sin chat conocido ({site}) o sin mensaje: no se guarda.")
+            return
+        self.bridge.guard.note(ProviderConfig(name=site, model="browser/" + site, kind="browser"))  # counts, never blocks
+        follows = str(data.get("follows") or "") or None
+        run_dir = await asyncio.to_thread(flows.record_observed, self.cfg, p, follows=follows, user=user[:MAX_PROMPT],
+                                          answer=str(data.get("answer") or ""), url=str(data.get("url") or "")[:500],
+                                          via=data.get("via"), error=data.get("error"))
+        for o in self.observing.values():
+            if o.get("site") == site and o.get("follows") in (None, follows):
+                o["follows"] = follows or run_dir.name  # the next turns follow the same conversation
+        self.bridge.log(f"Observador: {p.display}: turno escrito por Iván guardado ({run_dir.name}).")
 
     async def encender_local(self, request: web.Request) -> web.Response:
         if not self._authorized(request):

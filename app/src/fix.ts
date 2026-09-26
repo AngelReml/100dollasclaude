@@ -77,6 +77,18 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
         actions: ["otra"],
         said: true,
       };
+    case "no_input":
+      return {
+        title: `No encontré la caja de texto de ${label}`,
+        text: "Su web ha cambiado. En su Ficha, pulsa «Enséñame esta web» (3 clics); o enciende «Reparar solas con IA». No se envió nada.",
+        actions: ["otra"],
+      };
+    case "empty_answer":
+      return {
+        title: `${label} contestó, pero no pude leer su respuesta`,
+        text: "Su web ha cambiado. La respuesta sigue en su ventanita: en su Ficha, pulsa «Enséñame esta web» (3 clics); o enciende «Reparar solas con IA».",
+        actions: ["otra"],
+      };
     case "not_confirmed":
       return {
         title: `No se envió: ${label} no confirmó lo que pediste`,

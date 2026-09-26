@@ -45,6 +45,7 @@ import yaml
 from aiohttp import ClientSession, web
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from webllm_agent import fichas  # noqa: E402
 from webllm_agent.bridge import Bridge  # noqa: E402
 from webllm_agent.config import load_config  # noqa: E402
 from webllm_agent.catalog import load as load_catalog  # noqa: E402
@@ -104,7 +105,34 @@ def fake_lmstudio() -> web.Application:
     return app
 
 
-def fake_omniroute() -> web.Application:
+def demo_repair(prompt: str, log: Path | None) -> str:
+    """The fake OmniRoute as the AI that helps repair a page (PLAN-v5 F6): it reads the x-ray webllm sent and
+    points at candidates the way a model would, with numbers. What it received is written to ``log`` so a test can
+    check that nothing of the conversation was in it. A page whose address says "codigo" gets code back instead
+    (webllm must reject it)."""
+    if log is not None:
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"prompt": prompt}, ensure_ascii=False) + "\n")
+    page = (re.search(r"^Page: (.*)$", prompt, flags=re.M) or [None, ""])[1]
+    if "codigo" in page:
+        return "```js\ndocument.querySelector('.x1').innerText\n```"
+    roles = json.loads(prompt.rsplit("Answer with JSON only, keys ", 1)[1].rstrip(". \n"))
+    cands = json.loads(prompt.split("Candidates:\n", 1)[1].split("\n\nAnswer with JSON only", 1)[0])
+    out = {}
+    for role in roles:
+        if role == "input":
+            boxes = [c for c in cands if c.get("kind") == "box"]
+            out[role] = boxes[-1]["n"] if boxes else None
+        elif role == "answer":
+            blocks = [c for c in cands if c.get("kind") == "block" and c.get("after_your_message") and not c.get("is_your_message")]
+            out[role] = blocks[-1]["n"] if blocks else None
+        else:
+            buttons = [c for c in cands if c.get("kind") == "button" and re.search(r"send|envi|copi|copy", json.dumps(c), re.I)]
+            out[role] = buttons[-1]["n"] if buttons else None
+    return json.dumps(out)
+
+
+def fake_omniroute(data: Path | None = None) -> web.Application:
     async def health(request):
         return web.json_response({"ok": True})
 
@@ -124,6 +152,8 @@ def fake_omniroute() -> web.Application:
             return await answer(request, body, {"content": None, "tool_calls": [call]}, "tool_calls")
         prompt = last["content"] if isinstance(last["content"], str) else " ".join(
             p.get("text", "") for p in last["content"] if isinstance(p, dict))
+        if prompt.startswith("You help a browser extension find elements"):  # webllm repairing a page
+            return await answer(request, body, {"content": demo_repair(prompt, data / "demo_reparaciones.jsonl" if data else None)})
         key = "zai" if model.startswith("zai") else "groq" if model.startswith("groq") else "nemotron"
         if key == "nemotron" and "(demo: límite)" in prompt:
             return web.json_response({"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. "
@@ -323,11 +353,21 @@ async def fake_extension(port: int) -> None:
                 asyncio.create_task(taught())
             elif job.get("type") == "file_part":  # a job's files arrive in parts before it
                 incoming.setdefault(job["job"], {}).setdefault(job["key"], {})[job["n"]] = base64.b64decode(job["data"])
+            elif job.get("type") == "check":  # the daily check (PLAN-v5 F6): opened and looked at, nothing sent
+                ok = logged_in.get(job["site"], True)
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "via": "check",
+                                    "text": json.dumps({"input": ok, "login": not ok, "url": f"https://{job['site']}.demo/"})})
+            elif job.get("type") in ("try_patch", "observe", "reread"):
+                text = json.dumps({"ok": True, "checks": {k: {"ok": True} for k in job.get("patch") or {}}}) \
+                    if job["type"] == "try_patch" else json.dumps({"tab": 1}) if job["type"] == "observe" else "Respuesta releída."
+                await ws.send_json({"type": "result", "id": job["id"], "ok": True, "via": job["type"], "text": text})
+                if job["type"] == "observe":
+                    await ws.send_json({"type": "observe_state", "site": job["site"], "follows": job.get("follows"), "tab": 1, "on": True})
 
 
 async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30, catalog_file: Path | None = None,
                login_wait_s: float | None = None) -> None:
-    omni = web.AppRunner(fake_omniroute())
+    omni = web.AppRunner(fake_omniroute(data))
     await omni.setup()
     site = web.TCPSite(omni, "127.0.0.1", 0)
     await site.start()
@@ -356,6 +396,11 @@ async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30, 
         bridge.app_api.catalog = load_catalog(catalog_file)
     if login_wait_s is not None:
         bridge.app_api.login_wait_s = login_wait_s
+    if chrome and not fichas.patch_history(cfg.paths, "qwen"):
+        # (demo) Qwen's card shows what F6 does: a repair by an AI yesterday, and one of Iván's lessons he undid
+        fichas.add_patch(cfg.paths, "qwen", "answer", "div.chat-response", by="ia:zai", why="no podía leer la respuesta")
+        fichas.add_patch(cfg.paths, "qwen", "input", "textarea#composer", by="ivan", why="Enséñame")
+        fichas.undo_patch(cfg.paths, "qwen", 1)
     runner = web.AppRunner(bridge.app())
     await runner.setup()
     await web.TCPSite(runner, "127.0.0.1", port).start()

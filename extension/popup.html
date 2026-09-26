@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>webllm</title>
+<style>
+  body { font: 15px system-ui, sans-serif; margin: 0; padding: 14px 16px; width: 280px; color: #1f2937; }
+  h1 { font-size: 16px; margin: 0 0 8px; }
+  p { margin: 0 0 12px; line-height: 1.4; }
+  button { font: 600 15px system-ui, sans-serif; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: #3a55d6; color: #fff; cursor: pointer; }
+  button.stop { background: #b42318; }
+  button[hidden] { display: none; }
+  @media (prefers-color-scheme: dark) { body { background: #1f2937; color: #f3f4f6; } }
+</style>
+</head>
+<body>
+<h1>webllm</h1>
+<p id="msg">Mirando esta pestaña…</p>
+<button id="toggle" hidden></button>
+<script src="popup.js"></script>
+</body>
+</html>

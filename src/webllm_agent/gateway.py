@@ -509,6 +509,13 @@ class Gateway:
             who = f"{p.display} ({entry.by})" if entry and entry.by and entry.by != p.display else p.display
             names = ", ".join("«" + str(f.get("name")) + "»" for f in files)
             out.append(f"{names} se {'subió' if len(files) == 1 else 'subieron'} a {who}, con la misma huella.")
+        fixed = done.get("repaired") or {}
+        if fixed:
+            what = {"input": "su caja de texto", "answer": "su respuesta"}
+            parts = " y ".join(what.get(r, r) for r in fixed.get("roles") or [])
+            out.append(f"La web de {p.display} había cambiado y webllm no encontraba {parts}: {fixed.get('ai')} señaló "
+                       "dónde está, se comprobó en la página sin enviar nada y queda guardado (lo puedes deshacer en su "
+                       "Ficha, en webllm).")
         for d in done.get("downloads") or []:
             if d.get("path"):
                 out.append(f"{p.display} generó «{d.get('name')}»: guardado en {d['path']}.")

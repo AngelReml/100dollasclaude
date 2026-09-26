@@ -99,6 +99,10 @@ class Answer:
     # and what it produced (downloads saved in data/descargas/, or links).
     used: dict[str, Any] = field(default_factory=dict)
     downloads: list[dict[str, Any]] = field(default_factory=list)
+    # PLAN-v5 F6: the page had changed and webllm repaired its way around it ({ai, roles}); the conversation's own
+    # address on the chat's site ("Continuar en la web" opens it)
+    repaired: dict[str, Any] = field(default_factory=dict)
+    url: str = ""
 
 
 @dataclass
@@ -434,7 +438,8 @@ async def run_flow(
                                "provider_label": _label(cfg, answer.provider), "ok": answer.ok,
                                "text": answer.text, "seconds": answer.seconds, "error": answer.error,
                                "code": answer.code, "notices": answer.notices, "model": answer.model,
-                               "used": answer.used, "downloads": answer.downloads})
+                               "used": answer.used, "downloads": answer.downloads, "repaired": answer.repaired,
+                               "url": answer.url})
             return answer
 
         async def run_step(step: Step) -> None:
@@ -507,12 +512,15 @@ def journal_call(run_dir: Path, run_id: str, counter: int, step_id: str, message
         # what the chat's page really used and produced (the files by their sha256, never their content)
         **({"used": used} if (used := (r.webllm or {}).get("used")) else {}),
         **({"downloads": made} if (made := (r.webllm or {}).get("downloads")) else {}),
+        **({"repaired": fixed} if (fixed := (r.webllm or {}).get("repaired")) else {}),
+        **({"url": url} if (url := (r.webllm or {}).get("url")) else {}),
         **(extra or {}),
     })
     return Answer(target=target, provider=outcome.target.name, ok=r.ok, text=r.text if r.ok else "",
                   seconds=round(r.latency_s, 1), error=_error_text(r), code=error_code(r),
                   notices=list(outcome.notices), model=r.model or outcome.target.model,
-                  used=dict((r.webllm or {}).get("used") or {}), downloads=list((r.webllm or {}).get("downloads") or []))
+                  used=dict((r.webllm or {}).get("used") or {}), downloads=list((r.webllm or {}).get("downloads") or []),
+                  repaired=dict((r.webllm or {}).get("repaired") or {}), url=str((r.webllm or {}).get("url") or ""))
 
 
 def close_run(run_dir: Path, run_id: str, name: str, status: str, steps: dict[str, str]) -> bool:
@@ -532,6 +540,46 @@ def to_vault(cfg: AppConfig, run_dir: Path, **kw: Any) -> None:
     """PLAN-v5 F5: the journal is copied one way to Obsidian as it grows (nothing when the memory is off),
     with the names Iván knows for each AI."""
     vault.export_run(cfg.paths, run_dir, labels={p.name: p.display for p in cfg.providers.values()}, **kw)
+
+
+def record_observed(cfg: AppConfig, p: ProviderConfig, *, follows: str | None, user: str, answer: str, url: str = "",
+                    via: str | None = None, error: str | None = None) -> Path:
+    """One turn Iván wrote himself in the chat's own page (observer mode, PLAN-v5 F6 / D16), recorded like any
+    question: its own run, marked as written by him, in the same conversation as the run it follows (so the
+    history and the vault keep it together)."""
+    from .broadcaster import new_run_id
+    run_id = new_run_id()
+    run_dir = cfg.paths.runs_dir / run_id
+    head: dict[str, Any] = {}
+    if follows and RUN_ID_RE.fullmatch(follows):
+        try:
+            head = json.loads((cfg.paths.runs_dir / follows / journal.JOURNAL_NAME).read_text(encoding="utf-8").splitlines()[0])
+        except (OSError, ValueError, IndexError):
+            head = {}
+    root = str(head.get("follows_root") or follows or "") if follows else ""
+    step = Step(id="respuestas", title="Respuesta", to=(p.name,), message="{{pregunta}}")
+    flow = Flow(name="Seguido en la web", template="observado", steps=(step,),
+                inputs={"pregunta": user, "origen": f"Iván, en la web de {p.display}"})
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_flow(run_dir, flow)
+    journal.append(run_dir / journal.JOURNAL_NAME, {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"), "run_id": run_id, "kind": "observed",
+        "origin": "iván en la web", "provider": p.name, "url": url[:500], "follows": follows or None,
+        "follows_root": root or None, "chat_id": head.get("chat_id") or "",
+        **({"project": head["project"]} if head.get("project") else {}), **({"title": head["title"]} if head.get("title") else {}),
+    })
+    message_file, message_sha = start_run(run_dir, flow, step, user)
+    ok = bool(answer.strip())
+    outcome = Outcome(p, ChatResult("ok" if ok else "error", text=answer if ok else "", model=p.model,
+                                    error=None if ok else (error or "empty_answer"), webllm={"url": url} if url else None))
+    journal_call(run_dir, run_id, 1, step.id, message_file, message_sha, outcome, "first", p.name,
+                 extra={"by": "ivan", "via": via})
+    close_run(run_dir, run_id, flow.name, OK if ok else FAILED, {step.id: OK if ok else FAILED})
+    to_vault(cfg, run_dir)
+    return run_dir
+
+
+RUN_ID_RE = re.compile(r"\d{8}-\d{6}-[0-9a-f]{4}")
 
 
 def write_flow(run_dir: Path, flow: Flow) -> None:

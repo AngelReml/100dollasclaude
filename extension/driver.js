@@ -79,19 +79,28 @@
 
   const clickables = () => [...document.querySelectorAll("button,[role='button']")].filter((el) => visible(el));
 
+  // PLAN-v5 F6, layer 1: text boxes of every usual kind. Rich editors (contenteditable "plaintext-only" or
+  // "", role="textbox") first, like textareas; plain inputs (also without a type) only if there is nothing else.
+  const BOX_SEL = "textarea,[contenteditable]:not([contenteditable='false']),[role='textbox']";
+  const LINE_SEL = "input[type='text'],input:not([type])";
+  const editable = (el) => !!el && (el.matches(BOX_SEL) || el.matches(LINE_SEL)) && el.type !== "password";
   const findInput = (site) => {
     const bySite = all(site.input);
     if (bySite.length) return bySite[bySite.length - 1];
-    const generic = [...document.querySelectorAll("textarea,[contenteditable='true'],input[type='text']")].filter((el) => visible(el));
-    return generic.length ? generic[generic.length - 1] : null;
+    for (const sel of [BOX_SEL, LINE_SEL]) {
+      const generic = [...document.querySelectorAll(sel)].filter((el) => visible(el) && !el.closest("nav,aside,[role='navigation']"));
+      if (generic.length) return generic[generic.length - 1];
+    }
+    return null;
   };
 
-  const SEND_RE = /send|enviar|submit|发送/i;
+  // The names chat pages give these buttons, in the catalog's languages.
+  const SEND_RE = /send|enviar|envoyer|senden|invia|submit|发送|發送|送出|送信|전송|보내기/i;
   // Whole words only, and only in a button's own name (aria-label, title, test id, short text):
   // class names are not names (a "nonstop-toggle" is not a stop button), and a false "stop"
   // would make webllm wait for an answer that is already finished.
-  const STOP_RE = /(^|[^a-z])(stop|detener|parar|interrumpir)([^a-z]|$)|停止/i;
-  const COPY_RE = /copy|copiar|复制/i;
+  const STOP_RE = /(^|[^a-zà-ÿ])(stop|detener|parar|interrumpir|arr[êe]ter|stopper|anhalten|stoppen|interrompi|fermare|ferma)([^a-zà-ÿ]|$)|停止|中止|중지|정지/i;
+  const COPY_RE = /copy|copiar|copier|kopieren|copia|复制|複製|拷贝|コピー|복사/i;
 
   const nameOf = (el) => {
     const text = (el.innerText || "").trim();
@@ -107,7 +116,7 @@
 
   const findSend = (site) => {
     const bySite = all(site.send).map((el) => el.closest("button,[role='button']") || el);
-    const cands = bySite.length ? bySite : clickables().filter((b) => SEND_RE.test(labelOf(b)));
+    const cands = bySite.length ? bySite : clickables().filter((b) => SEND_RE.test(labelOf(b) + " " + nameOf(b)));
     const enabled = cands.filter((b) => !b.disabled && b.getAttribute("aria-disabled") !== "true");
     return enabled.length ? enabled[enabled.length - 1] : null;
   };
@@ -122,7 +131,7 @@
   const copyButtons = (site) => {
     const bySite = all(site.copy).map((el) => el.closest("button,[role='button']") || el);
     if (bySite.length) return bySite;
-    return clickables().filter((b) => COPY_RE.test(labelOf(b)) && !/code/i.test(labelOf(b)) && !inCode(b));
+    return clickables().filter((b) => COPY_RE.test(labelOf(b) + " " + nameOf(b)) && !/code|código/i.test(labelOf(b)) && !inCode(b));
   };
 
   const answers = (site) => all(site.answer);
@@ -157,7 +166,8 @@
   // querySelectorAll is in document order, so the last match is the innermost
   // element of the last message.
   const GENERIC_ANSWER = "[data-message-author-role='assistant'],[data-role='assistant'],[class*='assistant' i]," +
-    "[class*='markdown' i],[class*='response' i],[class*='answer' i],[class*='bot-message' i],[class*='ai-message' i]";
+    "[class*='markdown' i],[class*='response' i],[class*='answer' i],[class*='bot-message' i],[class*='ai-message' i]," +
+    "[data-testid*='assistant' i],[data-testid*='bot-message' i],[class*='prose' i],[class*='respuesta' i],[class*='reponse' i]";
   const genericAnswers = () => [...document.querySelectorAll(GENERIC_ANSWER)].filter((el) =>
     visible(el) && (el.innerText || "").trim() && !el.querySelector("textarea,input,[contenteditable='true']"));
 
@@ -578,6 +588,164 @@
     }
     return "body > " + path.join(" > ");
   };
+  // ------------------------------------------------ self-repair (PLAN-v5 F6)
+  const SKIP_AREA = "nav,aside,[role='navigation'],[role='complementary'],[data-webllm-teach],[data-webllm-observe]";
+  const short = (v, n) => (v ? String(v).trim().replace(/\s+/g, " ").slice(0, n) || undefined : undefined);
+  const classesOf = (el) => (typeof el.className === "string" ? el.className : "").trim().split(/\s+/).filter(Boolean);
+  const matches = (sel, el) => { try { return [...document.querySelectorAll(sel)].includes(el); } catch (e) { return false; } };
+  // A selector that finds this element and the ones like it (the next answers), not just this one.
+  const general = (el) => {
+    const tag = el.tagName.toLowerCase();
+    for (const attr of ["data-testid", "data-role", "data-message-author-role"]) {
+      const v = el.getAttribute(attr);
+      const sel = v && `${tag}[${attr}="${v.replace(/"/g, '\\"')}"]`;
+      if (sel && matches(sel, el)) return sel;
+    }
+    const cls = classesOf(el).filter((c) => /^[A-Za-z_][\w-]*$/.test(c)).slice(0, 4);
+    const sel = cls.length ? tag + cls.map((c) => "." + CSS.escape(c)).join("") : "";
+    return sel && matches(sel, el) ? sel : selectorFor(el);
+  };
+  // The message an element belongs to: going up until the next level is the list of messages.
+  const messageOf = (el) => {
+    let m = el.nodeType === 1 ? el : el.parentElement;
+    while (m && m.parentElement && m.parentElement !== document.body) {
+      const withText = [...m.parentElement.children].filter((c) => (c.innerText || "").trim());
+      if (withText.length >= 2) break;
+      m = m.parentElement;
+    }
+    return m;
+  };
+  // What webllm typed, found on the page: the innermost element holding it (Iván's message). Its text never
+  // leaves the page; only "this block is / is after your message" does.
+  const yourMessage = (sent) => {
+    const probe = String(sent || "").trim().slice(0, 40);
+    if (!probe) return null;
+    const holders = [...document.querySelectorAll("body *")].filter((el) => !editable(el) && !el.closest(SKIP_AREA) &&
+      (el.innerText || "").includes(probe) && ![...el.children].some((c) => (c.innerText || "").includes(probe)));
+    return holders.length ? holders[holders.length - 1] : null;
+  };
+
+  // The page's x-ray, for an AI to point at the text box, the send button or the answer: numbered candidates
+  // with what the site wrote on them (tags, classes, short labels of controls, sizes, positions). Never the text
+  // of the conversation (answers are only their length), never a password field, never what was typed.
+  const xray = (site, sent) => {
+    const probe = String(sent || "").trim();
+    const mine = yourMessage(sent);
+    const out = { url: location.origin + location.pathname, candidates: [] };
+    const seen = new Set();
+    const leaks = (v) => !!probe && !!v && ((v.length >= 8 && probe.includes(v)) || v.includes(probe.slice(0, 12)));
+    const add = (el, kind) => {
+      if (seen.has(el) || out.candidates.length >= 90) return;
+      seen.add(el);
+      const r = el.getBoundingClientRect();
+      const text = el.innerText || "";
+      const c = { n: out.candidates.length, kind, tag: el.tagName.toLowerCase(), role: short(el.getAttribute("role"), 30),
+        testid: short(el.getAttribute("data-testid"), 60), id: short(el.id, 60), classes: short(classesOf(el).join(" "), 100),
+        x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+      if (kind === "box") {
+        Object.assign(c, { type: short(el.getAttribute("type"), 20), contenteditable: short(el.getAttribute("contenteditable"), 20),
+          placeholder: short(el.getAttribute("placeholder") || el.getAttribute("aria-placeholder") || el.getAttribute("data-placeholder"), 60),
+          label: short(el.getAttribute("aria-label"), 60) });
+      } else if (kind === "button") {
+        Object.assign(c, { label: short(el.getAttribute("aria-label"), 60), title: short(el.getAttribute("title"), 60),
+          text: text.trim().length <= 24 ? short(text, 24) : undefined, disabled: !isEnabled(el) || undefined,
+          icon_only: !text.trim() || undefined });
+      } else {
+        Object.assign(c, { text_len: text.trim().length, children: el.childElementCount,
+          is_your_message: !!(mine && (el === mine || el.contains(mine))) || undefined,
+          after_your_message: !!(mine && !el.contains(mine) && (mine.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING)) || undefined });
+      }
+      for (const k of ["label", "title", "text", "placeholder", "testid", "id", "classes"]) if (leaks(c[k])) delete c[k];
+      for (const k of Object.keys(c)) if (c[k] === undefined) delete c[k];
+      // where to find it again: kept by webllm, never shown to the AI (which answers with numbers only)
+      c.sel = selectorFor(el);
+      c.general = kind === "block" ? general(el) : c.sel;
+      out.candidates.push(c);
+    };
+    const inArea = (el) => !el.closest(SKIP_AREA);
+    [...document.querySelectorAll(BOX_SEL + "," + LINE_SEL)].filter((el) => visible(el) && inArea(el) && editable(el)).slice(-8)
+      .forEach((el) => add(el, "box"));
+    clickables().filter(inArea).slice(-45).forEach((el) => add(el, "button"));
+    [...document.querySelectorAll("div,article,section")].filter((el) => {
+      if (!visible(el) || !inArea(el) || el.querySelector(BOX_SEL + "," + LINE_SEL) || el.closest("button,[role='button']")) return false;
+      const t = (el.innerText || "").trim();
+      if (!t) return false;
+      // the same text one block down (a div inside a div): keep only the inner one; <strong>, <p>… are not blocks
+      const only = el.children.length === 1 && el.children[0].matches("div,article,section") ? el.children[0] : null;
+      return !(only && ((only.innerText || "").trim().length === t.length));
+    }).slice(-30).forEach((el) => add(el, "block"));
+    return out;
+  };
+
+  // A repair (layer 3) or a lesson (layer 4), tried on the page as it is, sending nothing: is the text box a
+  // text box, the send button a button (and not a forbidden one), the answer a message that is not Iván's?
+  const tryPatch = (patch, sent) => {
+    const mine = yourMessage(sent);
+    const probe = String(sent || "").trim().slice(0, 40);
+    const checks = {};
+    for (const [key, sels] of Object.entries(patch || {})) {
+      let found = [];
+      let bad = false;
+      for (const sel of Array.isArray(sels) ? sels : []) {
+        try { found = [...document.querySelectorAll(sel)].filter((el) => visible(el)); } catch (e) { bad = true; break; }
+        if (found.length) break;
+      }
+      const el = found[found.length - 1];
+      if (bad) checks[key] = { ok: false, why: "not_a_selector" };
+      else if (!el) checks[key] = { ok: false, why: "not_found" };
+      else if (key === "input") checks[key] = editable(el) ? { ok: true } : { ok: false, why: "not_a_text_box" };
+      else if (["send", "copy", "stop"].includes(key)) {
+        const b = el.closest("button,[role='button']");
+        checks[key] = !b ? { ok: false, why: "not_a_button" } : forbidden(b) ? { ok: false, why: "forbidden" } : { ok: true };
+      } else if (key === "answer") {
+        const t = (el.innerText || "").trim();
+        checks[key] = !t ? { ok: false, why: "empty" }
+          : el.querySelector(BOX_SEL + "," + LINE_SEL) ? { ok: false, why: "holds_the_box" }
+          : (probe && t.includes(probe)) || (mine && (el === mine || el.contains(mine))) ? { ok: false, why: "is_your_message" }
+          : mine && !(mine.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) ? { ok: false, why: "before_your_message" }
+          : { ok: true, length: t.length };
+      } else checks[key] = { ok: false, why: "unknown" };
+    }
+    return { ok: Object.keys(checks).length > 0 && Object.values(checks).every((c) => c.ok), checks };
+  };
+
+  // "Parar": the site's own stop button, if an answer is being written (never a forbidden one).
+  const pressStop = (site) => {
+    const b = stopButton(site);
+    if (!b) return { ok: false, error: "no_stop_button" };
+    return safeClick(b) ? { ok: true, name: nameOf(b).slice(0, 60) } : { ok: false, error: "forbidden" };
+  };
+
+  // Observer mode (PLAN-v5 F6): Iván writes in his own tab; webllm only looks (no clicks, no typing).
+  const observe = (site) => {
+    const input = findInput(site);
+    const typed = !input ? "" : ("value" in input && input.tagName !== "DIV" ? input.value : input.innerText) || "";
+    const last = lastAnswerEl(site);
+    return { url: location.href, typed: String(typed).slice(0, 20000), generating: isGenerating(site), hidden: document.hidden,
+             copyCount: copyButtons(site).length, answerCount: answers(site).length, lastAnswerLen: last ? (last.innerText || "").length : 0,
+             bodyLen: ((document.body && document.body.innerText) || "").length, challenge: detectChallenge(),
+             stop: !!window.__webllmStopObserving };
+  };
+  // A visible mark while webllm records this tab, with a way to stop it (it also stops from the extension icon).
+  const observeBadge = (on) => {
+    document.querySelectorAll("[data-webllm-observe]").forEach((n) => n.remove());
+    window.__webllmStopObserving = false;
+    if (!on) return { ok: true };
+    const bar = document.createElement("div");
+    bar.setAttribute("data-webllm-observe", "1");
+    bar.style.cssText = "position:fixed;z-index:2147483647;right:12px;bottom:12px;background:#1f2937;color:#fff;font:600 14px system-ui;" +
+      "padding:8px 10px 8px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center";
+    const label = document.createElement("span");
+    label.textContent = "● webllm está registrando esta conversación";
+    const stopBtn = document.createElement("button");
+    stopBtn.textContent = "Dejar de registrar";
+    stopBtn.style.cssText = "font:600 14px system-ui;border:0;border-radius:8px;padding:6px 10px;cursor:pointer";
+    stopBtn.onclick = (e) => { e.stopPropagation(); window.__webllmStopObserving = true; label.textContent = "webllm ya no registra"; stopBtn.remove(); };
+    bar.append(label, stopBtn);
+    document.body.appendChild(bar);
+    return { ok: true };
+  };
+
   const teach = (what, text, waitMs = 180000) => new Promise((resolve) => {
     const bar = document.createElement("div");
     bar.setAttribute("data-webllm-teach", "1");
@@ -589,7 +757,13 @@
     const onClick = (e) => {
       e.preventDefault();
       e.stopImmediatePropagation();
-      const el = e.target.closest("button,[role='button'],a,input,textarea,[contenteditable='true'],[role='menuitem'],[role='option']") || e.target;
+      // The answer: the whole message Iván clicked in, and a selector that finds the next ones too.
+      if (what === "answer") {
+        const msg = messageOf(e.target);
+        return done({ ok: true, what, selector: general(msg), name: "" });
+      }
+      const el = (what === "input" ? e.target.closest(BOX_SEL + "," + LINE_SEL) : null) ||
+        e.target.closest("button,[role='button'],a,input,textarea,[contenteditable]:not([contenteditable='false']),[role='textbox'],[role='menuitem'],[role='option']") || e.target;
       done({ ok: true, what, selector: selectorFor(el), name: optionName(el) });
     };
     document.addEventListener("click", onClick, true);
@@ -599,5 +773,6 @@
   // The modes that are on right now (a toggle next to the box, or a chip a menu left), whoever put them.
   const activeModes = () => modeToggles().filter(isChecked).map((el) => nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60));
 
-  window.__webllmDriver = { state, insert, send, capture, fallback, diagnose, discover, chooseModel, setMode, fileChunk, attach, downloads, teach, activeModes };
+  window.__webllmDriver = { state, insert, send, capture, fallback, diagnose, discover, chooseModel, setMode, fileChunk, attach, downloads, teach,
+    activeModes, xray, tryPatch, pressStop, observe, observeBadge };
 })();

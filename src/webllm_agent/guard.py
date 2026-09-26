@@ -198,6 +198,17 @@ class Guard:
             raise
         return Permit(provider.name, lock)
 
+    def note(self, provider: ProviderConfig) -> None:
+        """A message Iván wrote himself in the chat's page (observer mode, PLAN-v5 F6): it counts in today's number
+        and in the spacing before webllm's next message, but nothing is held up (he wrote it, not webllm)."""
+        data = self._load()
+        st = data["providers"].setdefault(provider.name, {})
+        if st.get("day") != self._today():
+            st["day"], st["count_today"] = self._today(), 0
+        st["count_today"] = st.get("count_today", 0) + 1
+        st["last_request_ts"] = self.clock()
+        self._save(data)
+
     def release(self, permit: Permit) -> None:
         permit.lock_path.unlink(missing_ok=True)
 

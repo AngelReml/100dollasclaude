@@ -6,6 +6,10 @@
 importScripts("common.js", "sites.js");
 
 const SITES = self.WEBLLM_SITES;
+// Each site as sites.js (or "+ Añadir otra IA") defines it; what Iván taught or an AI repaired is put on top
+// of this for every message the bridge sends (PLAN-v5 F6: a patch that is undone is gone at once).
+const BASE = JSON.parse(JSON.stringify(SITES));
+const PATCH_KEYS = ["modelButton", "plusButton", "fileInput", "input", "send", "stop", "copy", "answer"];
 const { genericSite, parseChatUrl } = self.WEBLLM_COMMON;
 const HUMAN_WAIT_MS = 300000;  // how long a verification or pop-up waits for you (each time)
 const JOB_HARD_CAP_MS = 29 * 60000; // no job runs longer, whatever it waits for (the bridge gives up at 30)
@@ -241,7 +245,7 @@ async function call(tabId, op, ...args) {
 // ---------------------------------------------------------------- jobs
 
 class JobError extends Error {
-  constructor(code, detail) { super(code); this.code = code; this.detail = detail || ""; }
+  constructor(code, detail, extra) { super(code); this.code = code; this.detail = detail || ""; this.extra = extra || null; }
 }
 
 // "Parar" (Open WebUI's stop button, or "Parar todo"): the bridge names the job; it stops at the next look.
@@ -295,7 +299,11 @@ async function runJob(job) {
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
     checkBlocks(job.site, st);
     if (st.input) break;
-    if (boxClock() > 30000) throw new JobError("no_input", st.url);
+    if (boxClock() > 30000) {
+      // PLAN-v5 F6: the page's x-ray goes with the error, so the bridge can try a repair (nothing was sent)
+      const x = await call(tabId, "xray", site, "").catch(() => null);
+      throw new JobError("no_input", st.url, { xray: x });
+    }
     await sleep(1000);
   }
 
@@ -345,6 +353,7 @@ async function runJob(job) {
   const before = await call(tabId, "state", site);
   const snd = await call(tabId, "send", site);
   if (!snd || !snd.ok) throw new JobError("send_failed", JSON.stringify(snd));
+  job.__sent = tabId;  // from here on, "Parar" also presses the site's own stop button
 
   // 2b. make sure it really went out. A pop-up (age check, cookies, "new
   // feature"...) can swallow the click and leave the text in the box: then ask
@@ -416,9 +425,13 @@ async function runJob(job) {
   if (!out || !out.ok) out = await call(tabId, "fallback", site);
   if (!out || !out.ok || !out.text.trim()) {
     const d = await call(tabId, "diagnose", site).catch(() => null);
-    throw new JobError("empty_answer", JSON.stringify({ out, diagnose: d }).slice(0, 6000));
+    // PLAN-v5 F6: the x-ray too; the answer is on the page, so a repaired reading can take it without
+    // sending anything again ("reread")
+    const x = await call(tabId, "xray", site, job.prompt).catch(() => null);
+    throw new JobError("empty_answer", JSON.stringify({ out, diagnose: d }).slice(0, 6000), { xray: x });
   }
   out.modelName = st.modelName || null;
+  out.url = st.url;  // this conversation's own address: "Continuar en la web" opens it
   out.used = used;
   const made = await call(tabId, "downloads", site).catch(() => null);
   out.downloads = made && made.ok ? made.files : [];
@@ -434,10 +447,15 @@ async function handleJob(job) {
     try {
       const out = await runJob(job);
       sendToBridge({ type: "result", id: job.id, ok: true, text: out.text, via: out.via, model_label: out.modelName,
-                     used: out.used, downloads: out.downloads });
+                     used: out.used, downloads: out.downloads, url: out.url });
     } catch (e) {
       const code = e instanceof JobError ? e.code : "extension_error";
-      const detail = e instanceof JobError ? e.detail : String(e && e.message || e);
+      let detail = e instanceof JobError ? e.detail : String(e && e.message || e);
+      // "Parar" after it was sent: the site's own stop button too, so it stops writing (PLAN-v5 F6)
+      if (code === "cancelled" && job.__sent) {
+        const r = await call(job.__sent, "pressStop", SITES[job.site]).catch(() => null);
+        detail = r && r.ok ? `parado por Iván; pulsé «${r.name}» en la web` : "parado por Iván; la web ya no estaba escribiendo";
+      }
       const name = (SITES[job.site] && SITES[job.site].name) || job.site;
       if (code === "login_required") notify(job.site, code, `${name}: no hay sesión abierta. Entra con tu cuenta (o una nueva) en esa ventana y vuelve a pedirlo.`);
       if (code === "banned") notify(job.site, code, `${name}: la cuenta parece bloqueada. Crea otra, entra con ella en Chrome y haz doble clic en REANUDAR.`);
@@ -445,7 +463,7 @@ async function handleJob(job) {
       if (code === "challenge") notify(job.site, code, `${name}: la verificación no se resolvió. Lo pauso; resuélvela y haz doble clic en REANUDAR.`);
       if (code === "site_busy") notify(job.site, code, `${name} está saturado ahora mismo (no es un límite de tu cuenta). Prueba en un rato o elige otro modelo en su web.`);
       if (code === "not_sent") notify(job.site, code, `${name}: el mensaje se quedó sin enviar (¿una ventana emergente?). Vuelve a pedirlo.`);
-      sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
+      sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail, ...((e && e.extra) || {}) });
     } finally {
       delete runningJob[job.site];
       delete incoming[job.id];
@@ -538,19 +556,210 @@ function handleTeach(msg) {
 
 // Sites you added from the app are not in sites.js: the bridge sends their
 // name and address with every message, and driver.js detects them generically.
+// What Iván showed ("Enséñame") or an AI repaired goes first, before the site's own and the generic rules;
+// the site is rebuilt from its base every time, so a patch undone in the app is gone at once.
 function ensureSite(msg) {
-  if (msg.site && !SITES[msg.site] && msg.site_config && parseChatUrl(msg.site_config.url).ok) {
-    SITES[msg.site] = genericSite(msg.site_config.name, parseChatUrl(msg.site_config.url).url);
+  if (!msg.site || msg.type === "cancel") return;
+  if (!BASE[msg.site] && msg.site_config && parseChatUrl(msg.site_config.url).ok) {
+    BASE[msg.site] = genericSite(msg.site_config.name, parseChatUrl(msg.site_config.url).url);
   }
-  // What Iván showed with "Enséñame dónde está" goes first, before the site's own and the generic rules.
-  const patch = msg.site_patch;
-  if (msg.site && SITES[msg.site] && patch && typeof patch === "object") {
-    for (const k of ["modelButton", "plusButton", "fileInput", "input", "send", "copy", "answer"]) {
-      const sels = Array.isArray(patch[k]) ? patch[k].filter((x) => typeof x === "string" && x.length < 300) : [];
-      if (sels.length) SITES[msg.site][k] = [...new Set([...sels, ...(SITES[msg.site][k] || [])])];
+  if (!BASE[msg.site]) return;
+  const site = JSON.parse(JSON.stringify(BASE[msg.site]));
+  const patch = msg.site_patch && typeof msg.site_patch === "object" ? msg.site_patch : {};
+  for (const k of PATCH_KEYS) {
+    const sels = Array.isArray(patch[k]) ? patch[k].filter((x) => typeof x === "string" && x.length < 300) : [];
+    if (sels.length) site[k] = [...new Set([...sels, ...(site[k] || [])])];
+  }
+  SITES[msg.site] = site;
+}
+
+// ------------------------------------------------------- self-repair (PLAN-v5 F6)
+
+// Try a repair or a lesson on the chat's tab as it is (never navigating, never sending): the bridge keeps it
+// only if every part passes.
+function handleTryPatch(msg) {
+  return inQueue(msg.site, async () => {
+    try {
+      const tabId = await siteTab(msg.site);
+      await waitLoaded(tabId, 30000);
+      const out = await call(tabId, "tryPatch", msg.patch || {}, msg.sent || "");
+      sendToBridge({ type: "result", id: msg.id, ok: true, text: JSON.stringify(out), via: "try_patch" });
+    } catch (e) {
+      sendToBridge({ type: "result", id: msg.id, ok: false, error: "extension_error", detail: String(e && e.message || e) });
     }
+  });
+}
+
+// Read the answer that is already on the page with the site as it is now (after a repair): nothing is sent.
+function handleReread(msg) {
+  return inQueue(msg.site, async () => {
+    try {
+      const site = SITES[msg.site];
+      const tabId = await siteTab(msg.site);
+      let out = await call(tabId, "capture", site);
+      if (!out || !out.ok) out = await call(tabId, "fallback", site);
+      if (!out || !out.ok || !String(out.text || "").trim()) throw new JobError("empty_answer", JSON.stringify(out || {}));
+      const made = await call(tabId, "downloads", site).catch(() => null);
+      const st = await call(tabId, "state", site).catch(() => ({}));
+      sendToBridge({ type: "result", id: msg.id, ok: true, text: out.text, via: out.via, downloads: made && made.ok ? made.files : [],
+                     url: st.url, model_label: st.modelName || null });
+    } catch (e) {
+      sendToBridge({ type: "result", id: msg.id, ok: false, error: e instanceof JobError ? e.code : "extension_error",
+                     detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
+    }
+  });
+}
+
+// The daily check (and "Comprobar ahora"): open the chat, look, send nothing. With no text box, the x-ray
+// goes back so the bridge can try a repair on this same page.
+function handleCheck(msg) {
+  return inQueue(msg.site, async () => {
+    try {
+      const site = SITES[msg.site];
+      if (!site) throw new JobError("unknown_site", msg.site);
+      const tabId = await siteTab(msg.site);
+      await chrome.tabs.update(tabId, { url: site.newChat });
+      await sleep(800);
+      await waitLoaded(tabId, 45000);
+      let st;
+      for (const t0 = Date.now(); ; ) {
+        st = await call(tabId, "state", site);
+        if (st.challenge || st.loginWall || st.input || Date.now() - t0 > 20000) break;
+        await sleep(1000);
+      }
+      const out = { input: !!st.input, login: !!st.loginWall, challenge: st.challenge || null, busy: st.siteBusy || null,
+                    limited: st.rateLimited || null, banned: st.banned || null, url: st.url };
+      if (!st.input && !st.loginWall && !st.challenge) out.xray = await call(tabId, "xray", site, "").catch(() => null);
+      sendToBridge({ type: "result", id: msg.id, ok: true, text: JSON.stringify(out), via: "check" });
+    } catch (e) {
+      sendToBridge({ type: "result", id: msg.id, ok: false, error: e instanceof JobError ? e.code : "extension_error",
+                     detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
+    }
+  });
+}
+
+// ------------------------------------------------------- observer mode (PLAN-v5 F6, D16)
+
+// Iván goes on by hand in a normal tab of his Chrome ("Continuar en la web", or "Registrar esta conversación"
+// from the extension's icon). webllm only looks: no clicks, no typing. Each message he sends and the answer
+// that follows go to the bridge, which records them in the same conversation, marked as written by him.
+const observers = {};  // tabId -> { site, follows, typed, turn, t0, sig, stable }
+
+async function saveObservers() {
+  const out = {};
+  for (const [tabId, o] of Object.entries(observers)) out[tabId] = { site: o.site, follows: o.follows, site_config: o.site_config || null };
+  await chrome.storage.session.set({ observers: out }).catch(() => {});
+}
+
+async function startObserving(tabId, site, follows, siteConfig) {
+  observers[tabId] = { site, follows: follows || null, site_config: siteConfig || null, typed: "", turn: null, stable: 0, sig: "" };
+  await saveObservers();
+  await call(tabId, "observeBadge", true).catch(() => {});
+  chrome.action.setBadgeText({ tabId, text: "REC" }).catch(() => {});
+  sendToBridge({ type: "observe_state", site, follows: follows || null, tab: tabId, on: true });
+}
+
+async function stopObserving(tabId, why) {
+  const o = observers[tabId];
+  if (!o) return;
+  delete observers[tabId];
+  await saveObservers();
+  if (why !== "closed") {
+    await call(Number(tabId), "observeBadge", false).catch(() => {});
+    chrome.action.setBadgeText({ tabId: Number(tabId), text: "" }).catch(() => {});
+  }
+  sendToBridge({ type: "observe_state", site: o.site, follows: o.follows, tab: Number(tabId), on: false, why: why || "" });
+}
+
+// "Continuar en la web": that exact conversation, in a normal tab of Iván's own window (not webllm's small one).
+async function handleObserve(msg) {
+  try {
+    const u = parseChatUrl(msg.url || "");
+    if (!u.ok || !SITES[msg.site]) throw new JobError("bad_url", String(msg.url || ""));
+    const small = (await chrome.storage.local.get("window"))["window"];
+    const wins = (await chrome.windows.getAll({ windowTypes: ["normal"] })).filter((w) => w.id !== small);
+    const win = wins.find((w) => w.focused) || wins[0] || (await chrome.windows.create({ focused: true }));
+    const tab = await chrome.tabs.create({ windowId: win.id, url: msg.url, active: true });
+    await chrome.windows.update(win.id, { focused: true }).catch(() => {});
+    await waitLoaded(tab.id, 45000);
+    await startObserving(tab.id, msg.site, msg.follows, msg.site_config);
+    sendToBridge({ type: "result", id: msg.id, ok: true, text: JSON.stringify({ tab: tab.id }), via: "observe" });
+  } catch (e) {
+    sendToBridge({ type: "result", id: msg.id, ok: false, error: e instanceof JobError ? e.code : "extension_error",
+                   detail: e instanceof JobError ? e.detail : String(e && e.message || e) });
   }
 }
+
+// The site a tab belongs to (by the address of its chat), for "Registrar esta conversación".
+function siteOfTab(url) {
+  let origin;
+  try { origin = new URL(url).origin; } catch (e) { return null; }
+  return Object.keys(SITES).find((k) => { try { return new URL(SITES[k].newChat).origin === origin; } catch (e) { return false; } }) || null;
+}
+
+async function watchOnce(tabId, o) {
+  const site = SITES[o.site];
+  if (!site) return;
+  const st = await call(Number(tabId), "observe", site);
+  if (!st) return;
+  if (st.stop) return stopObserving(tabId, "badge");
+  const typed = String(st.typed || "").trim();
+  if (!o.turn) {
+    if (typed) { o.typed = typed; o.before = st; return; }
+    // the box emptied: sent (the page started writing, or something new appeared) or just erased
+    if (o.typed && o.before && (st.generating || st.bodyLen > o.before.bodyLen + 2 || st.copyCount > o.before.copyCount ||
+        st.answerCount > o.before.answerCount)) {
+      o.turn = { user: o.typed, before: o.before, t0: Date.now(), changed: false };
+      o.sig = ""; o.stable = 0;
+    }
+    o.typed = "";
+    return;
+  }
+  // an answer is being written: the same "finished" rules as a job (a new copy button and stability)
+  const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
+  if (sig !== o.sig) { o.sig = sig; o.stable = 0; o.turn.changed = true; } else { o.stable++; }
+  const newCopy = st.copyCount > o.turn.before.copyCount;
+  const done = o.turn.changed && !st.generating && ((newCopy && o.stable >= 1) || o.stable >= 5);
+  if (!done && Date.now() - o.turn.t0 < 30 * 60000) return;
+  const out = await call(Number(tabId), "fallback", site).catch(() => null);  // read from the page: no click in his tab
+  sendToBridge({ type: "observed", site: o.site, follows: o.follows, site_config: o.site_config || null, url: st.url,
+                 user: o.turn.user, answer: out && out.ok ? out.text : "", via: out && out.ok ? out.via : null,
+                 error: out && out.ok ? null : (done ? "empty_answer" : "timeout") });
+  o.turn = null;
+}
+
+setInterval(() => {
+  for (const [tabId, o] of Object.entries(observers)) {
+    if (o.busy) continue;
+    o.busy = true;
+    watchOnce(tabId, o).catch(() => {}).finally(() => { o.busy = false; });
+  }
+}, 1500);
+chrome.tabs.onRemoved.addListener((tabId) => { if (observers[tabId]) stopObserving(tabId, "closed"); });
+chrome.storage.session.get("observers").then((v) => {  // the service worker restarted: go on watching
+  for (const [tabId, o] of Object.entries((v && v.observers) || {})) {
+    observers[tabId] = { site: o.site, follows: o.follows, site_config: o.site_config, typed: "", turn: null, stable: 0, sig: "" };
+    if (!SITES[o.site] && o.site_config) ensureSite({ site: o.site, site_config: o.site_config });
+  }
+}).catch(() => {});
+
+// The extension's icon (popup.html): "Registrar esta conversación" / "Dejar de registrar" for the tab in front.
+chrome.runtime.onMessage.addListener((m, sender, reply) => {
+  if (!m || m.type !== "popup") return;
+  (async () => {
+    const [tab] = m.tab ? [await chrome.tabs.get(Number(m.tab)).catch(() => null)] : await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (!tab) return reply({ ok: false, error: "no_tab" });
+    const key = siteOfTab(tab.url || "");
+    const allowed = key ? await chrome.permissions.contains({ origins: [new URL(SITES[key].newChat).origin + "/*"] }).catch(() => false) ||
+      (chrome.runtime.getManifest().host_permissions || []).some((h) => h.startsWith(new URL(SITES[key].newChat).origin)) : false;
+    if (m.action === "toggle" && key && allowed) {
+      if (observers[tab.id]) await stopObserving(tab.id, "popup");
+      else await startObserving(tab.id, key, null, null);
+    }
+    reply({ ok: true, site: key ? SITES[key].name : null, allowed, on: !!observers[tab.id], connected: !!(ws && ws.readyState === 1) });
+  })();
+  return true;
+});
 
 // ------------------------------------------------------- add a site from the app
 
@@ -616,6 +825,7 @@ async function favicon(tabId) {
 async function testSite(m) {
   const done = (ok, extra) => sendToBridge({ type: "add_done", add_id: m.add_id, ok, ...extra });
   SITES[m.key] = genericSite(m.name, m.url);
+  BASE[m.key] = genericSite(m.name, m.url);
   addProgress(m.add_id, "permission", true, "Permiso concedido");
   addProgress(m.add_id, "open", null, "Abriendo la web…");
   let tabId = null;
@@ -732,4 +942,9 @@ function onMessage(msg) {
   else if (msg.type === "job") handleJob(msg);
   else if (msg.type === "diagnose") handleDiagnose(msg);
   else if (msg.type === "show") handleShow(msg);
+  else if (msg.type === "try_patch") handleTryPatch(msg);
+  else if (msg.type === "reread") handleReread(msg);
+  else if (msg.type === "check") handleCheck(msg);
+  else if (msg.type === "observe") handleObserve(msg);
+  else if (msg.type === "observe_stop") { for (const t of Object.keys(observers)) if (!msg.tab || Number(t) === Number(msg.tab)) stopObserving(t, "app"); }
 }

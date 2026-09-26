@@ -28,8 +28,9 @@ from typing import Any, Callable
 
 from aiohttp import WSMsgType, web
 
-from . import vault
+from . import fichas, repair, vault
 from .appapi import AppApi
+from .budget import budget_for
 from .gateway import Gateway, RequestError, decode_files
 from .client import _content_text
 from .config import JOB_HARD_CAP_S, PROJECT_ROOT, AppConfig, ProviderConfig
@@ -61,6 +62,9 @@ ERRORS: dict[str, tuple[int, float | None, str]] = {
     "file_not_attached": (409, None, "el archivo no quedó adjunto en su web, así que no envié nada"),
     "forbidden": (409, None, "iba a pulsar un botón prohibido (publicar, compartir, borrar…) y no lo hice; no envié nada"),
     "expensive_cap": (429, None, "ya se han usado hoy los modos caros de este chat (se cuentan aparte)"),
+    # PLAN-v5 F6: the page changed and it could not be repaired (no pause: it is not the account)
+    "no_input": (502, None, "no encontré su caja de texto: su web ha cambiado (en su Ficha, «Enséñame esta web»); no envié nada"),
+    "empty_answer": (502, None, "contestó, pero no pude leer su respuesta: su web ha cambiado (en su Ficha, «Enséñame esta web»)"),
 }
 # The extension's file errors, all "the file did not get attached" for Iván (the detail says which).
 FILE_ERRORS = {"file_not_shown", "no_file_input", "file_type_refused", "file_changed", "file_incomplete"}
@@ -142,6 +146,8 @@ class Bridge:
         self.jobs: dict[str, tuple[str, str]] = {}  # site -> (job id, question tag) the extension is doing there
         self.stopped: set[str] = set()  # question tags Iván stopped: never sent, even if still waiting their turn
         self._last_launch = -1e9
+        self.last_job_at = -1e9  # when a message last went to a chat (the daily check waits for a quiet moment)
+        self._tasks: set[asyncio.Task] = set()
         self._panel_running = False
         self.app_api = AppApi(self)
         self.gateway = Gateway(self)
@@ -212,10 +218,9 @@ class Bridge:
 
     def site_patch(self, site: str) -> dict[str, list[str]]:
         try:
-            data = json.loads((self.cfg.paths.state_dir / "patches" / f"{site}.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            return fichas.load_patch(self.cfg.paths, site)
+        except ValueError:
             return {}
-        return {k: [str(x) for x in v][:5] for k, v in data.items() if isinstance(v, list)} if isinstance(data, dict) else {}
 
     def _authorized(self, request: web.Request) -> bool:
         return request.headers.get("Authorization", "") == f"Bearer {self.token}"
@@ -259,6 +264,12 @@ class Bridge:
                     self.app_api.on_batch_permission(data)
                 elif data.get("type") == "notice":
                     self.log(f"AVISO {data.get('site')}: {data.get('message')}")
+                elif data.get("type") == "observed":  # PLAN-v5 F6: a turn Iván wrote himself in the web
+                    task = asyncio.create_task(self.app_api.on_observed(data))
+                    self._tasks.add(task)
+                    task.add_done_callback(self._tasks.discard)
+                elif data.get("type") == "observe_state":
+                    self.app_api.on_observe_state(data)
         finally:
             if self.ws is ws:
                 self.ws = None
@@ -334,6 +345,78 @@ class Bridge:
                 if self.jobs.get(str(payload.get("site")), ("",))[0] == job_id:
                     self.jobs.pop(str(payload.get("site")), None)
 
+    # ------------------------------------------------------------ self-repair (PLAN-v5 F6)
+
+    async def _repair(self, site: str, name: str, roles: list[str], xray: Any, sent: str) -> dict[str, Any] | None:
+        """Layer 3: an AI points at the right element in the page's x-ray (numbers only), the page tries it
+        sending nothing, and only then is it kept as a dated patch of the site that Iván can undo. Recorded in
+        data/state/reparaciones.jsonl whatever happens. Returns what was repaired, or None."""
+        entry: dict[str, Any] = {"site": site, "roles": roles, "after_sending": bool(sent)}
+        if not repair.settings(self.cfg.paths)["enabled"]:
+            repair.record(self.cfg.paths, {**entry, "result": "apagada"})
+            return None
+        if not isinstance(xray, dict) or not xray.get("candidates"):
+            repair.record(self.cfg.paths, {**entry, "result": "sin radiografía"})
+            return None
+        cfg = await self.app_api._cfg()
+        helper = repair.helper(cfg)
+        if helper is None:
+            repair.record(self.cfg.paths, {**entry, "result": "ninguna IA por API disponible"})
+            return None
+        entry["ai"] = helper.name
+        if not budget_for(cfg).take(helper):
+            repair.record(self.cfg.paths, {**entry, "result": "sin cupo hoy"})
+            return None
+        self.waiting[site] = "repair"
+        try:
+            answer = await self._ask_helper(cfg, helper, repair.prompt(xray, roles))
+            entry["answer"] = answer[:500]
+            try:
+                chosen = repair.parse(answer, xray, roles)
+            except repair.Rejected as exc:
+                repair.record(self.cfg.paths, {**entry, "result": "rechazada", "why": str(exc)})
+                self.log(f"Reparación de {name} rechazada: {exc}")
+                return None
+            patch = repair.to_patch(chosen)
+            entry["chosen"] = {role: c.get("n") for role, c in chosen.items()}
+            if not patch:
+                repair.record(self.cfg.paths, {**entry, "result": "la IA no encontró nada"})
+                return None
+            res = await self._send_to_extension({"type": "try_patch", "site": site, "patch": patch, "sent": sent}, 60)
+            try:
+                checks = json.loads(res.get("text") or "{}") if res.get("ok") else {}
+            except ValueError:
+                checks = {}
+            entry["checks"] = checks.get("checks")
+            if not checks.get("ok"):
+                repair.record(self.cfg.paths, {**entry, "patch": patch, "result": "no pasó la prueba en la página"})
+                return None
+            for key, sels in patch.items():
+                fichas.add_patch(self.cfg.paths, site, key, sels[0], by=f"ia:{helper.name}",
+                                 why="no encontraba la caja" if key == "input" else "no podía leer la respuesta")
+            repair.record(self.cfg.paths, {**entry, "patch": patch, "result": "guardada"})
+            self.log(f"{name}: reparado por {helper.display} ({', '.join(patch)}), comprobado en la página sin enviar nada.")
+            return {"ai": helper.display, "roles": list(patch)}
+        finally:
+            self.waiting.pop(site, None)
+
+    async def _ask_helper(self, cfg: AppConfig, p: ProviderConfig, prompt: str) -> str:
+        """One question to the AI that helps with repairs (by API, or on this PC)."""
+        import httpx
+        from .client import chat
+        if p.gateway == "local":
+            base, key, model = p.base_url, "", p.remote_model or p.model
+        else:
+            from .omniroute import load_api_key
+            try:
+                key = load_api_key()
+            except Exception:  # noqa: BLE001 - no key: the call says so
+                key = ""
+            base, model = cfg.base_url, p.model
+        async with httpx.AsyncClient() as client:
+            r = await chat(client, base_url=base, api_key=key, model=model, prompt=prompt, timeout_s=90, max_tokens=300)
+        return r.text if r.ok else ""
+
     def stop(self, tag: str) -> None:
         """Iván stopped this question: if it is still waiting its turn at a chat site, it is never sent."""
         if tag:
@@ -366,8 +449,11 @@ class Bridge:
         that is not saved yet. On failure: {"ok": False, "status", "error", "message", "detail"}."""
         provider = ProviderConfig(name=site, model=MODEL_PREFIX + site, kind="browser", daily_cap=self.site_cap(site))
         timeout_s = timeout_s or self.timeout_s
-        payload = {"site": site, "site_config": site_config} if site_config else self.site_payload(site)
+        # a site being connected travels with its address, and with what Iván taught or an AI repaired (PLAN-v5 F6)
+        payload = ({"site": site, "site_config": site_config, **({"site_patch": sp} if (sp := self.site_patch(site)) else {})}
+                   if site_config else self.site_payload(site))
         async with self.locks.setdefault(site, asyncio.Lock()):  # one message at a time per site
+            self.last_job_at = time.monotonic()
             try:
                 permit = await self.guard.acquire(provider, notify=self.log)
             except GuardBlocked as blocked:
@@ -392,12 +478,24 @@ class Bridge:
                     return {"ok": False, "status": 503, "error": "bridge_unavailable", "detail": "",
                             "message": "Chrome no está conectado: abre Chrome con la extensión webllm cargada"}
                 t0 = time.perf_counter()
-                res = await self._send_to_extension(
-                    {"type": "job", **payload, "prompt": prompt, "timeout_ms": int(timeout_s * 1000),
-                     **({"want": want} if want else {})},
-                    timeout_s + self.human_wait_s,  # room for a human to solve a verification
-                    tag=tag, files=files,
-                )
+                job = {"type": "job", "prompt": prompt, "timeout_ms": int(timeout_s * 1000), **({"want": want} if want else {})}
+                res = await self._send_to_extension({**job, **payload}, timeout_s + self.human_wait_s,  # room for a verification
+                                                    tag=tag, files=files)
+                # PLAN-v5 F6, layer 3: the page changed. With no text box nothing was sent: repair and send it now.
+                # With an answer that cannot be read, it was sent: repair and READ it again, never send it again.
+                # (Also while a site is being connected: the "pong" test is where a site that changed shows it.)
+                failed = res.get("error")
+                if (not res.get("ok") and failed in ("no_input", "empty_answer") and res.get("xray")
+                        and not (tag and tag in self.stopped) and (wanted is None or wanted())):
+                    fixed = await self._repair(site, name, ["input"] if failed == "no_input" else ["answer"], res["xray"],
+                                               "" if failed == "no_input" else prompt)
+                    if fixed and not (tag and tag in self.stopped) and (wanted is None or wanted()):
+                        again = {**self.site_payload(site), **({"site_config": site_config} if site_config else {})}
+                        if failed == "no_input":
+                            res = await self._send_to_extension({**job, **again}, timeout_s + self.human_wait_s, tag=tag, files=files)
+                        else:
+                            res = await self._send_to_extension({"type": "reread", **again, "sent": prompt}, 90)
+                        res["repaired"] = fixed
                 res["latency"] = time.perf_counter() - t0
             finally:
                 self.guard.release(permit)
@@ -582,7 +680,9 @@ class Bridge:
 
         latency = res["latency"]
         text = res.get("text", "")
-        webllm = {"used": res.get("used") or {}, "downloads": self._save_downloads(tag, res.get("downloads") or [])}
+        webllm = {"used": res.get("used") or {}, "downloads": self._save_downloads(tag, res.get("downloads") or []),
+                  **({"repaired": res["repaired"]} if res.get("repaired") else {}),
+                  **({"url": str(res["url"])[:500]} if str(res.get("url") or "").startswith("https://") else {})}
         label = str(res.get("model_label") or "")
         if label:
             model = f"{model} · {label}"

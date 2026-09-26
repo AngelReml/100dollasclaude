@@ -55,6 +55,7 @@ INDEX = "vault_index.json"
 ROOT = "webllm"
 NO_PROJECT = "Sin proyecto"
 APP_PROJECT = "Desde webllm"  # asked from webllm itself: its app, PREGUNTAR, a chain
+WEB_PROJECT = "Escritas en la web"  # conversations Iván registered himself in a chat's page (PLAN-v5 F6)
 MAX_ATTACHMENT = 25 * 1024 * 1024
 PLACEHOLDER_TITLES = {"new chat", "nuevo chat", "nueva conversación", "nueva conversacion", "chat", "untitled"}
 RUN_ID = re.compile(r"^\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -191,7 +192,7 @@ def _run(run_dir: Path) -> dict[str, Any] | None:
     lines = [x for x in lines if isinstance(x, dict)]
     inputs = flow.get("inputs") or {}
     steps = {s.get("id"): s.get("title") or s.get("id") for s in flow.get("steps") or []}
-    gw = next((x for x in lines if x.get("kind") == "gateway"), {})
+    gw = next((x for x in lines if x.get("kind") in ("gateway", "observed")), {})
     answers = []
     for x in lines:
         if x.get("kind", "flow") != "flow" or not x.get("provider"):
@@ -206,14 +207,16 @@ def _run(run_dir: Path) -> dict[str, Any] | None:
                         "code": x.get("code"), "text": text, "seconds": x.get("latency_s"), "key": x.get("hash"),
                         "ts": x.get("ts") or "", "sha256": x.get("response_sha256"),
                         "step": steps.get(x.get("step"), x.get("step")) if len(steps) > 1 else None,
-                        "used": x.get("used") or {}, "downloads": x.get("downloads") or []})
+                        "used": x.get("used") or {}, "downloads": x.get("downloads") or [], "by": x.get("by")})
     end = next((x for x in reversed(lines) if x.get("kind") == "flow_end"), None)
     return {"run_id": run_dir.name, "dir": run_dir, "ts": lines[0].get("ts") if lines else "",
             "name": flow.get("name") or "", "question": str(inputs.get("pregunta") or inputs.get("input") or ""),
             "chat_id": str(gw.get("chat_id") or ""), "files": gw.get("files") or [], "modes": gw.get("modes") or [],
             "answers": answers, "status": end.get("status") if end else ("hecha" if (run_dir / "run.json").exists() else None),
             "hash": lines[-1].get("hash") if lines else "", "task": gw.get("task") or "",
-            "project": gw.get("project") or None, "title": gw.get("title") or None}
+            "project": gw.get("project") or None, "title": gw.get("title") or None,
+            # PLAN-v5 F6: a turn Iván wrote himself in the chat's page, and the conversation it goes on with
+            "observed": gw.get("kind") == "observed", "follows": gw.get("follows_root") or gw.get("follows") or None}
 
 
 def _local(ts: str, run_id: str = "") -> datetime | None:
@@ -318,10 +321,13 @@ def render_answer(conv: dict[str, Any], r: dict[str, Any], a: dict[str, Any], la
            f"conversacion: {_yaml(conv['title'])}",
            f"pregunta: {_yaml(' '.join(r['question'].split())[:300])}",
            f"registro: {r['run_id']}", f"huella: {a['sha256']}"]
+    if a.get("by") == "ivan":
+        fm.append(f"escrita_en: {_yaml(f'la web de {label}, siguiendo tú la conversación')}")
     if defused:
         fm.append(f"desactivado: {_yaml(defused)}")
     fm.append("---")
-    head = f"# {_stamp(a['ts'], r['run_id']):%Y-%m-%d %H:%M} · {label}" + (f" · paso «{a['step']}»" if a["step"] else "")
+    head = (f"# {_stamp(a['ts'], r['run_id']):%Y-%m-%d %H:%M} · {label}" + (f" · paso «{a['step']}»" if a["step"] else "")
+            + (" · en su web" if a.get("by") == "ivan" else ""))
     body = [head, "", f"De la conversación {_link(conv['title'], '../../' + conv['note'])}.", ""]
     if defused:
         body += [f"> webllm desactivó aquí {', '.join(defused)} para que ningún complemento de Obsidian lo ejecute "
@@ -343,7 +349,10 @@ def render(conv: dict[str, Any], runs: list[dict[str, Any]], labels: dict[str, s
            "> Esta nota la escribe webllm y la rehace con cada respuesta: lo que cambies aquí se pierde. Cada "
            "respuesta está también en su propio archivo, que webllm no vuelve a tocar.", ""]
     for r in runs:
-        out += [f"## Tú · {_when(r['ts'], r['run_id'])}", "", r["question"].rstrip() or "(sin texto)", ""]
+        where = ""
+        if r["observed"] and r["answers"]:
+            where = f", en la web de {labels.get(r['answers'][0]['provider'] or '', r['answers'][0]['provider'] or '?')}"
+        out += [f"## Tú{where} · {_when(r['ts'], r['run_id'])}", "", r["question"].rstrip() or "(sin texto)", ""]
         for f in r["files"]:
             name = str(f.get("name"))
             where = copies.get(f"{r['run_id']}/{f.get('sha256')}")
@@ -359,6 +368,8 @@ def render(conv: dict[str, Any], runs: list[dict[str, Any]], labels: dict[str, s
                     f"modelo «{_model(a)}»" if _model(a) and a["status"] == "ok" else None,
                     ", ".join(f"«{m.get('name') or m.get('mode')}»" for m in used.get("modes") or []) or None]
             label = labels.get(a["provider"] or "", a["provider"] or "?")
+            if a.get("by") == "ivan":
+                what.insert(0, "en su web")
             head = f"## {label}" + "".join(f" · {w}" for w in what if w)
             if a["seconds"] is not None:
                 head += f" · {round(float(a['seconds']))} s"
@@ -579,10 +590,12 @@ def _remember_in(index: dict[str, Any], run_dir: Path, project: str | None, titl
     if title and title.lower() in PLACEHOLDER_TITLES:
         title = None  # Open WebUI's "New Chat": the first question names it better
     convs: dict[str, Any] = index["conversations"]
-    key = f"owui:{run['chat_id']}" if run["chat_id"] else f"run:{run['run_id']}"
+    key = (f"owui:{run['chat_id']}" if run["chat_id"] else f"run:{run['follows']}" if run["follows"]
+           else f"run:{run['run_id']}")
     conv = convs.get(key)
     if conv is None:
-        proj = safe_name(project or (NO_PROJECT if run["chat_id"] else APP_PROJECT), 60)
+        proj = safe_name(project or (NO_PROJECT if run["chat_id"] else WEB_PROJECT if run["observed"] and not run["follows"]
+                                     else APP_PROJECT), 60)
         name = safe_name(title or run["question"].split("\n")[0] or run["name"] or "Conversación")
         stem = f"{_day(run['ts'], run['run_id'])} {name}"
         taken = {c["note"].lower() for c in convs.values()}  # webllm's own names: the vault is never listed
@@ -754,6 +767,6 @@ def answers(paths: "Paths") -> int:
     return len(_read_json(paths.state_dir / INDEX).get("answers") or {})
 
 
-__all__ = ["APP_PROJECT", "NO_PROJECT", "answer_name", "answers", "configure", "conversations", "defuse", "export_run",
+__all__ = ["APP_PROJECT", "NO_PROJECT", "WEB_PROJECT", "answer_name", "answers", "configure", "conversations", "defuse", "export_run",
            "flush", "import_history", "render", "render_answer", "retry", "rewrite_all", "safe_name", "settings",
            "undo_defuse", "write_committee"]

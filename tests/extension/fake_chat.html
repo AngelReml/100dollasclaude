@@ -26,6 +26,11 @@
      download (blob) in each answer; the answer says which model, modes and files it got. Every click on the
      page is logged in window.__clicks. ?selectorroto=1: choosing a model does not change it.
      ?sinarchivos=1: no file input. ?modelooculto=1: the model selector is a nameless "⚙" (for "Enséñame").
+     PLAN-v5 F6 (webs that change): ?extranjera=1 is a French page with a modern text box (contenteditable
+     "plaintext-only", role textbox), "Envoyer", "Arrêter la génération", "Copier la réponse" and answers whose
+     classes say nothing (layer 1 must find everything); ?rara=1 has answers with meaningless classes and no copy
+     button (only a repair can read them: layer 3 or 4) and a sidebar with private chat titles (they must never
+     leave the page); /codigo/ in the address makes the demo's repair AI answer with code (it must be refused).
      The same modes work as a path (/login/, /captcha/...): "+ Añadir otra IA" keeps only the path. -->
 <div id="app"></div>
 <script>
@@ -117,10 +122,12 @@ const realHidden = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")
 Object.defineProperty(document, "hidden", { configurable: true, get: () => covered || realHidden.call(document) });
 window.__setCovered = (v) => { covered = v; document.dispatchEvent(new Event("visibilitychange")); };
 const q = new URLSearchParams(location.search);
-for (const m of ["completa", "selectorroto", "sinarchivos", "modelooculto", "login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre"]) {
+for (const m of ["completa", "selectorroto", "sinarchivos", "modelooculto", "login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre", "extranjera", "rara"]) {
   if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
 }
 const es = ["stopfijo", "stopfuera", "clasestop", "detenersiempre"].some((m) => q.get(m) === "1");
+const fr = q.get("extranjera") === "1";
+const rara = q.get("rara") === "1";
 const app = document.getElementById("app");
 const loggedIn = () => { try { return localStorage.getItem("fake-logged-in") === "1"; } catch (e) { return false; } };
 if (q.get("logged") === "1") { try { localStorage.setItem("fake-logged-in", "1"); } catch (e) { /* stays out */ } }
@@ -141,7 +148,10 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
 } else if (q.get("nobox") === "1") {
   app.innerHTML = '<h1>Welcome</h1><p>Download our app to chat.</p><button>Get the app</button>';
 } else {
-  app.innerHTML = '<div id="log"></div>' + (q.get("editable") === "1"
+  app.innerHTML = (rara ? '<nav><button>Mi plan secreto de marketing</button><button>Receta de la abuela</button></nav>' : "") +
+    '<div id="log"></div>' + (fr
+    ? '<div id="box" contenteditable="plaintext-only" role="textbox" aria-label="Écrivez votre message"></div><button id="send" aria-label="Envoyer">➤</button>'
+    : q.get("editable") === "1"
     ? '<div id="box" contenteditable="true" aria-label="Message"></div>'
     : `<textarea id="box" placeholder="Message"></textarea><button id="send" aria-label="${es ? "Enviar mensaje" : "Send message"}">➤</button>`);
   if (q.get("clasestop") === "1") app.insertAdjacentHTML("afterbegin", '<button class="nonstop-toggle">∞</button>');
@@ -155,13 +165,15 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     if (!text) return;
     clear();
     const log = document.getElementById("log");
+    window.__stopped = false;
     log.insertAdjacentHTML("beforeend", `<div class="msg user">${text.replace(/</g, "&lt;")}</div>`);
     const stop = document.createElement("button");
-    stop.setAttribute("aria-label", es ? "Detener" : "Stop generating");
+    stop.setAttribute("aria-label", fr ? "Arrêter la génération" : es ? "Detener" : "Stop generating");
+    stop.onclick = () => { window.__stopped = true; };
     stop.textContent = "■";
     document.body.appendChild(stop);
     const answer = document.createElement("div");
-    answer.className = "msg assistant";
+    answer.className = fr ? "zq9" : rara ? "x1 y2" : "msg assistant";
     log.appendChild(answer);
     const slow = q.get("lento") === "1" && !/pong/i.test(text);
     const got = q.get("completa") === "1" ? `modelo=${window.__model}; modos=${modesOn().join(",") || "ninguno"}; archivos=${(window.__received || []).map((f) => f.name).join(",") || "ninguno"}` : "";
@@ -169,14 +181,15 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     let i = 0;
     const write = () => { const tick = setInterval(() => {
       if (slow && document.hidden) return;
+      if (window.__stopped) { clearInterval(tick); stop.remove(); return; }  // the page's own stop button was pressed
       answer.innerHTML = words.slice(0, ++i).join(" ").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       if (i >= words.length) {
         clearInterval(tick);
         if (q.get("stopfuera") === "1") stop.style.cssText = "position:fixed;left:-10000px;top:0";
         else if (q.get("stopfijo") !== "1") stop.remove();
-        if (q.get("copy") !== "0") {
+        if (q.get("copy") !== "0" && !rara) {
           const copy = document.createElement("button");
-          copy.setAttribute("aria-label", es ? "Copiar respuesta" : "Copy response");
+          copy.setAttribute("aria-label", fr ? "Copier la réponse" : es ? "Copiar respuesta" : "Copy response");
           copy.textContent = "⧉";
           copy.onclick = () => navigator.clipboard.writeText(words.join(" "));
           answer.after(copy);
