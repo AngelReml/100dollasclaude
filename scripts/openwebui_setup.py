@@ -123,7 +123,9 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print,
         mine = known.get(m["id"], {})
         form = {"id": m["id"], "base_model_id": None, "name": mine.get("name") or m.get("name") or m["id"], "params": {},
                 "meta": {"description": mine.get("card") or "Una IA de webllm.", "capabilities": CAPABILITIES,
-                         "filterIds": filters, "actionIds": [ACTION_ID] if mine.get("kind") == "chat" else []}}
+                         # the Committee decides "pensar" for each chat itself (its plan says so): no switches
+                         "filterIds": filters if mine.get("kind") != "comite" else [],
+                         "actionIds": [ACTION_ID] if mine.get("kind") == "chat" else []}}
         if ow.call("GET", "/api/v1/models/model", missing_ok=True, params={"id": m["id"]}):
             ow.call("POST", "/api/v1/models/model/update", json=form)
         else:

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "webllm puente",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "webllm on this PC: writes to the AI chats you connect, reads the answers, repairs changed pages, records chats you ask it to.",
   "background": {
     "service_worker": "background.js"

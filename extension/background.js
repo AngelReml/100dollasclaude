@@ -303,19 +303,34 @@ async function runJob(job) {
   const site = SITES[job.site];
   if (!site) throw new JobError("unknown_site", job.site);
   const tabId = await siteTab(job.site);
-  await chrome.tabs.update(tabId, { url: site.newChat });
+  // PLAN-v5 F7: "seguir en la misma conversación" (the Committee's second turn) goes back to that conversation,
+  // only on the site's own address; anything else opens a new chat as always.
+  let target = null;
+  if (job.continue_url) {
+    try { target = new URL(job.continue_url); } catch (e) { throw new JobError("bad_continue_url", String(job.continue_url)); }
+    if (target.protocol !== "https:" || target.origin !== new URL(site.newChat).origin) {
+      throw new JobError("bad_continue_url", target.href);
+    }
+  }
+  await chrome.tabs.update(tabId, { url: target ? target.href : site.newChat });
   await sleep(800);
   await waitLoaded(tabId, 45000);
 
-  // 1. wait for the chat box (or a login / verification page)
+  // 1. wait for the chat box (or a login / verification page). Going on with a conversation: the page must still be
+  //    that conversation (a site that lost it sends you to a new chat) and show what was said before; if not,
+  //    nothing is typed.
   let st;
   const boxClock = jobClock();
+  const samePlace = (url) => { try { const u = new URL(url); return u.origin === target.origin && u.pathname.replace(/\/+$/, "") === target.pathname.replace(/\/+$/, ""); } catch (e) { return false; } };
   for (;;) {
     stillWanted(job);
     st = await call(tabId, "state", site);
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
     checkBlocks(job.site, st);
-    if (st.input) break;
+    if (target && !samePlace(st.url)) throw new JobError("conversation_lost", st.url);
+    const shown = !target || st.answerCount > 0 || st.copyCount > 0 || st.lastAnswerLen > 0;
+    if (st.input && shown) break;
+    if (target && st.input && boxClock() > 20000) throw new JobError("conversation_lost", `${st.url}: no previous answer on the page`);
     if (boxClock() > 30000) {
       // PLAN-v5 F6: the page's x-ray goes with the error, so the bridge can try a repair (nothing was sent)
       const x = await call(tabId, "xray", site, "").catch(() => null);
@@ -327,7 +342,9 @@ async function runJob(job) {
   // 1b. what Iván chose (PLAN-v5 D21/D22): the model, the modes and the files, each one put through the
   //     page's own controls and confirmed there. If the page does not confirm it, nothing is sent.
   const used = { model: null, modes: [], files: [], modes_on: [] };
-  const want = job.want || {};
+  // going on with a conversation: its model and modes were chosen (and confirmed) in its first turn; switching now
+  // could open a new chat on some sites, so they are not touched
+  const want = target ? {} : (job.want || {});
   if (want.model) {
     stillWanted(job);
     const r = await call(tabId, "chooseModel", site, want.model);
@@ -361,6 +378,10 @@ async function runJob(job) {
     used.files = r.files;
   }
   used.modes_on = await call(tabId, "activeModes", site);  // what is really on when it is sent
+
+  // the answer already on the page (going on with a conversation): what is read at the end must not be this one
+  const prevOut = target ? await call(tabId, "fallback", site).catch(() => null) : null;
+  const prevText = prevOut && prevOut.ok ? String(prevOut.text || "").trim() : "";
 
   // 2. type and send
   stillWanted(job);
@@ -408,10 +429,20 @@ async function runJob(job) {
   // never hides it, or a button that only looks like one): then it says nothing about the end.
   // And once the page has put a new "copy" button and nothing has changed for 12 s, the answer
   // is finished even if something still looks like "stop" (Iván's Meta, 2026-09-25).
+  // PLAN-v5 F7: measured against the page as it was before sending. When the page already showed an answer (going on
+  // with a conversation), only a change in the answers counts: his own message appearing is not an answer, and a
+  // page slow to start must never hand back the answer that was already there. A page whose answers cannot be seen
+  // yet keeps the old rule (the body changed and stayed still), so a repair can read it (F6).
   const stopMeansNothing = !!before.generating;
+  const hadAnswer = before.answerCount > 0 || before.copyCount > 0 || before.lastAnswerLen > 0;
+  // Going on with a conversation, the surest sign of the NEW answer: a new copy button (a page that has them), or a
+  // new answer element with text. A generic "last answer" block can also hold his own message, whose appearing
+  // changes its length: that is never enough there.
+  const copyPage = !!target && before.copyCount > 0;
+  const answersPage = !!target && !copyPage && before.answerCount > 0;
   const limit = job.timeout_ms || 300000;
   const answerClock = jobClock();
-  let lastSig = "";
+  let lastSig = `${before.lastAnswerLen}:${before.bodyLen}:${before.copyCount}:${before.answerCount}`;
   let stable = 0;
   let changed = false;
   while (answerClock() < limit) {
@@ -423,7 +454,12 @@ async function runJob(job) {
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
     checkBlocks(job.site, st);
     const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
-    if (sig !== lastSig) { lastSig = sig; stable = 0; changed = true; } else { stable++; }
+    if (sig !== lastSig) { lastSig = sig; stable = 0; } else { stable++; }
+    // an answer box that is still empty (many sites add it at once and write later) is not an answer yet
+    const answered = copyPage ? st.copyCount > before.copyCount
+      : answersPage ? st.answerCount > before.answerCount && st.lastAnswerLen > 0
+      : st.copyCount > before.copyCount || (st.lastAnswerLen > 0 && (st.lastAnswerLen !== before.lastAnswerLen || st.answerCount !== before.answerCount));
+    changed = answered || (!hadAnswer && st.bodyLen !== before.bodyLen);
     const newCopy = st.copyCount > before.copyCount;
     const writing = st.generating && !stopMeansNothing;
     if (changed && !writing && ((newCopy && stable >= 1) || stable >= 5)) break;
@@ -436,9 +472,10 @@ async function runJob(job) {
                                                     state: st, diagnose: d }).slice(0, 6000));
   }
 
-  // 4. take the answer: the page's own copy button first, HTML as fallback
+  // 4. take the answer: the page's own copy button first, HTML as fallback (going on with a conversation, only a
+  //    NEW copy button: the last one could still be the previous answer's)
   await sleep(800);
-  let out = await call(tabId, "capture", site);
+  let out = copyPage && st.copyCount <= before.copyCount ? null : await call(tabId, "capture", site);
   if (!out || !out.ok) out = await call(tabId, "fallback", site);
   if (!out || !out.ok || !out.text.trim()) {
     const d = await call(tabId, "diagnose", site).catch(() => null);
@@ -446,6 +483,10 @@ async function runJob(job) {
     // sending anything again ("reread")
     const x = await call(tabId, "xray", site, job.prompt).catch(() => null);
     throw new JobError("empty_answer", JSON.stringify({ out, diagnose: d }).slice(0, 6000), { xray: x });
+  }
+  if (prevText) {  // still the answer that was there before sending: not a new one
+    const now = await call(tabId, "fallback", site).catch(() => null);
+    if (now && now.ok && String(now.text || "").trim() === prevText) throw new JobError("no_new_answer", prevText.slice(0, 200));
   }
   out.modelName = st.modelName || null;
   out.url = st.url;  // this conversation's own address: "Continuar en la web" opens it

@@ -67,6 +67,13 @@ PROBLEMS: dict[str, tuple[str, str]] = {
     "empty_answer": ("{ai} contestó, pero no pude leer su respuesta",
                      "Su web ha cambiado. La respuesta sigue en su ventanita: en la app de webllm, en su Ficha, pulsa "
                      "«Enséñame esta web» (3 clics); o enciende «Reparar solas con IA»."),
+    # PLAN-v5 F7: going on in the same conversation of a chat (the Committee's second turn)
+    "conversation_lost": ("{ai} ya no tenía la conversación de antes",
+                          "Su web abrió un chat nuevo, así que no se escribió nada. Vuelve a empezar la pregunta."),
+    "bad_continue_url": ("No se abrió esa conversación de {ai}",
+                         "La dirección no era de su web, así que ni se abrió ni se escribió nada."),
+    "no_new_answer": ("{ai} no dio una respuesta nueva",
+                      "En su web seguía la respuesta de antes. Mira su ventanita; si se quedó a medias, pregunta otra vez."),
     "cancelled": ("Lo has parado tú", "Si ya se había enviado, la web puede haber contestado igualmente; "
                                       "pregunta otra vez cuando quieras."),
     "task_for_web_chat": ("Petición interna rechazada",
@@ -79,7 +86,7 @@ DEFAULT = ("{ai} no pudo responder", "Vuelve a intentarlo o pregúntaselo a otra
 # Codes whose text already says everything: the service's own words would only repeat webllm's.
 OWN_TEXT = frozenset({"login_required", "paused", "cooldown", "bridge_unavailable", "extension_disconnected",
                       "not_confirmed", "model_not_in_page", "mode_not_in_page", "file_not_attached", "forbidden",
-                      "expensive_cap", "no_input", "empty_answer"})
+                      "expensive_cap", "no_input", "empty_answer", "conversation_lost", "bad_continue_url"})
 
 
 def problem_text(code: str, ai: str, said: str = "") -> str:

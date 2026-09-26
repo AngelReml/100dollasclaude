@@ -97,12 +97,14 @@ async def chat(
     max_tokens: int | None = None,
     extra_headers: dict[str, str] | None = None,
     extra_body: dict[str, Any] | None = None,
+    messages: list[dict[str, Any]] | None = None,
 ) -> ChatResult:
-    """Send one user prompt and wait for the full (non-streamed) answer. ``extra_body`` is merged into the
-    request (webllm's bridge: {"webllm": {model, modes, files}})."""
+    """Send one user prompt (or a whole conversation: ``messages``, e.g. the Committee's second turn by API) and
+    wait for the full (non-streamed) answer. ``extra_body`` is merged into the request (webllm's bridge:
+    {"webllm": {model, modes, files, continue_url}})."""
     payload: dict[str, Any] = {
         "model": model,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": messages or [{"role": "user", "content": prompt}],
         "stream": False,
     }
     if temperature is not None:

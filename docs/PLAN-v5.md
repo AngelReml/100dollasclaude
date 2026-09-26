@@ -481,6 +481,24 @@ Cada fase tiene:
 - **En tu PC:** un Comité real con 5 participantes sobre una idea tuya. Después, el mismo Comité con dos chats a la vez: si sale bien 3 veces seguidas, se deja activado.
 - **Salida:** documento de fusión completo con sus 8 apartados, recuento impar, anexo con los 5 veredictos y candado verde.
 
+> **Estado (26-sep-2026):** hecho y probado en la nube. Resultados:
+> - 30 pruebas del Comité, y cada protección rota a propósito hace fallar su prueba;
+> - la extensión 0.9.0 de verdad en Chromium, 5 de 5 (con la 0.8.0, cada caso falla);
+> - el Open WebUI de verdad, 5 de 5: plan, «adelante», progreso, documento con 8 apartados, recuento impar, candado verde, vault con anexo.
+>
+> **Diferencias a propósito:**
+> - **El recuento es a favor (aprobar y con condiciones) contra en contra.** Con tres valores, un número impar no evita un 1-1-1. Si empatan las dos clases de «a favor», gana «con condiciones».
+> - **El plan dice más que «a cuántas empresas»:** quién ve cada archivo (por API solo imágenes), a quién llegaría si entra una reserva, y todas las IAs que podrían escribir el documento final.
+> - **El documento de fusión:** si faltan apartados, se pide una vez que lo rehaga. La siguiente IA de fusión solo entra si la llamada falla.
+> - **Qué se cambia y dónde:** el modelo, en la Ficha del chat; «pensar», contestando «sin pensar» o «con pensar».
+> - **Otras:**
+>   - el vault usa `Comités/AAAA-MM-DD <tema>.md`, como sus otras notas;
+>   - las confirmaciones de rol no van al vault como respuestas;
+>   - «dos chats web a la vez» son dos como mucho;
+>   - en el turno 2 la extensión no toca el modelo ni los modos.
+>
+> **Falta la salida en tu PC:** un Comité real de 5, y 3 seguidos con dos chats a la vez. Detalle: `docs/F7-comite.md`.
+
 ### F8 — "Automático" bien afinado
 
 - **Puerta:** F2, F3 y F4.

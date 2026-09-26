@@ -130,6 +130,7 @@ async def _run_target(
     bridge_key: str | None = None,
     run_tag: str | None = None,
     bridge_extra: dict[str, Any] | None = None,
+    messages: list[dict[str, Any]] | None = None,
 ) -> Outcome:
     # A chat job carries the question it belongs to, so "parar" stops that one and no other.
     tag = {"x-webllm-run": run_tag} if run_tag and t.gateway == "bridge" else None
@@ -162,7 +163,7 @@ async def _run_target(
                 res = await chat(client, base_url=base_url, api_key=key,
                                  model=t.remote_model or model if t.gateway == "local" else model,
                                  prompt=prompt, timeout_s=timeout_s or client_timeout(t), extra_headers=tag,
-                                 extra_body=extra_body)
+                                 extra_body=extra_body, messages=messages if t.gateway != "bridge" else None)
             outcome.result = res
             if t.guarded:
                 notice = guard.report(t, res)

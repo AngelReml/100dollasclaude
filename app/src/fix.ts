@@ -89,6 +89,24 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
         text: "Su web ha cambiado. La respuesta sigue en su ventanita: en su Ficha, pulsa «Enséñame esta web» (3 clics); o enciende «Reparar solas con IA».",
         actions: ["otra"],
       };
+    case "conversation_lost":
+      return {
+        title: `${label} ya no tenía la conversación de antes`,
+        text: "Su web abrió un chat nuevo, así que no se escribió nada. Vuelve a empezar la pregunta.",
+        actions: ["reintentar", "otra"],
+      };
+    case "bad_continue_url":
+      return {
+        title: `No se abrió esa conversación de ${label}`,
+        text: "La dirección no era de su web, así que ni se abrió ni se escribió nada.",
+        actions: ["otra"],
+      };
+    case "no_new_answer":
+      return {
+        title: `${label} no dio una respuesta nueva`,
+        text: "En su web seguía la respuesta de antes. Mira su ventanita; si se quedó a medias, pregunta otra vez.",
+        actions: ["reintentar", "otra"],
+      };
     case "not_confirmed":
       return {
         title: `No se envió: ${label} no confirmó lo que pediste`,

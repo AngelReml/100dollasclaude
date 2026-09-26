@@ -105,3 +105,13 @@ def test_webs_that_repair_themselves_and_the_observer_with_the_real_extension():
     webllm is closed is kept and recorded when it connects again. The same script with
     extension 0.7.0 fails (docs/F6-reparacion.md)."""
     assert len(run_real("repair_flow.mjs", timeout=1200)) == 16
+
+
+@needs_chromium
+@needs_openssl
+def test_the_same_conversation_of_a_web_chat_with_the_real_extension():
+    """PLAN-v5 F7: the Committee's second turn goes into the same chat and reads the NEW answer (also when the page
+    is slow to start and shows no "stop"); a conversation the page lost, or an address of another site: nothing is
+    typed. With extension 0.8.0 every case fails; with 0.9.0 and only the old waiting rule, the slow page hands back
+    the previous answer (docs/F7-comite.md)."""
+    assert len(run_real("conversation_flow.mjs", timeout=600)) == 5

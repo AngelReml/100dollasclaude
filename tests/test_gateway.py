@@ -63,7 +63,9 @@ def test_models_are_every_ai_with_a_spanish_name(tmp_path, mock_server):
             got = {m["id"]: (m["name"], m["webllm"]["kind"]) for m in body["data"]}
             assert got["qwen"] == ("Qwen (web)", "chat") and got["zai"][1] == "api" and got["zai"][0].endswith("(API)")
             kinds = [m["webllm"]["kind"] for m in body["data"]]
-            assert kinds == sorted(kinds, key=["chat", "api", "local"].index)  # chats, then APIs, then this PC
+            # the Committee first (D4), then chats, then APIs, then this PC
+            assert kinds == sorted(kinds, key=["comite", "chat", "api", "local"].index) and kinds.count("comite") == 1
+            assert got["comite"] == ("webllm · Comité", "comite")
     run(go())
 
 
@@ -75,7 +77,8 @@ def test_open_webui_and_the_app_show_the_same_daily_numbers(tmp_path, mock_serve
             await gw(app, ask("zai"))
             _, models, _ = await app.get("/gw/v1/models")
             _, estado, _ = await app.get("/api/estado")
-            face = {m["id"]: (m["webllm"]["used_today"], m["webllm"]["daily_cap"]) for m in models["data"]}
+            face = {m["id"]: (m["webllm"]["used_today"], m["webllm"]["daily_cap"]) for m in models["data"]
+                    if m["webllm"]["kind"] != "comite"}  # the Committee spends its members' messages, not its own
             panel = {a["name"]: (a["today"], a["cap"]) for a in estado["ais"]}
             assert face["qwen"] == panel["qwen"] == (1, app.cfg.guard.daily_cap)
             assert face["zai"] == panel["zai"] == (1, app.cfg.guard.api_daily_cap)

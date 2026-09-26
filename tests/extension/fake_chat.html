@@ -31,6 +31,10 @@
      classes say nothing (layer 1 must find everything); ?rara=1 has answers with meaningless classes and no copy
      button (only a repair can read them: layer 3 or 4) and a sidebar with private chat titles (they must never
      leave the page); /codigo/ in the address makes the demo's repair AI answer with code (it must be refused).
+     PLAN-v5 F7 (the same conversation): /conversa/ gives each conversation its own address (/conversa/c/<id>, set
+     after the first message) and restores it when that address is opened again; an address it does not know sends
+     you to a new chat (like real sites). Each answer says its turn: "Respuesta N a «…»". /conversa/tarda/: from the
+     second turn on, it takes 15 s to start answering (like a model that thinks) and never shows a "stop" button.
      The same modes work as a path (/login/, /captcha/...): "+ Añadir otra IA" keeps only the path. -->
 <div id="app"></div>
 <script>
@@ -122,13 +126,21 @@ const realHidden = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")
 Object.defineProperty(document, "hidden", { configurable: true, get: () => covered || realHidden.call(document) });
 window.__setCovered = (v) => { covered = v; document.dispatchEvent(new Event("visibilitychange")); };
 const q = new URLSearchParams(location.search);
-for (const m of ["completa", "selectorroto", "sinarchivos", "modelooculto", "login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre", "extranjera", "rara"]) {
+for (const m of ["completa", "selectorroto", "sinarchivos", "modelooculto", "login", "entrar", "redirige", "mudada", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre", "extranjera", "rara", "conversa", "tarda"]) {
   if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
 }
 const es = ["stopfijo", "stopfuera", "clasestop", "detenersiempre"].some((m) => q.get(m) === "1");
 const fr = q.get("extranjera") === "1";
 const rara = q.get("rara") === "1";
 const app = document.getElementById("app");
+// PLAN-v5 F7: conversations with their own address
+const conv = q.get("conversa") === "1";
+const convMatch = location.pathname.match(/^(.*\/)c\/(\w+)\/?$/);
+const convBase = convMatch ? convMatch[1] : location.pathname.replace(/\/?$/, "/");
+let convId = convMatch ? convMatch[2] : null;
+const convLoad = (id) => { try { return JSON.parse(localStorage.getItem("conv:" + id) || "null"); } catch (e) { return null; } };
+const convSave = (id, turns) => { try { localStorage.setItem("conv:" + id, JSON.stringify(turns)); } catch (e) { /* no storage */ } };
+let convTurns = conv && convId ? convLoad(convId) : [];
 const loggedIn = () => { try { return localStorage.getItem("fake-logged-in") === "1"; } catch (e) { return false; } };
 if (q.get("logged") === "1") { try { localStorage.setItem("fake-logged-in", "1"); } catch (e) { /* stays out */ } }
 if (location.pathname.includes("/signin/")) {  // the other address where you log in
@@ -145,6 +157,8 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     try { localStorage.setItem("fake-logged-in", "1"); } catch (e) { /* no storage: stays logged out */ }
     location.reload();
   };
+} else if (conv && convId && !convTurns) {  // a conversation this page does not have: a new chat
+  location.replace(location.origin + convBase + location.search);
 } else if (q.get("nobox") === "1") {
   app.innerHTML = '<h1>Welcome</h1><p>Download our app to chat.</p><button>Get the app</button>';
 } else {
@@ -157,6 +171,17 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
   if (q.get("clasestop") === "1") app.insertAdjacentHTML("afterbegin", '<button class="nonstop-toggle">∞</button>');
   if (q.get("completa") === "1") full();
   if (q.get("detenersiempre") === "1") app.insertAdjacentHTML("afterbegin", '<button aria-label="Detener lectura en voz alta">🔇</button>');
+  if (conv) {  // what was said before in this conversation, as the site shows it
+    const log = document.getElementById("log");
+    for (const t of convTurns || []) {
+      log.insertAdjacentHTML("beforeend", `<div class="msg user">${t.u.replace(/</g, "&lt;")}</div><div class="msg assistant">${t.a}</div>`);
+      const copy = document.createElement("button");
+      copy.setAttribute("aria-label", "Copy response");
+      copy.textContent = "⧉";
+      copy.onclick = () => navigator.clipboard.writeText(t.a);
+      log.appendChild(copy);
+    }
+  }
   const box = document.getElementById("box");
   const read = () => (box.value !== undefined ? box.value : box.innerText).trim();
   const clear = () => { if (box.value !== undefined) box.value = ""; else box.innerText = ""; };
@@ -167,17 +192,25 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     const log = document.getElementById("log");
     window.__stopped = false;
     log.insertAdjacentHTML("beforeend", `<div class="msg user">${text.replace(/</g, "&lt;")}</div>`);
+    const turn = conv ? (convTurns || []).length + 1 : 0;
+    if (conv && !convId) {  // the first message: the conversation gets its address
+      convId = Math.random().toString(36).slice(2, 8);
+      convTurns = [];
+      history.replaceState(null, "", convBase + "c/" + convId + location.search);
+    }
+    const lateStart = conv && q.get("tarda") === "1" && turn >= 2;  // 15 s before answering (a model that thinks), no "stop"
     const stop = document.createElement("button");
     stop.setAttribute("aria-label", fr ? "Arrêter la génération" : es ? "Detener" : "Stop generating");
     stop.onclick = () => { window.__stopped = true; };
     stop.textContent = "■";
-    document.body.appendChild(stop);
+    if (!lateStart) document.body.appendChild(stop);
     const answer = document.createElement("div");
     answer.className = fr ? "zq9" : rara ? "x1 y2" : "msg assistant";
     log.appendChild(answer);
     const slow = q.get("lento") === "1" && !/pong/i.test(text);
     const got = q.get("completa") === "1" ? `modelo=${window.__model}; modos=${modesOn().join(",") || "ninguno"}; archivos=${(window.__received || []).map((f) => f.name).join(",") || "ninguno"}` : "";
-    const words = /pong/i.test(text) ? ["**pong**"] : got ? ("Recibido: " + got).split(" ") : slow ? "esta respuesta tarda en escribirse del todo".split(" ") : ["hola", "qué", "tal"];
+    const words = /pong/i.test(text) ? ["**pong**"] : got ? ("Recibido: " + got).split(" ") : slow ? "esta respuesta tarda en escribirse del todo".split(" ")
+      : conv ? `Respuesta ${turn} a «${text.slice(0, 40)}»`.split(" ") : ["hola", "qué", "tal"];
     let i = 0;
     const write = () => { const tick = setInterval(() => {
       if (slow && document.hidden) return;
@@ -185,6 +218,7 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
       answer.innerHTML = words.slice(0, ++i).join(" ").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       if (i >= words.length) {
         clearInterval(tick);
+        if (conv) { convTurns.push({ u: text, a: words.join(" ") }); convSave(convId, convTurns); }
         if (q.get("stopfuera") === "1") stop.style.cssText = "position:fixed;left:-10000px;top:0";
         else if (q.get("stopfijo") !== "1") stop.remove();
         if (q.get("copy") !== "0" && !rara) {
@@ -208,6 +242,8 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
       box.innerHTML = 'Desliza para verificar <button id="solve">Resolver</button>';
       document.body.appendChild(box);
       document.getElementById("solve").onclick = () => { box.remove(); write(); };
+    } else if (lateStart) {
+      setTimeout(write, 15000);
     } else {
       write();
     }

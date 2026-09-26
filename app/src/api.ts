@@ -220,6 +220,8 @@ export interface HistoryAnswer {
   url?: string;
   by_ivan?: boolean;
   repaired?: boolean;
+  /** PLAN-v5 F7: its role in a Committee. */
+  role?: string;
 }
 
 export interface HistoryStep {
@@ -233,7 +235,7 @@ export interface HistoryStep {
 export interface RunSummary {
   id: string;
   ts: string | null;
-  kind: "pregunta" | "cadena" | "web";
+  kind: "pregunta" | "cadena" | "web" | "comite";
   title: string;
   text: string;
   status: string;
@@ -244,7 +246,7 @@ export interface RunSummary {
 export interface RunDetail {
   id: string;
   ts: string | null;
-  kind: "pregunta" | "cadena" | "web";
+  kind: "pregunta" | "cadena" | "web" | "comite";
   title: string;
   template: string;
   text: string;
@@ -323,6 +325,28 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = <T>(path: string, body: unknown) => call<T>(path, { method: "POST", body: JSON.stringify(body) });
 
+/** PLAN-v5 F7: the Committee's settings and who would take part right now. */
+export interface ComiteRole {
+  name: string;
+  asks: string;
+}
+export interface ComiteSeat {
+  provider: string;
+  label: string;
+  kind: string;
+  role?: ComiteRole | null;
+  model?: string | null;
+  modes: string[];
+}
+export interface Comite {
+  number: 3 | 5;
+  roles: ComiteRole[];
+  think: boolean;
+  parallel_web: boolean;
+  preview: { seats: ComiteSeat[]; reserves: ComiteSeat[]; fusion: ComiteSeat[]; missing: [string, string][] } | null;
+  preview_error?: string;
+}
+
 export const api = {
   estado: () => call<Estado>("/api/estado"),
   reanudar: (ia: string) => post<{ ok: boolean; cleared: boolean }>("/api/reanudar", { ia }),
@@ -359,6 +383,9 @@ export const api = {
   continuar: (runId: string, ai?: string) => post<{ ok: boolean; label: string; url: string }>("/api/continuar", { run_id: runId, ai: ai ?? "" }),
   dejarDeRegistrar: (tab?: number) => post<{ ok: boolean }>("/api/dejar-de-registrar", tab ? { tab } : {}),
   fichaOlvidar: (ai: string) => post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/olvidar`, {}),
+  comite: () => call<Comite>("/api/comite"),
+  guardarComite: (body: { number?: 3 | 5; think?: boolean; parallel_web?: boolean; roles?: ComiteRole[]; reset_roles?: boolean }) =>
+    post<Comite>("/api/comite", body),
   memoria: () => call<Memoria>("/api/memoria"),
   guardarMemoria: (dir: string, enabled: boolean) => post<Memoria>("/api/memoria", { dir, enabled }),
   /** "Reescribir todo": every conversation and answer written again from the journal (hand edits there are lost). */

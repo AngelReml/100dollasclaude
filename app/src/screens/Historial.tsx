@@ -43,7 +43,7 @@ export function LockBadge({ ok }: { ok: boolean }) {
   );
 }
 
-const KIND_WORD = { pregunta: "Pregunta", cadena: "Cadena", web: "En la web" } as const;
+const KIND_WORD = { pregunta: "Pregunta", cadena: "Cadena", web: "En la web", comite: "Comité" } as const;
 
 function RunRow({ run }: { run: RunSummary }) {
   return (
@@ -143,6 +143,7 @@ function HistoryAnswerCard({ a, onPass, question, runId }: { a: HistoryAnswer; q
         <div className="min-w-0 flex-1">
           <p className="truncate text-[17px] font-semibold">{a.provider_label}</p>
           {a.provider !== a.target && <p className="text-[15px] text-muted">en lugar de {a.label}</p>}
+          {a.role && a.role !== "fusión" && <p className="truncate text-[15px] text-muted">{a.role}</p>}
         </div>
         <DoneBadge ok={a.ok}>{a.ok ? (a.seconds > 0 ? `Respondió en ${a.seconds} s` : "Respondió") : stopped ? "Parado por ti" : "No respondió"}</DoneBadge>
       </div>
@@ -189,7 +190,7 @@ function HistoryDetail({ id }: { id: string }) {
 
   return (
     <Page
-      title={run ? (run.title === "Pregunta" || run.kind === "web" ? shortTitle(plain(run.text)) : run.title) : "Registro"}
+      title={run ? (run.title === "Pregunta" || run.kind === "web" || run.kind === "comite" ? shortTitle(plain(run.text)) : run.title) : "Registro"}
       subtitle={run ? `${KIND_WORD[run.kind]} · ${when(run.ts)}` : undefined}
       action={
         run && (

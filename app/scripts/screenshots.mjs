@@ -280,6 +280,30 @@ async function reparacion(page, tag) {
   await page.getByText(/Registrando tu conversación con/).waitFor({ state: "detached", timeout: 15000 });
 }
 
+// The Committee (PLAN-v5 F7): its card on Inicio (who would take part now, how many, the roles), the roles dialog, and
+// one Committee run through the gateway (as Open WebUI does: the idea, then "adelante") shown in the history.
+async function comite(page, tag) {
+  await page.goto(base);
+  const card = page.locator('[data-card="comite"]');
+  await card.getByText("Si lo lanzas ahora").waitFor({ timeout: 15000 });
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-42-comite`);
+  await card.getByRole("button", { name: "Cambiar los roles" }).click();
+  await page.getByRole("dialog").getByText("Los roles del Comité").waitFor();
+  await shot(page, `${tag}-43-comite-roles`);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancelar" }).click();
+  const ask = (content) => fetch(`http://127.0.0.1:${port}/gw/v1/chat/completions`, { method: "POST",
+    headers: { Authorization: "Bearer demo-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "comite", stream: false, messages: [{ role: "user", content }], webllm: { chat_id: `capturas-${tag}` } }) });
+  await ask("¿Vale la pena guardar cada respuesta en su propio archivo?");
+  const done = await (await ask("adelante")).json();
+  if (!done.choices) report.push({ name: `${tag}-comite`, clipped: [`el Comité no terminó: ${JSON.stringify(done).slice(0, 200)}`], smallText: [] });
+  await page.goto(base + "#/historial");
+  await page.getByRole("link").filter({ hasText: "Comité" }).first().click();
+  await page.getByText("Documento de fusión").first().waitFor({ timeout: 15000 });
+  await shot(page, `${tag}-44-comite-historial`);
+}
+
 async function run(theme, width, full) {
   const height = width === 1920 ? 1080 : 800;
   const browser = await chromium.launch({ executablePath: exe });
@@ -354,6 +378,7 @@ async function run(theme, width, full) {
     await fichas(page, tag);
     await memoria(page, tag);
     await reparacion(page, tag);
+    await comite(page, tag);
   }
   await browser.close();
 }

@@ -4,6 +4,7 @@ import { api, ApiError, type Ai } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
+import { ComiteCard } from "../ui/Comite";
 import { MemoriaCard } from "../ui/Memoria";
 import { ObservingBanner } from "../ui/Observando";
 import { RemoveAiButton } from "../ui/AddAi";
@@ -234,6 +235,10 @@ export function Inicio() {
               ))}
               <MemoriaCard />
             </div>
+          </section>
+          <section className="mb-10">
+            <SectionTitle>Evaluar una idea</SectionTitle>
+            <ComiteCard />
           </section>
           <section className="mb-10">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">

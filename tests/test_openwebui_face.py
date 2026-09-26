@@ -3,7 +3,7 @@ the checks on the real screen: tests/openwebui/f1_checks.mjs (10), then f2_check
 tool, tests/openwebui/mcp_hora.py, used by an AI through webllm only after "Allow"; Open WebUI's
 "Detener" stops a web chat's long answer; a web chat, an API and a model on this PC all answer),
 then f5_checks.mjs (6: the memory in Obsidian, written while it happens, in the Open WebUI folder's name, each
-answer in its own file identical to the record), then f6_checks.mjs (5: «Continuar en la web»), then f4_checks.mjs (6, with the real extension: the chat's models,
+answer in its own file identical to the record), then f6_checks.mjs (5: «Continuar en la web»), then f7_checks.mjs (5: the Committee), then f4_checks.mjs (6, with the real extension: the chat's models,
 a whole file, a switch that changes the mode). Skipped unless
 WEBLLM_OPENWEBUI_PY points at a Python that has Open WebUI (it is 7 GB: `uv venv -p 3.11 .venv &&
 uv pip install open-webui`; it brings the `mcp` package the tool server needs)."""
@@ -114,6 +114,14 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                              timeout=300, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
                                                "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
                                                "OUT": str(tmp_path / "capturas-f6")})
+        lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        assert out.returncode == 0 and len(lines) == 5 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
+        # F7 (5): "webllm · Comité": the plan (nothing sent), "adelante", the progress in the thinking block, the fusion
+        # document with its 8 sections, the green lock, and the vault's copy with the annex (the memory is on since F5).
+        out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f7_checks.mjs")], capture_output=True, text=True,
+                             timeout=600, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
+                                               "WEBLLM_URL": demo_url, "WEBLLM_DATA": str(tmp_path / "demo"),
+                                               "VAULT": str(tmp_path / "vault"), "OUT": str(tmp_path / "capturas-f7")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
         assert out.returncode == 0 and len(lines) == 5 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
         # F4 (6): the same Open WebUI, now pointed at a webllm with the REAL extension in Chromium and the

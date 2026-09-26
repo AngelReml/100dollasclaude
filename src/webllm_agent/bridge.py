@@ -65,6 +65,10 @@ ERRORS: dict[str, tuple[int, float | None, str]] = {
     # PLAN-v5 F6: the page changed and it could not be repaired (no pause: it is not the account)
     "no_input": (502, None, "no encontré su caja de texto: su web ha cambiado (en su Ficha, «Enséñame esta web»); no envié nada"),
     "empty_answer": (502, None, "contestó, pero no pude leer su respuesta: su web ha cambiado (en su Ficha, «Enséñame esta web»)"),
+    # PLAN-v5 F7: going on in the same conversation (the Committee's second turn)
+    "conversation_lost": (409, None, "ya no tiene la conversación de antes (su web abrió un chat nuevo), así que no escribí nada"),
+    "bad_continue_url": (400, None, "esa dirección no es de su web, así que no la abrí ni escribí nada"),
+    "no_new_answer": (502, None, "en su web seguía la respuesta de antes y no apareció una nueva"),
 }
 # The extension's file errors, all "the file did not get attached" for Iván (the detail says which).
 FILE_ERRORS = {"file_not_shown", "no_file_input", "file_type_refused", "file_changed", "file_incomplete"}
@@ -444,7 +448,7 @@ class Bridge:
     async def send_job(self, site: str, name: str, prompt: str, *, site_config: dict[str, str] | None = None,
                        timeout_s: float | None = None, tag: str = "",
                        wanted: Callable[[], bool] | None = None, files: list[dict[str, Any]] | None = None,
-                       want: dict[str, Any] | None = None) -> dict[str, Any]:
+                       want: dict[str, Any] | None = None, continue_url: str | None = None) -> dict[str, Any]:
         """One message to a chat site, always through the account guard (one at a time per site,
         spacing, daily cap, pause on account limits). ``site_config`` is for a site being added
         that is not saved yet. On failure: {"ok": False, "status", "error", "message", "detail"}."""
@@ -479,7 +483,9 @@ class Bridge:
                     return {"ok": False, "status": 503, "error": "bridge_unavailable", "detail": "",
                             "message": "Chrome no está conectado: abre Chrome con la extensión webllm cargada"}
                 t0 = time.perf_counter()
-                job = {"type": "job", "prompt": prompt, "timeout_ms": int(timeout_s * 1000), **({"want": want} if want else {})}
+                job = {"type": "job", "prompt": prompt, "timeout_ms": int(timeout_s * 1000), **({"want": want} if want else {}),
+                       # PLAN-v5 F7: back to that conversation of the site (the extension checks it is the site's own)
+                       **({"continue_url": continue_url} if continue_url else {})}
                 res = await self._send_to_extension({**job, **payload}, timeout_s + self.human_wait_s,  # room for a verification
                                                     tag=tag, files=files)
                 # PLAN-v5 F6, layer 3: the page changed. With no text box nothing was sent: repair and send it now.
@@ -670,10 +676,14 @@ class Bridge:
             return self._error(exc.status, exc.message, exc.code)
         want = {k: v for k, v in {"model": str(extra.get("model") or "")[:120] or None,
                                   "modes": [str(m) for m in extra.get("modes") or []][:6]}.items() if v}
+        continue_url = str(extra.get("continue_url") or "")[:500] or None
+        if continue_url and not continue_url.startswith("https://"):
+            return self._error(400, f"{names[site]}: {ERRORS['bad_continue_url'][2]}", "bad_continue_url")
         transport = request.transport
         tag = request.headers.get("x-webllm-run", "")
         res = await self.send_job(site, names[site], prompt, tag=tag, files=files or None, want=want or None,
-                                  wanted=lambda: transport is not None and not transport.is_closing())
+                                  wanted=lambda: transport is not None and not transport.is_closing(),
+                                  continue_url=continue_url)
         if not res.get("ok"):
             # the page's whole diagnosis is in the log; the message keeps a short hint of it
             detail = " ".join(str(res.get("detail") or "").split())

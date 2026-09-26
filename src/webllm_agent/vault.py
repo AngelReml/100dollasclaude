@@ -192,11 +192,13 @@ def _run(run_dir: Path) -> dict[str, Any] | None:
     lines = [x for x in lines if isinstance(x, dict)]
     inputs = flow.get("inputs") or {}
     steps = {s.get("id"): s.get("title") or s.get("id") for s in flow.get("steps") or []}
-    gw = next((x for x in lines if x.get("kind") in ("gateway", "observed")), {})
+    gw = next((x for x in lines if x.get("kind") in ("gateway", "observed", "committee")), {})
     answers = []
     for x in lines:
         if x.get("kind", "flow") != "flow" or not x.get("provider"):
             continue
+        if flow.get("template") == "comite" and x.get("step") == "rol":
+            continue  # the Committee's "CONFIRMO: <rol>": a handshake, not an answer (it stays in the journal)
         text = ""
         if x.get("response_file"):
             try:

@@ -167,6 +167,8 @@ class AppApi:
         app.router.add_post("/api/revisar", self.revisar)
         app.router.add_get("/api/reparar", self.reparar_estado)
         app.router.add_post("/api/reparar", self.reparar_guardar)
+        app.router.add_get("/api/comite", self.comite_estado)
+        app.router.add_post("/api/comite", self.comite_guardar)
         app.router.add_post("/api/ficha/{ai}/deshacer", self.ficha_deshacer)
         app.router.add_post("/api/continuar", self.continuar)
         app.router.add_post("/api/dejar-de-registrar", self.dejar_de_registrar)
@@ -424,6 +426,7 @@ class AppApi:
                     "code": "" if ok else line.get("code", ""),
                     # PLAN-v5 F6: "Continuar en la web" needs its address; a turn Iván wrote himself says so
                     "url": line.get("url") or "", "by_ivan": line.get("by") == "ivan",
+                    "role": str(line.get("role") or ""),  # PLAN-v5 F7: its role in a Committee
                     "repaired": bool(line.get("repaired"))}
 
         flow_file = run_dir / "flow.json"
@@ -439,12 +442,15 @@ class AppApi:
                         best = next((x for x in reversed(mine) if x.get("status") == "ok"), mine[-1])
                         answers.append(answer(best, t))
                 message = read(calls[0].get("message_file")) if calls else ""
+                if spec.get("template") == "comite" and s["id"] == "rol" and calls:
+                    message = ("Cada IA recibió su propio rol (lo pone encima de su respuesta) y contestó «CONFIRMO: <rol>». "
+                               "El texto completo de cada rol está en el registro de su llamada.")
                 steps.append({"id": s["id"], "title": s.get("title") or s["id"], "message": message,
                               "answers": answers, "ran": bool(calls)})
             end = next((x for x in reversed(lines) if x.get("kind") == "flow_end"), None)
             inputs = spec.get("inputs") or {}
             template = spec.get("template")
-            kind = "pregunta" if template == "pregunta" else "web" if template == "observado" else "cadena"
+            kind = {"pregunta": "pregunta", "observado": "web", "comite": "comite"}.get(str(template), "cadena")
             text = inputs.get("pregunta") or inputs.get("objetivo") or inputs.get("entrada") or (
                 steps[0]["message"] if steps else "")
             title = spec.get("name") or "Cadena"
@@ -1175,6 +1181,44 @@ class AppApi:
             return self._fail(409, "La memoria está apagada: enciéndela primero.", "memory_off")
         vault.rewrite_all(self.cfg.paths)
         return web.json_response(self.memoria_view())
+
+    # ---------------------------------------------------------------- the Committee (PLAN-v5 F7)
+
+    async def comite_view(self) -> dict[str, Any]:
+        """Iván's settings, and who would take part if he launched it now (nothing is sent to find out)."""
+        from . import committee, committee_face
+        st = committee.settings(self.cfg.paths)
+        cfg = await self._cfg()
+        out: dict[str, Any] = {k: st[k] for k in ("number", "roles", "think", "parallel_web")}
+        try:
+            plan = await committee_face.plan_for(self.bridge, cfg, "vista previa")
+        except committee.CommitteeError as exc:
+            return {**out, "preview": None, "preview_error": str(exc)}
+        seat = lambda s: {"provider": s.provider, "label": s.label, "kind": s.kind, "role": s.role, "model": s.model,  # noqa: E731
+                          "modes": s.modes}
+        return {**out, "preview": {"seats": [seat(s) for s in plan.seats], "reserves": [seat(s) for s in plan.reserves],
+                                   "fusion": [seat(s) for s in plan.fusion], "missing": [list(m) for m in plan.missing]}}
+
+    async def comite_estado(self, request: web.Request) -> web.Response:
+        if not self._authorized(request):
+            return self._unauthorized()
+        return web.json_response(await self.comite_view())
+
+    async def comite_guardar(self, request: web.Request) -> web.Response:
+        """How many (3 or 5), "pensar", two web chats at once, and the roles (templates); "reset_roles" = webllm's."""
+        from . import committee
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        changes = {k: body[k] for k in ("number", "think", "parallel_web", "roles", "reset_roles") if k in body}
+        for k in ("think", "parallel_web", "reset_roles"):
+            if k in changes:
+                changes[k] = bool(changes[k])
+        try:
+            committee.configure(self.cfg.paths, **changes)
+        except ValueError as exc:
+            return self._fail(400, str(exc), "bad_request")
+        return web.json_response(await self.comite_view())
 
     # ---------------------------------------------------------------- self-repair and daily check (PLAN-v5 F6)
 

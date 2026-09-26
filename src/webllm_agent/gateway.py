@@ -36,7 +36,7 @@ from typing import Any
 import httpx
 from aiohttp import web
 
-from . import flows, journal
+from . import committee, committee_face, flows, journal
 from .appapi import MAX_PROMPT, site_of
 from .broadcaster import SKIPPED as _SKIPPED, GatewayError, Outcome, new_run_id, upstream_key
 from .budget import budget_for
@@ -235,6 +235,7 @@ class Gateway:
     def __init__(self, bridge: Any) -> None:
         self.bridge = bridge
         self.running: dict[str, tuple[asyncio.Task, ProviderConfig]] = {}  # run id -> (work, AI), for "Parar todo"
+        self.committees: dict[str, asyncio.Event] = {}  # run id -> its stop (PLAN-v5 F7)
 
     def register(self, app: web.Application) -> None:
         app.router.add_get("/gw/v1/models", self.models)
@@ -276,6 +277,7 @@ class Gateway:
                     "webllm": {"kind": kind, "label": p.display, "model": m["name"], "strongest": m["strongest"],
                                "card": card(p, cap) + f" Modelo «{m['name']}» de su selector.",
                                "daily_cap": cap, "used_today": today}})
+        data.insert(0, committee_face.model_entry(cfg))  # "webllm · Comité" (D4), first in the selector
         return web.json_response({"object": "list", "data": data})
 
     # ----------------------------------------------------------------- stop
@@ -288,6 +290,8 @@ class Gateway:
         for run_id, (work, p) in list(self.running.items()):
             if self._stop(p, work, run_id):
                 sites.add(site_of(p))
+        for run_id in list(self.committees):  # a Committee: nothing more is sent, its chat in progress stops
+            stopped += committee_face.stop_committee(self, run_id)
         app_stopped, app_sites = self.bridge.app_api.stop_all()  # the app's own questions
         stopped, sites = stopped + app_stopped, sites | app_sites
         sites.update(self.bridge.cancel_all())  # and any other job in Chrome (e.g. `webllm cadena`)
@@ -468,6 +472,8 @@ class Gateway:
             return self._error(401, "unauthorized", "token del puente incorrecto")
         try:
             body = await request.json()
+            if isinstance(body, dict) and body.get("model") == committee.MODEL_ID:  # "webllm · Comité" (PLAN-v5 F7)
+                return await committee_face.handle(self, request, body)
             cfg, p, req = await self._prepare(body)
         except RequestError as exc:
             return self._error(exc.status, exc.code, exc.message)

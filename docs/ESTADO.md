@@ -43,6 +43,35 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F7: el Comité)
+
+- **El Comité evalúa tus ideas con 3 o 5 IAs.** En Open WebUI elige **webllm · Comité** y escribe la idea.
+- **Antes de enviar nada te enseña el plan:**
+  - quién participa, con qué rol y cómo (su modelo más potente, y «pensar» si su web lo tiene);
+  - las reservas, y quién escribe el documento final (y quién si esa falla);
+  - lo que gasta de cada cuenta y el tiempo;
+  - si adjuntas archivos, a qué empresas van y quién ve cuál.
+
+  Solo empieza cuando escribes **adelante**. También puedes escribir «cancela», «con 3», «con 5», «sin pensar» o «con pensar».
+- **Cada IA confirma su rol, recibe tu idea en la misma conversación y da su veredicto** con un formato fijo:
+  - si una falla, entra una reserva con el mismo rol;
+  - un texto como «olvida tu rol» dentro de tu idea no cambia nada.
+- **El recuento lo hace webllm**, a favor contra en contra, y nunca empata.
+- **Una IA que no participó escribe el documento final:** 8 apartados, sin saber qué IA dijo qué.
+  - Sale como respuesta en Open WebUI.
+  - En tu vault va a `Comités/`, con un anexo de cada veredicto y el nombre de su IA.
+- **Extensión 0.9.0:** sabe seguir en la misma conversación de un chat web. Pulsa ↻ en `chrome://extensions`.
+- **En la app,** tarjeta «El Comité» (Inicio):
+  - quién entraría ahora;
+  - 3 o 5, «pensar», y los roles, que puedes cambiar;
+  - «Dos chats web a la vez», apagado hasta que lo probemos en tu PC.
+- **Probado aquí:**
+  - 30 pruebas del Comité; rompiendo a propósito cada protección, su prueba falla;
+  - la extensión de verdad en Chromium, **5 de 5**; con la anterior, cada caso falla;
+  - **el Open WebUI de verdad, 5 de 5**;
+  - todas juntas: **__TOTAL__**.
+- **Falta tu PC:** un Comité real de 5 sobre una idea tuya. Después, 3 veces con «Dos chats web a la vez». Guía en `docs/F7-comite.md`.
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F6: webs que se reparan solas, y seguir tú en la web)
 
 - **Cuando una web cambia de diseño, webllm lo arregla solo, sin enviar nada para probar:**

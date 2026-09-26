@@ -81,7 +81,8 @@ MODES = ["webllm_buscar", "webllm_constructor", "webllm_imagen", "webllm_investi
 
 def run_install(fake: FakeOpenWebUI):
     ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
-    known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}", "kind": "api" if m == "webllm.zai" else "chat"}
+    kinds = {"webllm.zai": "api", "webllm.comite": "comite"}
+    known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}", "kind": kinds.get(m, "chat")}
              for m in fake.pipe_models}
     return setup.install(ow, "http://127.0.0.1:20130", "llave-webllm", say=lambda _m: None, known=known)
 
@@ -109,6 +110,14 @@ def test_every_webllm_model_gets_whole_files_and_its_switches():
     # "Continuar en la web" only under the answers of the web chats (an API has no web conversation, PLAN-v5 F6)
     assert fake.models["webllm.qwen"]["meta"]["actionIds"] == ["webllm_continuar"]
     assert fake.models["webllm.zai"]["meta"]["actionIds"] == []
+
+
+def test_the_committee_gets_no_switches_and_no_button():
+    """PLAN-v5 F7: "webllm · Comité" decides "pensar" per chat (its plan says so) and is not a web chat itself."""
+    fake = FakeOpenWebUI(models=("webllm.comite", "webllm.qwen", "webllm.zai"))
+    run_install(fake)
+    assert fake.models["webllm.comite"]["meta"]["filterIds"] == [] and fake.models["webllm.comite"]["meta"]["actionIds"] == []
+    assert fake.models["webllm.qwen"]["meta"]["filterIds"] == sorted(MODES)
     assert fake.config["/api/v1/retrieval/config/update"] == {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}
     assert fake.config["/api/v1/evaluations/config"] == {"ENABLE_EVALUATION_ARENA_MODELS": False}
 

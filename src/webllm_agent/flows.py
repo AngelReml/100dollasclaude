@@ -730,6 +730,8 @@ OWN_ERROR_CODES = frozenset({
     "unauthorized", "unreachable", "cancelled",
     # PLAN-v5 F4: what Iván chose could not be put or confirmed on the page, so nothing was sent
     "not_confirmed", "model_not_in_page", "mode_not_in_page", "file_not_attached", "forbidden", "expensive_cap",
+    # PLAN-v5 F7: the same conversation of a chat
+    "conversation_lost", "bad_continue_url", "no_new_answer",
 })
 # Whole words: a "load balancer" is not a balance, and "insufficient context" is not money.
 _CREDIT_TEXT = re.compile(r"insufficient[ _-]?(balance|credits?|funds|quota)|\bcredits?\b|\bbalance\b", re.I)

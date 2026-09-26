@@ -105,6 +105,37 @@ def fake_lmstudio() -> web.Application:
     return app
 
 
+# PLAN-v5 F7: how the demo's AIs take part in a Committee (the real ones get the same messages).
+DEMO_VERDICTS = {"kimi": "APROBAR CON CONDICIONES", "deepseek": "APROBAR", "qwen": "RECHAZAR", "zai": "APROBAR CON CONDICIONES",
+                 "groq": "APROBAR CON CONDICIONES", "nemotron": "APROBAR", "meta": "APROBAR CON CONDICIONES"}
+
+
+def demo_committee(prompt: str, who: str) -> str | None:
+    """A role confirmed, a verdict in the closed format, or the fusion document; None for anything else."""
+    role = re.search(r"CONFIRMO: (.+)$", prompt)
+    if role and ("responde únicamente: CONFIRMO" in prompt or "Responde únicamente con esta línea" in prompt):
+        return f"CONFIRMO: {role.group(1).strip()}"
+    if "Da tu veredicto desde tu rol" in prompt or "Reescribe tu veredicto" in prompt:
+        v = DEMO_VERDICTS.get(who, "APROBAR CON CONDICIONES")
+        return (f"VEREDICTO: [{v}]\nCONFIANZA: media\n"
+                "FORTALEZAS: 1) resuelve un problema real; 2) se puede probar poco a poco; 3) no cuesta dinero\n"
+                "RIESGOS: 1) depende de webs que cambian; 2) más archivos que ordenar; 3) nadie lo ha medido todavía\n"
+                "CONDICIONES: probarlo una semana y medir cuánto se usa\n"
+                "EN UNA FRASE: merece la pena si se prueba antes de darlo por bueno.")
+    if "DOCUMENTO DE FUSIÓN" in prompt or "Al documento le faltan apartados" in prompt:
+        tally = re.search(r"RECUENTO \(hecho por el sistema, cópialo tal cual en el apartado 2\): (.+?)\.\n", prompt)
+        return "\n\n".join([
+            "## 1. Resumen\nEl Comité ve la idea útil y barata, pero depende de webs que cambian y nadie la ha medido.",
+            f"## 2. Veredicto del Comité\n{tally.group(1) if tally else 'Recuento no disponible'}.",
+            "## 3. En qué coinciden\n- Resuelve un problema real.\n- Se puede probar poco a poco.",
+            "## 4. En qué discrepan, y qué rol lo dice\n- El **Abogado del diablo** duda de que se use; el **Estratega** cree que sí.",
+            "## 5. Riesgos principales\n1. Las webs cambian.\n2. Más archivos que ordenar.",
+            "## 6. Condiciones para seguir adelante\n- Una semana de prueba midiendo el uso.",
+            "## 7. Recomendación final\nAdelante, con la prueba de una semana.",
+            "## 8. Próximos pasos concretos\n1. Activarlo.\n2. Revisar en siete días cuánto se usó."])
+    return None
+
+
 def demo_repair(prompt: str, log: Path | None) -> str:
     """The fake OmniRoute as the AI that helps repair a page (PLAN-v5 F6): it reads the x-ray webllm sent and
     points at candidates the way a model would, with numbers. What it received is written to ``log`` so a test can
@@ -155,6 +186,9 @@ def fake_omniroute(data: Path | None = None) -> web.Application:
         if prompt.startswith("You help a browser extension find elements"):  # webllm repairing a page
             return await answer(request, body, {"content": demo_repair(prompt, data / "demo_reparaciones.jsonl" if data else None)})
         key = "zai" if model.startswith("zai") else "groq" if model.startswith("groq") else "nemotron"
+        committee_text = demo_committee(prompt, key)
+        if committee_text is not None:
+            return await answer(request, body, {"content": committee_text})
         if key == "nemotron" and "(demo: límite)" in prompt:
             return web.json_response({"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. "
                                                 "Add 10 credits to unlock 1000 free model requests per day"}}, status=429)
@@ -313,7 +347,7 @@ async def fake_extension(port: int) -> None:
                 await asyncio.sleep(2.5)
                 await ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "pong", "via": "copy-button"})
             else:
-                text = ANSWERS.get(site, "Respuesta de prueba.")
+                text = demo_committee(last, site) or ANSWERS.get(site, "Respuesta de prueba.")
                 if "Otra IA" in job["prompt"] or "ojo crítico" in job["prompt"]:
                     text = ("Está bien explicada. Yo añadiría un ejemplo con **sueldos**: si los precios suben un 5 % "
                             "y tu sueldo solo un 2 %, en realidad eres un 3 % más pobre.")
