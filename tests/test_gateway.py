@@ -65,15 +65,16 @@ def test_models_are_every_ai_with_a_spanish_name(tmp_path, mock_server):
             assert got["qwen"] == ("Qwen (web)", "chat") and got["zai"][1] == "api" and got["zai"][0].endswith("(API)")
             kinds = [m["webllm"]["kind"] for m in body["data"]]
             # chats, the Committee (D4), APIs, this PC; never the Committee first: Open WebUI opens new chats on the first
-            assert kinds == sorted(kinds, key=["chat", "comite", "api", "local"].index) and kinds.count("comite") == 1
-            assert kinds[0] != "comite"
+            assert kinds == sorted(kinds, key=["chat", "comite", "automatico", "api", "local"].index)
+            assert kinds.count("comite") == 1 and kinds.count("automatico") == 1
+            assert kinds[0] not in ("comite", "automatico")
             assert got["comite"] == ("webllm · Comité", "comite")
             for name, p in list(app.cfg.providers.items()):  # no web chat connected: still not first
                 if p.gateway == "bridge":
                     app.cfg.providers[name] = dataclasses.replace(p, enabled=False)
             _, body, _ = await app.get("/gw/v1/models")
             kinds = [m["webllm"]["kind"] for m in body["data"]]
-            assert "chat" not in kinds and kinds[0] != "comite" and kinds.count("comite") == 1
+            assert "chat" not in kinds and kinds[0] not in ("comite", "automatico") and kinds.count("comite") == 1
     run(go())
 
 
@@ -86,7 +87,7 @@ def test_open_webui_and_the_app_show_the_same_daily_numbers(tmp_path, mock_serve
             _, models, _ = await app.get("/gw/v1/models")
             _, estado, _ = await app.get("/api/estado")
             face = {m["id"]: (m["webllm"]["used_today"], m["webllm"]["daily_cap"]) for m in models["data"]
-                    if m["webllm"]["kind"] != "comite"}  # the Committee spends its members' messages, not its own
+                    if m["webllm"]["kind"] not in ("comite", "automatico")}  # they spend the chosen AIs' messages
             panel = {a["name"]: (a["today"], a["cap"]) for a in estado["ais"]}
             assert face["qwen"] == panel["qwen"] == (1, app.cfg.guard.daily_cap)
             assert face["zai"] == panel["zai"] == (1, app.cfg.guard.api_daily_cap)

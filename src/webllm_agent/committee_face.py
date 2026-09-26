@@ -38,7 +38,7 @@ def model_entry(cfg: "AppConfig") -> dict[str, Any]:
                                 "escribas «adelante».")}}
 
 
-async def readiness(bridge: Any, cfg: "AppConfig"):
+async def readiness(bridge: Any, cfg: "AppConfig", who: str = "el Comité"):
     """``ready(p, messages)``: why an AI cannot take ``messages`` more right now, or None. "Disponible" (PLAN-v5
     section 6) = ready, not paused, under its cap for the day and fine in its last check."""
     from .appapi import site_of
@@ -56,7 +56,8 @@ async def readiness(bridge: Any, cfg: "AppConfig"):
             return "está en pausa"
         today, cap = api.usage(cfg, p)
         if cap is not None and today + need > cap:
-            return f"le quedan {max(0, cap - today)} mensajes hoy y el Comité puede gastar {need}"
+            left = max(0, cap - today)
+            return "no le quedan mensajes hoy" if not left else f"le quedan {left} mensajes hoy y {who} puede gastar {need}"
         if site and not chrome:
             return "Chrome no está conectado"
         state = (revision.get(site) or {}).get("state") if site else None
@@ -117,8 +118,8 @@ def note(ev: dict[str, Any]) -> str | None:
     return None
 
 
-async def handle(gw: "Gateway", request: web.Request, body: dict[str, Any]) -> web.StreamResponse:
-    """One message to "webllm · Comité"."""
+async def handle(gw: "Gateway", request: web.Request, body: dict[str, Any], prefix: str = "") -> web.StreamResponse:
+    """One message to "webllm · Comité". ``prefix``: "Automático" sent it here (its first line, PLAN-v5 F8)."""
     from .gateway import RequestError, Reply, _inline_images, _last_user_text, decode_files
     ext = body.get("webllm") if isinstance(body.get("webllm"), dict) else {}
     if ext.get("task"):  # Open WebUI's own background jobs never reach the Committee's AIs
@@ -135,7 +136,7 @@ async def handle(gw: "Gateway", request: web.Request, body: dict[str, Any]) -> w
 
     async def say(text: str) -> web.StreamResponse:
         await reply.open()
-        return await gw._finish_text(reply, text)
+        return await gw._finish_text(reply, f"{prefix}\n\n{text}" if prefix else text)
 
     if kind == "cancel":
         had = committee.drop_pending(paths, chat_id)

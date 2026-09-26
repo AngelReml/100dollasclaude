@@ -169,6 +169,14 @@ class AppApi:
         app.router.add_post("/api/reparar", self.reparar_guardar)
         app.router.add_get("/api/comite", self.comite_estado)
         app.router.add_post("/api/comite", self.comite_guardar)
+        # PLAN-v5 F8: "Automático" (its table in view, Iván's test) and the cards of the AIs by API
+        app.router.add_get("/api/automatico", self.automatico_estado)
+        app.router.add_post("/api/automatico/probar", self.automatico_probar)
+        app.router.add_post("/api/automatico/pruebas", self.automatico_pruebas)
+        app.router.add_get("/api/apis/omniroute", self.apis_omniroute)
+        app.router.add_post("/api/apis/usar", self.apis_usar)
+        app.router.add_post("/api/apis/quitar", self.apis_quitar)
+        app.router.add_post("/api/apis/privacidad", self.apis_privacidad)
         app.router.add_post("/api/ficha/{ai}/deshacer", self.ficha_deshacer)
         app.router.add_post("/api/continuar", self.continuar)
         app.router.add_post("/api/dejar-de-registrar", self.dejar_de_registrar)
@@ -1219,6 +1227,140 @@ class AppApi:
         except ValueError as exc:
             return self._fail(400, str(exc), "bad_request")
         return web.json_response(await self.comite_view())
+
+    # ---------------------------------------------------------------- "Automático" and the API cards (PLAN-v5 F8)
+
+    def _refresh_api_models(self) -> None:
+        """The AIs by API as data/state/apis.json says now (turned on, turned off, privacy), without a restart."""
+        from . import automatico
+        self.bridge.cfg = dataclasses.replace(self.cfg, providers=automatico.with_api_models(self.cfg.providers, self.cfg.paths))
+
+    async def automatico_estado(self, request: web.Request) -> web.Response:
+        from . import automatico_face
+        if not self._authorized(request):
+            return self._unauthorized()
+        return web.json_response(await automatico_face.view(self.bridge, await self._cfg()))
+
+    async def automatico_probar(self, request: web.Request) -> web.Response:
+        """What Automático would choose for each of Iván's test questions. Nothing is sent to any AI."""
+        from . import automatico_face
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        questions = body.get("preguntas") if isinstance(body, dict) else None
+        if not isinstance(questions, list) or not questions:
+            return self._fail(400, "Escribe al menos una pregunta de prueba.", "bad_request")
+        return web.json_response({"resultados": await automatico_face.try_questions(self.bridge, await self._cfg(),
+                                                                                    [str(q) for q in questions])})
+
+    async def automatico_pruebas(self, request: web.Request) -> web.Response:
+        """Iván's marks (bien / mal) on each test question: the measure of F8 (9 of 10 well chosen)."""
+        from . import automatico
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        items = body.get("preguntas") if isinstance(body, dict) else None
+        if not isinstance(items, list):
+            return self._fail(400, "Faltan las preguntas.", "bad_request")
+        return web.json_response(automatico.save_tests(self.cfg.paths, [x for x in items if isinstance(x, dict)]))
+
+    async def _omniroute_ids(self) -> list[str]:
+        """The models OmniRoute serves now (its own list: no model id is ever guessed)."""
+        import httpx
+        from .client import auth_headers
+        try:
+            key = load_api_key()
+        except Exception:
+            key = ""
+        async with httpx.AsyncClient() as client:
+            r = await client.get(f"{self.cfg.base_url.rstrip('/')}/models", headers=auth_headers(key), timeout=10)
+            r.raise_for_status()
+            data = r.json()
+        return [str(m.get("id")) for m in (data.get("data") or []) if isinstance(m, dict) and m.get("id")]
+
+    async def apis_omniroute(self, request: web.Request) -> web.Response:
+        """For each API card, the models of OmniRoute's list that are that model (to turn it on with one click)."""
+        import httpx
+        from . import automatico
+        if not self._authorized(request):
+            return self._unauthorized()
+        if not await self._omniroute_up():
+            return self._fail(503, "OmniRoute está apagado: pulsa «Encender OmniRoute» en Inicio y vuelve a mirar.", "omniroute_off")
+        try:
+            ids = await self._omniroute_ids()
+        except (httpx.HTTPError, ValueError) as exc:
+            self.bridge.log(f"No pude leer la lista de modelos de OmniRoute: {exc}")
+            return self._fail(502, "OmniRoute no me dio su lista de modelos. Mira que esté bien y vuelve a probar.", "omniroute_list")
+        cfg = await self._cfg()
+        found = automatico.candidates(automatico.load_models(), ids, lambda i: is_blocked_model(cfg, i))
+        return web.json_response({"modelos": found, "total": len(ids)})
+
+    async def apis_usar(self, request: web.Request) -> web.Response:
+        """Turn on an AI by API with a model of OmniRoute's list: checked against that list and the card, then one
+        short test call (it counts in its day, like the "pong" of a web chat)."""
+        import httpx
+        from . import automatico
+        from .client import TRANSPARENT_HEADERS, chat as chat_call
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        key, model = str(body.get("key") or ""), str(body.get("model") or "")
+        models = automatico.load_models()
+        cfg = await self._cfg()
+        if key not in models:
+            return self._fail(404, "No conozco esa IA por API.", "not_found")
+        if key in cfg.providers and not cfg.providers[key].api_card:
+            return self._fail(409, f"{models[key].name} ya está en tu configuración.", "already")
+        try:
+            ids = await self._omniroute_ids()
+        except (httpx.HTTPError, ValueError):
+            return self._fail(503, "No pude leer la lista de OmniRoute: mira que esté encendido.", "omniroute_list")
+        if model not in automatico.candidates({key: models[key]}, ids, lambda i: is_blocked_model(cfg, i))[key]:
+            return self._fail(400, f"«{model}» no está en la lista de OmniRoute como {models[key].name}.", "not_in_list")
+        probe = ProviderConfig(name=key, model=model, label=models[key].name)
+        budget = budget_for(cfg)
+        if not budget.take(probe):
+            return self._fail(429, budget.notice(probe), "daily_cap")
+        try:
+            api_key = load_api_key()
+        except Exception:
+            api_key = ""
+        async with httpx.AsyncClient() as client:
+            res = await chat_call(client, base_url=cfg.base_url, api_key=api_key, model=model, max_tokens=20,
+                                  prompt="Responde solo con la palabra: pong", timeout_s=60, extra_headers=TRANSPARENT_HEADERS)
+        if not res.ok:
+            return self._fail(502, f"{models[key].name} no respondió a la prueba ({res.error or res.status}). "
+                                   "Mira en OmniRoute que su clave esté bien y vuelve a probar.", "test_failed")
+        automatico.turn_on(self.cfg.paths, key, model)
+        self._refresh_api_models()
+        return web.json_response(await self._automatico_now())
+
+    async def apis_quitar(self, request: web.Request) -> web.Response:
+        from . import automatico
+        if not self._authorized(request):
+            return self._unauthorized()
+        key = str((await request.json()).get("key") or "")
+        if not automatico.turn_off(self.cfg.paths, key):
+            return self._fail(404, "Esa IA no estaba encendida desde aquí.", "not_found")
+        self._refresh_api_models()
+        return web.json_response(await self._automatico_now())
+
+    async def apis_privacidad(self, request: web.Request) -> web.Response:
+        """Iván's word: may Automático and the Committee use this API on their own? null = what its card says."""
+        from . import automatico
+        if not self._authorized(request):
+            return self._unauthorized()
+        body = await request.json()
+        key, allowed = str(body.get("key") or ""), body.get("permitir")
+        if key not in automatico.load_models() or not (allowed is None or isinstance(allowed, bool)):
+            return self._fail(400, "Petición mal hecha.", "bad_request")
+        automatico.set_private(self.cfg.paths, key, allowed)
+        self._refresh_api_models()
+        return web.json_response(await self._automatico_now())
+
+    async def _automatico_now(self) -> dict[str, Any]:
+        from . import automatico_face
+        return await automatico_face.view(self.bridge, await self._cfg())
 
     # ---------------------------------------------------------------- self-repair and daily check (PLAN-v5 F6)
 

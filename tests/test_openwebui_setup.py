@@ -81,7 +81,7 @@ MODES = ["webllm_buscar", "webllm_constructor", "webllm_imagen", "webllm_investi
 
 def run_install(fake: FakeOpenWebUI):
     ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
-    kinds = {"webllm.zai": "api", "webllm.comite": "comite"}
+    kinds = {"webllm.zai": "api", "webllm.comite": "comite", "webllm.automatico": "automatico"}
     known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}", "kind": kinds.get(m, "chat")}
              for m in fake.pipe_models}
     return setup.install(ow, "http://127.0.0.1:20130", "llave-webllm", say=lambda _m: None, known=known)
@@ -120,6 +120,15 @@ def test_the_committee_gets_no_switches_and_no_button():
     assert fake.models["webllm.qwen"]["meta"]["filterIds"] == sorted(MODES)
     assert fake.config["/api/v1/retrieval/config/update"] == {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}
     assert fake.config["/api/v1/evaluations/config"] == {"ENABLE_EVALUATION_ARENA_MODELS": False}
+
+
+def test_automatico_gets_no_switches_and_no_button():
+    """PLAN-v5 F8: "webllm · Automático" chooses the AI by its written rules; a switch of one chat means nothing to it."""
+    fake = FakeOpenWebUI(models=("webllm.automatico", "webllm.qwen"))
+    run_install(fake)
+    meta = fake.models["webllm.automatico"]["meta"]
+    assert meta["filterIds"] == [] and meta["actionIds"] == []
+    assert fake.models["webllm.qwen"]["meta"]["filterIds"] == sorted(MODES)
 
 
 def test_background_jobs_that_would_spend_messages_are_off():

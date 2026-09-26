@@ -101,7 +101,7 @@ class Table:
                 out.append(f"Si lleva código escrito (un bloque ``` o algo con forma de código) → {t.name}")
             elif signal == "largo":
                 out.append(f"Si tu mensaje pasa de {t.largo:,} caracteres → {t.name}".replace(",", "."))
-        out.append(f"Si no, y sigues una conversación de código, documento o investigación → el mismo tipo")
+        out.append("Si no, y sigues una conversación de código, documento o investigación → el mismo tipo")
         out.append(f"Si no → {self.tipos[DEFAULT_TYPE].name}")
         return out
 

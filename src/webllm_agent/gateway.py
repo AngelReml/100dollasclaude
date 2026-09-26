@@ -36,7 +36,7 @@ from typing import Any
 import httpx
 from aiohttp import web
 
-from . import committee, committee_face, flows, journal
+from . import automatico, automatico_face, committee, committee_face, flows, journal
 from .appapi import MAX_PROMPT, site_of
 from .broadcaster import SKIPPED as _SKIPPED, GatewayError, Outcome, new_run_id, upstream_key
 from .budget import budget_for
@@ -179,6 +179,16 @@ class Reply:
         self.closed = False
         self.notes: list[str] = []
         self.avisos: list[str] = []
+        # "Automático" (PLAN-v5 F8): its first line, written just before the AI's first words (or its error)
+        self.prefix = ""
+
+    def take_prefix(self) -> str:
+        lead, self.prefix = self.prefix, ""
+        return lead
+
+    async def lead(self) -> None:
+        if self.prefix:
+            await self.chunk({"content": self.take_prefix()})
 
     async def open(self) -> None:
         if not self.stream:
@@ -202,6 +212,8 @@ class Reply:
             self.closed = True
 
     async def chunk(self, delta: dict[str, Any], finish: str | None = None, **extra: Any) -> None:
+        if self.prefix and delta.get("content"):
+            await self.lead()
         data = {"id": self.cid, "object": "chat.completion.chunk", "created": self.created, "model": self.model,
                 "choices": [{"index": 0, "delta": delta, "finish_reason": finish}], **extra}
         await self.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8"))
@@ -224,6 +236,8 @@ class Reply:
         return self.resp  # type: ignore[return-value]
 
     async def error(self, code: str, message: str, status: int = 502) -> web.StreamResponse:
+        lead = self.take_prefix().strip()
+        message = f"{lead} {message}" if lead else message
         if not self.stream:
             return web.json_response({"error": {"message": message, "type": code, "code": code, "run_id": self.run_id},
                                       "webllm": {"avisos": self.avisos}}, status=status, headers={"x-webllm-run": self.run_id})
@@ -281,6 +295,7 @@ class Gateway:
         # on the first model of the list, and that must not change without Iván (D21)
         at = min(len(data), max(1, sum(m["webllm"]["kind"] == "chat" for m in data)))
         data.insert(at, committee_face.model_entry(cfg))
+        data.insert(at + 1, automatico.model_entry())  # "webllm · Automático" (D7): an option, never the default (D21.3)
         return web.json_response({"object": "list", "data": data})
 
     # ----------------------------------------------------------------- stop
@@ -418,6 +433,7 @@ class Gateway:
             "provider": p.name, "chat_id": req["chat_id"], "message_id": req["message_id"], "task": req["task"],
             "files": entries, "modes": req["modes"],
             **({"project": req["project"]} if req["project"] else {}), **({"title": req["title"]} if req["title"] else {}),
+            **({"automatico": req["route"]} if req.get("route") else {}),
         })
         # PLAN-v5 F5: the question is in Obsidian while the answer is on its way, in the project (Open WebUI's
         # folder) and under the title Open WebUI shows
@@ -475,15 +491,26 @@ class Gateway:
             return self._error(401, "unauthorized", "token del puente incorrecto")
         try:
             body = await request.json()
+        except (ValueError, UnicodeDecodeError):
+            return self._error(400, "bad_request", "La petición no es JSON.")
+        try:
             if isinstance(body, dict) and body.get("model") == committee.MODEL_ID:  # "webllm · Comité" (PLAN-v5 F7)
                 return await committee_face.handle(self, request, body)
+            if isinstance(body, dict) and body.get("model") == automatico.MODEL_ID:  # "webllm · Automático" (F8)
+                return await automatico_face.handle(self, request, body)
+        except RequestError as exc:
+            return self._error(exc.status, exc.code, exc.message)
+        return await self.answer(request, body)
+
+    async def answer(self, request: web.Request, body: Any, route: dict[str, Any] | None = None) -> web.StreamResponse:
+        """One question to one AI. ``route``: Automático chose it (its first line and what goes in the journal)."""
+        try:
             cfg, p, req = await self._prepare(body)
         except RequestError as exc:
             return self._error(exc.status, exc.code, exc.message)
-        except (ValueError, UnicodeDecodeError):
-            return self._error(400, "bad_request", "La petición no es JSON.")
         if p.gateway == "omniroute" and not await self.bridge.app_api._omniroute_up():
             return self._error(503, "unreachable", problem_text("unreachable", p.display))
+        req["route"] = (route or {}).get("journal")
         flow = self._flow(p, req)
         try:
             flows.validate(cfg, flow)
@@ -494,6 +521,8 @@ class Gateway:
         run_dir = cfg.paths.runs_dir / run_id
         self._record(cfg, run_dir, run_id, p, req, flow)
         reply = Reply(request, bool(body.get("stream")), run_id, p.name)
+        if route:
+            reply.prefix = route["line"] + "\n\n"
         await reply.open()
         await self._before(reply, p, req)
         beat = asyncio.create_task(reply.heartbeat())
@@ -624,7 +653,7 @@ class Gateway:
                 "id": reply.cid, "object": "chat.completion", "created": reply.created, "model": reply.model,
                 "webllm": {"avisos": reply.avisos},
                 "choices": [{"index": 0, "finish_reason": "stop",
-                             "message": {"role": "assistant", "content": text,
+                             "message": {"role": "assistant", "content": reply.take_prefix() + text,
                                          **({"reasoning_content": "\n\n".join(reply.notes)} if reply.notes else {})}}],
             }, headers={"x-webllm-run": reply.run_id})
         await reply.chunk({"content": text})
@@ -698,8 +727,12 @@ class Gateway:
                 return await reply.end()
             return await reply.error(answer.code, problem_text(answer.code, p.display, answer.error))
         if not reply.stream:
-            return web.json_response({**result.get("body", {}), "webllm": {"avisos": reply.avisos}},
-                                     headers={"x-webllm-run": reply.run_id})
+            data = result.get("body", {})
+            lead = reply.take_prefix()
+            if lead and data.get("choices"):
+                message = data["choices"][0].get("message") or {}
+                message["content"] = lead + (_content_text(message.get("content")) or "")
+            return web.json_response({**data, "webllm": {"avisos": reply.avisos}}, headers={"x-webllm-run": reply.run_id})
         await reply.chunk({}, None, webllm={"avisos": reply.avisos})
         return await reply.end()
 
@@ -771,6 +804,8 @@ class Gateway:
                                 slot["name"] += fn.get("name") or ""
                                 slot["arguments"] += fn.get("arguments") or ""
                         info["started"] = True
+                        if reply.prefix and any((c.get("delta") or {}).get("content") for c in chunk.get("choices") or []):
+                            await reply.lead()
                         await reply.write(f"{line.strip()}\n\n".encode("utf-8"))
         except httpx.TimeoutException as exc:
             return ChatResult(TIMEOUT, latency_s=time.perf_counter() - t0, error=f"timeout ({type(exc).__name__})"), info
