@@ -131,7 +131,8 @@ FALLO enséñame: error: locator.click: Target page, context or browser has been
 FALLO «Parar» pulsa también el botón de parar de la web (clics en la página: ["Send message"])
 FALLO la comprobación diaria abre cada chat conectado y no envía nada: 
 FALLO observador: error: Cannot read properties of null (reading 'locator')
-FALLO registrar: error: page.goto: net::ERR_FILE_NOT_FOUND at chrome-extension://…/popup.html?tab=1060182687
+FALLO registrar: error: page.goto: net::ERR_FILE_NOT_FOUND at chrome-extension://…/popup.html?tab=…
+FALLO webllm cerrado: error: worker.evaluate: ReferenceError: sendObserved is not defined
 ```
 
 Con la extensión 0.8.0, el mismo guion da 16 BIEN y ningún FALLO. La primera línea («se conecta al puente») pasa con las dos: no es un caso de F6.

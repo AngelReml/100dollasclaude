@@ -184,7 +184,7 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   NEW file, and Dataview runs `dataviewjs` blocks and `$=` queries when a note opens. webllm creates new files from
   AI answers, so the vault copy is defused (visibly, reversible, original in the journal).
 - **Run ids sort by the second, then a random suffix**: questions asked in the same second (tests, fast APIs) come
-  out in a random order by id. The vault orders a conversation by its journal's first `ts` (milliseconds).
+  out in a random order by id. The vault orders a conversation by its journal's first `ts` (milliseconds). Test scripts too: find new runs by name (a set of the ones seen before), never by position in a sorted list (F6: a question made in the same second as the hand-written turn sorted before it, and the check read the wrong run).
 - **Open WebUI (0.11.4) keeps a chat's folder and title in its own DB**: the pipe reads them with
   `Chats.get_chat_title_by_id`, `Chats.get_chat_folder_id(chat_id, user_id)` and
   `Folders.get_folder_by_id_and_user_id` (async); a new chat may already carry Open WebUI's title at its first question.

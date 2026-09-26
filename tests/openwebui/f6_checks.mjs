@@ -44,6 +44,10 @@ function runs() {
   });
 }
 const button = (page) => page.getByRole("button", { name: "Continuar en la web" });
+/** The runs that were not there before: by name, never by position (ids sort by the second, then a random
+ *  suffix, so a run made in the same second as an older one can sort before it). */
+const known = () => new Set(runs().map((r) => r.id));
+const since = (seen) => runs().filter((r) => !seen.has(r.id));
 
 mkdirSync(OUT, { recursive: true });
 const browser = await chromium.launch({ executablePath: exe, args: ["--no-proxy-server"] });
@@ -69,11 +73,11 @@ try {
   // 1. A web chat's answer has «Continuar en la web» under it.
   await page.goto(OW + "/c/" + chat.id);
   await page.locator("#chat-input").waitFor({ timeout: 20000 });
-  const before = runs().length;
+  const before = known();
   await page.locator("#chat-input").click();
   await page.keyboard.type("¿Qué es la inflación?");
   await page.keyboard.press("Enter");
-  const asked = await until(() => runs().slice(before).find((r) => r.lines[0].kind === "gateway" && r.lines.some((l) => l.kind === "flow_end")), 60000);
+  const asked = await until(() => since(before).find((r) => r.lines[0].kind === "gateway" && r.lines.some((l) => l.kind === "flow_end")), 60000);
   await button(page).last().waitFor({ timeout: 20000 }).catch(() => {});
   const shown = await button(page).count();
   await shot(page, "01-boton");
@@ -97,15 +101,20 @@ try {
     `lo que escribes a mano en la web queda en la misma conversación, marcado como tuyo (${hand?.id ?? "no"})`);
 
   // 4. Back in Open WebUI: the next question takes it along, and the answer says so.
-  const before2 = runs().length;
+  const before2 = known();
   await page.locator("#chat-input").click();
   await page.keyboard.type("¿Y cómo me protejo?");
   await page.keyboard.press("Enter");
-  const next = await until(() => runs().slice(before2).find((r) => r.lines[0].kind === "gateway" && r.lines.some((l) => l.kind === "flow_end")), 60000);
+  const next = await until(() => since(before2).find((r) => r.lines[0].kind === "gateway" && r.lines.some((l) => l.kind === "flow_end")), 60000);
   const call = next?.lines.find((l) => l.kind === "flow");
   const sentText = call?.message_file ? readFileSync(join(next.dir, call.message_file), "utf8") : "";
   const note = await until(async () => (await page.getByText(/Con tu pregunta va también el mensaje que escribiste directamente en la web de Qwen, con su respuesta/).count()) > 0, 20000);
   await shot(page, "03-de-vuelta");
+  if (!(sentText.includes("Esto lo escribí a mano en la web (demo)") && note)) {
+    console.log("DIAG", JSON.stringify({ next: next?.id, call: call ? { provider: call.provider, status: call.status, message_file: call.message_file } : null,
+      head: next?.lines[0], sent: sentText.slice(0, 1500), hand: hand?.lines[0],
+      shown: (await page.locator("body").innerText()).slice(-1200) }, null, 1));
+  }
   say(sentText.includes("Esto lo escribí a mano en la web (demo)") && sentText.includes("Y esto contestó la web (demo).") &&
       sentText.indexOf("Esto lo escribí a mano") < sentText.indexOf("¿Y cómo me protejo?") && note,
     "de vuelta en Open WebUI, tu siguiente pregunta lleva lo que escribiste en la web, en su sitio, y la respuesta lo dice");
@@ -115,11 +124,11 @@ try {
   await page.locator("#chat-input").waitFor({ timeout: 20000 });
   await page.locator("#model-selector-model-button").click();
   await page.getByText("z.ai (API)", { exact: true }).first().click();
-  const before3 = runs().length;
+  const before3 = known();
   await page.locator("#chat-input").click();
   await page.keyboard.type("¿Cuánto es 2 más 2?");
   await page.keyboard.press("Enter");
-  const api = await until(() => runs().slice(before3).find((r) => r.lines.some((l) => l.kind === "flow" && l.provider === "zai")), 60000);
+  const api = await until(() => since(before3).find((r) => r.lines.some((l) => l.kind === "flow" && l.provider === "zai")), 60000);
   await page.waitForTimeout(2500);
   await shot(page, "04-api-sin-boton");
   say(!!api && (await button(page).count()) === 0, "bajo la respuesta de z.ai (por API) no hay «Continuar en la web»");
