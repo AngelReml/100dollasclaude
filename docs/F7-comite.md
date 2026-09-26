@@ -99,6 +99,7 @@ El turno 2 vuelve a **la misma conversación** del chat (su dirección), no abre
 
 - **El recuento es a favor contra en contra.** Con tres valores posibles, un número impar no basta: 1-1-1 sería un empate. A favor contra en contra, con número impar, nunca empata. Entre las dos clases de «a favor», el empate va a la prudente.
 - **Las listas del Comité y de fusión son las de la sección 6 del plan.** Las que aún no están configuradas (GLM-5.2, Mistral Large y Gemini Flash por API) salen en el plan como «sin configurar». Detrás van las APIs que ya tienes (z.ai, groq, Nemotron). F8 las medirá con tus cuentas.
+  - **Cambio de F8:** Nemotron (OpenRouter gratis) puede guardar lo que escribes para entrenar, así que el Comité ya no lo usa solo. Tampoco Mistral, hasta que apagues su entrenamiento. Se permite en su ficha: `docs/F8-automatico.md`.
 - **«Pensar» y el modelo más potente se piden solo si la Ficha del chat los conoce** (su «Descubrir»). Pedir un modo que la web no tiene haría que no se enviara nada. Si no los conoce, el plan dice «el modelo que tenga puesto su web».
 - **Dos chats web a la vez: apagado por defecto.** Nunca se ha probado en tu PC. El interruptor está en la tarjeta del Comité, y el plan de trabajo pide 3 pruebas seguidas antes de dejarlo encendido.
 - **Las confirmaciones de rol («CONFIRMO: …») no van a tu vault como respuestas.** Son un saludo, no una respuesta, y ensuciarían tu base de conversaciones. Siguen en el registro.

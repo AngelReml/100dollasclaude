@@ -290,3 +290,35 @@ def test_ivans_test_questions_say_what_automatico_would_choose_and_send_nothing(
             _, v, _ = await app.get("/api/automatico")
             assert [x["texto"] for x in v["pruebas"]] == ["Hazme un script en Python", "¿Cuál es la capital de Australia?"]
     run(go())
+
+
+def test_an_ai_that_failed_a_moment_ago_is_skipped_for_a_while_and_said(tmp_path):
+    """"Disponible" includes "fine in its last check" (PLAN-v5 section 6): a saturated or logged-out AI is skipped
+    for 15 minutes (the app's own memory of recent failures), and the first line says so."""
+    import time
+
+    async def go():
+        async with Committee(tmp_path, api_scripts={GROQ: lambda t: "Canberra."}) as app:
+            app.bridge.app_api.recent["zai"] = ("saturada", "", time.time() - 125)
+            _, lines, _ = await gw(app, body("¿Cuál es la capital de Australia?"))
+            first = content(lines).split("\n\n")[0]
+            assert "eligió **groq** para «Pregunta rápida»" in first and "z.ai, falló hace 2 min (saturada)" in first
+            app.bridge.app_api.recent["zai"] = ("saturada", "", time.time() - 16 * 60)  # long enough ago: back in the list
+            _, lines, _ = await gw(app, body("¿Cuál es la capital de Australia?"))
+            assert "eligió **z.ai** para «Pregunta rápida»" in content(lines).split("\n\n")[0]
+    run(go())
+
+
+def test_the_history_says_what_automatico_chose_and_why(tmp_path):
+    async def go():
+        async with Committee(tmp_path, api_scripts={GROQ: lambda t: "Hecho."}) as app:
+            _, _, headers = await gw(app, body("Hazme un script en Python"))
+            status, d, _ = await app.get(f"/api/historial/{run_id_of(headers)}")
+            assert status == 200 and d["lock"] is True
+            assert d["automatico"]["eligio"] == "groq" and d["automatico"]["tipo"] == "Código"
+            assert d["automatico"]["por_que"] == "dice «script», dice «python»" and ["Kimi", "sin conectar"] in d["automatico"]["saltadas"]
+            # a question to an AI Iván picked himself says nothing of Automático
+            _, _, headers = await gw(app, {"model": "groq", "stream": True, "messages": [{"role": "user", "content": "Hola"}]})
+            _, d, _ = await app.get(f"/api/historial/{run_id_of(headers)}")
+            assert d["automatico"] is None
+    run(go())

@@ -255,6 +255,8 @@ export interface RunDetail {
   lock: boolean;
   lock_reason: string;
   folder: string;
+  /** PLAN-v5 F8: "Automático" chose the AI (what and why). */
+  automatico?: { eligio: string; tipo: string; por_que: string; saltadas: [string, string][] } | null;
 }
 
 // Events streamed by POST /api/preguntar (see src/webllm_agent/flows.py).

@@ -511,6 +511,18 @@ Cada fase tiene:
 - **En tu PC:** 10 preguntas de prueba (2 de cada tipo) con "Automático", apuntando qué eligió y si acertó. La tabla se ajusta con esos datos antes de darla por buena.
 - **Salida:** 9 de 10 bien enrutadas.
 
+> **Estado (26-sep-2026):** hecho y probado en la nube.
+> - La tabla y sus reglas están en `src/webllm_agent/automatico.yaml` (a la vista en la app, en orden). Las fichas de las APIs, en `modelos_api.yaml`, con fuente y fecha.
+> - Pruebas de la tabla: cada tipo tiene primero y reserva, nada apunta a una IA prohibida, ninguna regla usa una web no privada. Más 50 pruebas en total, y el Open WebUI de verdad: __OWUI__.
+>
+> **Diferencias a propósito:**
+> - **Añadidas:** detrás de las reservas del plan van las que Iván ya tiene (gpt-oss-120b, DeepSeek, Qwen), marcadas como «añadidas, sin medir». Sin ellas, hoy casi nunca habría a quién preguntar.
+> - **Las fichas incluyen qué hace cada proveedor con lo que escribes.** Una API que puede entrenar con ello (Mistral gratis, los modelos gratis de OpenRouter) cuenta como no privada hasta que Iván lo permita. Nemotron sale del Comité por defecto.
+> - **Si la elegida falla, no se pasa sola a la reserva** (D21.1). Una que falló por saturación o sesión se salta 15 minutos.
+> - **Las 10 preguntas se pueden probar sin enviar nada** («Probar con tus preguntas»): la salida mide la elección, que es lo que decide «Automático».
+>
+> **Falta en tu PC:** encender GLM-5.2, Qwen3.8-27B, Codestral y Gemini Flash desde tu OmniRoute, y tus 10 preguntas (9 de 10). Detalle: `docs/F8-automatico.md`.
+
 ### F9 — Acciones y conectores
 
 - **Puerta:** F1 (comprobaciones 5 y 6) y F2.

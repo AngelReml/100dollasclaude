@@ -19,7 +19,7 @@ const OW = process.env.OW_URL ?? "http://127.0.0.1:20210";
 const DATA = process.env.WEBLLM_DATA;
 const OUT = process.env.OUT ?? join(root, "docs", "capturas", "f1");
 const LONG = process.argv.includes("--largo");
-const MODELS = ["Qwen (web)", "DeepSeek (web)", "z.ai (web)", "Meta AI (web)", "z.ai (API)", "groq (API)", "Nemotron (API)"];
+const MODELS = ["Qwen (web)", "DeepSeek (web)", "z.ai (web)", "Meta AI (web)", "z.ai (API)", "groq (API)", "Nemotron (API, no privada)"]  // F8: OpenRouter's free models may train on what you write;
 
 let failed = 0;
 const say = (ok, text) => {

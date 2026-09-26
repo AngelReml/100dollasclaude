@@ -43,6 +43,29 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F8: «Automático»)
+
+- **«webllm · Automático» elige la IA por ti**, con reglas escritas que ves en la app (Inicio → «Que webllm elija la IA»).
+  - La primera línea de cada respuesta dice qué eligió y por qué.
+  - No es el de partida: siempre puedes elegir tú.
+- **Si la IA elegida falla, te lo dice y no pregunta a otra sin ti.** Si vuelves a enviar la pregunta, se salta la que falló.
+- **Una idea para evaluar va al Comité**, con su plan y tu «adelante».
+- **Cada IA por API tiene su ficha:**
+  - quién la sirve y para qué es buena;
+  - si ve imágenes y cuánto es gratis;
+  - **qué hace con lo que escribes**, con la fuente.
+- **Las APIs se encienden desde la lista de tu OmniRoute** con un clic y una llamada de prueba. Nunca se inventa el nombre de un modelo.
+- **Cambio de privacidad** (tu regla D21):
+  - una API que puede entrenar con lo que escribes no la usan solos ni «Automático» ni el Comité hasta que tú lo permitas;
+  - afecta a **Nemotron** (OpenRouter gratis), que antes estaba en el Comité, y a las de **Mistral** (hasta que apagues su entrenamiento);
+  - en el selector, Nemotron se llama ahora «Nemotron (API, no privada)».
+- **«Probar con tus preguntas»:** 10 preguntas tuyas, qué elegiría para cada una (sin enviar nada), y tú marcas Bien o Mal. La meta es 9 de 10.
+- **Probado aquí:**
+  - 50 pruebas de «Automático»;
+  - el Open WebUI de verdad: __OWUI__;
+  - todas juntas: **__TOTAL__**.
+- **Falta tu PC:** encender las APIs de la tabla y tus 10 preguntas. Guía en `docs/F8-automatico.md`.
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F7: el Comité)
 
 - **El Comité evalúa tus ideas con 3 o 5 IAs.** En Open WebUI elige **webllm · Comité** y escribe la idea.

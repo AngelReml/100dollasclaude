@@ -216,6 +216,12 @@ function HistoryDetail({ id }: { id: string }) {
                 : "Algo de este registro se cambió después de guardarse, así que no te fíes de lo que ves aquí."}
             </p>
           </Card>
+          {run.automatico && (
+            <p className="mb-6 text-[16px] text-ink-2" data-automatico>
+              <b className="text-ink">Automático</b> eligió <b className="text-ink">{run.automatico.eligio}</b> para «{run.automatico.tipo}» ({run.automatico.por_que}).
+              {run.automatico.saltadas.length > 0 && <> Antes en su lista: {run.automatico.saltadas.map(([w, why]) => `${w}, ${why}`).join("; ")}.</>}
+            </p>
+          )}
           {run.steps.map((s, i) => (
             <section key={s.id} className="mb-10">
               {run.steps.length > 1 && (

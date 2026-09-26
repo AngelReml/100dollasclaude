@@ -465,9 +465,12 @@ class AppApi:
             if kind == "web":  # a turn Iván wrote himself in a chat's page (PLAN-v5 F6)
                 who = next((a["provider_label"] for s in steps for a in s["answers"]), "")
                 title = f"En la web de {who}" if who else "En la web"
+            route = lines[0].get("automatico") if lines and isinstance(lines[0].get("automatico"), dict) else None
             return {"kind": kind, "title": title, "template": spec.get("template", ""),
                     "text": text, "steps": steps, "status": end.get("status") if end else "unfinished",
-                    "ts": lines[0].get("ts") if lines else None}
+                    "ts": lines[0].get("ts") if lines else None,
+                    # PLAN-v5 F8: "Automático" chose this AI (what and why, as its first line said)
+                    "automatico": self._route_view(route, label) if route else None}
         prompt = read("prompt.txt")
         answers = [answer(x, x.get("provider", "?")) for x in lines if "provider" in x]
         good = sum(a["ok"] for a in answers)
@@ -510,6 +513,15 @@ class AppApi:
             if len(items) >= limit:
                 break
         return web.json_response({"runs": items})
+
+    @staticmethod
+    def _route_view(route: dict[str, Any], label: dict[str, str]) -> dict[str, Any]:
+        from . import automatico
+        names = {k: t.name for k, t in automatico.load_table().tipos.items()}
+        who = str(route.get("eligio") or "")
+        return {"eligio": label.get(who, who), "tipo": names.get(str(route.get("tipo")), str(route.get("tipo") or "")),
+                "por_que": str(route.get("por_que") or ""),
+                "saltadas": [list(x)[:2] for x in route.get("saltadas") or [] if isinstance(x, (list, tuple))]}
 
     async def detalle(self, request: web.Request) -> web.Response:
         if not self._authorized(request):
