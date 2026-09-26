@@ -80,7 +80,7 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 
 ```bash
 python -m pip install -e .
-python -m pytest -q          # 166 passing on 2026-09-25 (clean venv, no OmniRoute key; the 3 real-Chromium tests need node, app/node_modules, Chromium, openssl)
+python -m pytest -q          # 180 passing on 2026-09-26 (clean venv, no OmniRoute key; the 4 real-Chromium tests need node, app/node_modules, Chromium, openssl)
 ```
 
 App (only for whoever programs it; Iván's PC never needs npm):
@@ -104,7 +104,8 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
 - `tests/extension/` (`test_extension_driver.py` runs them): **the real extension in Chromium** with
   the real bridge (`app_demo.py --sin-chrome`) and `fake_chat.html` served over https under
   `*.test` names (`harness.mjs`): `generic_driver.mjs`, `add_flow.mjs` (add a site),
-  `captcha_flow.mjs` (a verification solved after 20 s with a 10 s limit; a covered window). Only
+  `captcha_flow.mjs` (a verification solved after 20 s with a 10 s limit; a covered window),
+  `stuck_stop.mjs` (four misleading "stop" buttons). Only
   Chrome's permission prompt and window occlusion are simulated (headless never reports a covered
   window, so the page is told `document.hidden`). Chromium must get `--no-proxy-server` here.
 - Watch out for `\b`, `\t` in Windows paths written from scripts: a literal backspace once ended up
@@ -127,6 +128,15 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
 - **The chain engine asks the browser chats one at a time** (`upstream_key("browser/x") == "browser"`),
   although the bridge/extension allow one per site in parallel with tab rotation. Parallel was never
   tested on Iván's PC; change it only with a live test.
+- **"Finished" = the stop button is gone, so a false stop hides a finished answer** (Iván's Meta,
+  2026-09-25). `driver.js` only reads a button's own name (aria-label, title, test id, short text),
+  whole words, enabled and on screen; `background.js` ignores a stop already there before sending and
+  ends when a new copy button has been stable for 12 s. A timeout logs the page's `diagnose`.
+  (`desktop` does NOT contain `stop`: check such claims, the test caught it.)
+- **A provider's `error.code` is its own vocabulary** (OpenRouter: 429/402 numbers, z.ai: "1302"):
+  `flows.error_code` only passes webllm's own codes (`OWN_ERROR_CODES`) and reads the rest like the
+  HTTP status; a 429 that mentions credits is still a limit. Unknown codes made the app say
+  "no pudo responder".
 - **Parallel jobs raced creating windows** → `webllmWindow()` shares one creation promise; ids live
   in `chrome.storage.local`.
 - **"Model is currently at capacity"** is not an account limit (`site_busy`, 503, no pause).

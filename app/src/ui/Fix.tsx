@@ -1,4 +1,4 @@
-import { CircleAlert, LifeBuoy, Play, Power, RotateCcw } from "lucide-react";
+import { ArrowRightLeft, CircleAlert, LifeBuoy, Play, Power, RotateCcw } from "lucide-react";
 import { useState, type ReactElement } from "react";
 import { api, ApiError } from "../api";
 import { problemFor, type FixAction } from "../fix";
@@ -9,9 +9,19 @@ import { ConnectButton } from "./Connect";
 import { useToast } from "./Toast";
 
 /** The buttons that fix a problem with one AI (or with the pieces it needs). */
-export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai: string; onRetry?: () => void }) {
+export function FixButtons({ actions, ai, onRetry, onAskOther }: {
+  actions: FixAction[];
+  ai: string;
+  onRetry?: () => void;
+  /** Ask the same question to another AI (only when Iván presses it: nothing changes on its own). */
+  onAskOther?: (other: string) => void;
+}) {
   const { refresh, labelOf, estado } = useStore();
   const info = estado?.ais.find((a) => a.name === ai);
+  // The other AI offered: one that is ready, APIs first (fast, no account), then this PC, then chats.
+  const other = ["api", "local", "chat"]
+    .map((kind) => estado?.ais.find((a) => a.kind === kind && a.name !== ai && a.state === "lista"))
+    .find(Boolean);
   const serverName = info?.server_name ?? "el programa";
   const toast = useToast();
   const openGuide = useOpenGuide();
@@ -34,6 +44,8 @@ export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai:
         openGuide();
       } else if (action === "reintentar") {
         onRetry?.();
+      } else if (action === "otra" && other) {
+        onAskOther?.(other.name);
       }
       await refresh();
     } catch (err) {
@@ -50,6 +62,7 @@ export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai:
     encender_local: info?.server ? { text: `Encender ${serverName}`, icon: <Power size={18} aria-hidden /> } : null,
     guia: { text: "Cómo arreglarlo", icon: <LifeBuoy size={18} aria-hidden /> },
     reintentar: onRetry ? { text: "Reintentar", icon: <RotateCcw size={18} aria-hidden /> } : null,
+    otra: onAskOther && other ? { text: `Preguntar a ${other.label}`, icon: <ArrowRightLeft size={18} aria-hidden /> } : null,
   };
   const shown = actions.filter((a) => buttons[a]);
   const connect = actions.includes("conectar");
@@ -73,7 +86,14 @@ export function FixButtons({ actions, ai, onRetry }: { actions: FixAction[]; ai:
 }
 
 /** What happened + what to do + the button that fixes it. */
-export function ProblemBox({ code, ai, onRetry }: { code: string; ai: string; onRetry?: () => void }) {
+export function ProblemBox({ code, ai, said, onRetry, onAskOther }: {
+  code: string;
+  ai: string;
+  /** What the AI's service answered, word for word (shown when webllm has no better explanation). */
+  said?: string;
+  onRetry?: () => void;
+  onAskOther?: (other: string) => void;
+}) {
   const { labelOf, estado } = useStore();
   const info = estado?.ais.find((a) => a.name === ai);
   const p = problemFor(code, labelOf(ai), info?.kind ?? "chat", info?.server_name ?? "");
@@ -84,10 +104,15 @@ export function ProblemBox({ code, ai, onRetry }: { code: string; ai: string; on
         <div className="flex-1">
           <p className="font-semibold">{p.title}</p>
           <p className="mt-0.5 text-[15px] text-ink">{p.text}</p>
+          {p.said && said?.trim() && (
+            <p className="mt-1.5 break-words text-[15px] text-ink">
+              Lo que respondió: «{said.trim().length > 200 ? said.trim().slice(0, 200) + "…" : said.trim()}»
+            </p>
+          )}
         </div>
       </div>
       <div className="mt-3 pl-7">
-        <FixButtons actions={p.actions} ai={ai} onRetry={onRetry} />
+        <FixButtons actions={p.actions} ai={ai} onRetry={onRetry} onAskOther={onAskOther} />
       </div>
     </div>
   );

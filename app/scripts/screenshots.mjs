@@ -99,6 +99,30 @@ async function waitingForYou(page, tag) {
   await waitAnswers(page);
 }
 
+// An API AI out of free quota (OpenRouter's 429, F0): it says so, shows what the service answered
+// and offers to ask another AI, which only happens when Iván presses it.
+async function apiLimit(page, tag) {
+  await page.goto(base + "#/preguntar");
+  await page.getByRole("button", { name: /^IAs: / }).click();
+  await page.getByRole("menuitem", { name: "Ninguna" }).click();
+  await page.getByRole("menuitemcheckbox", { name: /Nemotron/ }).click();
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Tu pregunta").fill("¿Qué es la inflación? (demo: límite)");
+  await page.getByRole("button", { name: /^Preguntar a/ }).click();
+  await waitAnswers(page);
+  const card = page.getByRole("alert").filter({ hasText: "Nemotron ha llegado a su límite" });
+  await card.waitFor();
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-19-limite-api`);
+  const other = card.getByRole("button", { name: /^Preguntar a / });
+  const label = (await other.innerText()).replace(/^Preguntar a /, "").trim();
+  await other.click();
+  await page.getByText(`(a ${label})`).first().waitFor({ timeout: 15000 });
+  await waitAnswers(page);
+  await page.getByText(`(a ${label})`).first().scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-20-limite-otra-ia`);
+}
+
 async function run(theme, width, full) {
   const height = width === 1920 ? 1080 : 800;
   const browser = await chromium.launch({ executablePath: exe });
@@ -163,6 +187,7 @@ async function run(theme, width, full) {
     await shot(page, `${tag}-10-historial-detalle`);
     await addAnAi(page, tag);
     await waitingForYou(page, tag);
+    await apiLimit(page, tag);
   }
   await browser.close();
 }

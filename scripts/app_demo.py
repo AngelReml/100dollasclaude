@@ -12,7 +12,9 @@ Everything the app talks to is real (bridge, app API, chain engine, journal, gua
 - "Añadir otra IA": the fake extension "gets" the permission 2.5 s later and walks through
   the test steps; an address with "nochat" in it fails at "no text box" (to see the error);
 - a question with "(demo: verificación)" in it makes Qwen "wait for Iván" 8 s (a verification),
-  as extension 0.5.0 reports it, before answering.
+  as extension 0.5.0 reports it, before answering;
+- a question with "(demo: límite)" in it makes Nemotron fail the way OpenRouter does when its free
+  quota is used up (HTTP 429, the number 429 in error.code), to see the card Iván gets.
 Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
 where Iván's Chrome and OmniRoute are not reachable. Open http://127.0.0.1:<port>/app/
 """
@@ -103,6 +105,9 @@ def fake_omniroute() -> web.Application:
         await asyncio.sleep(1.2 if model.startswith("groq") else 2.5)
         prompt = body["messages"][-1]["content"]
         key = "zai" if model.startswith("zai") else "groq" if model.startswith("groq") else "nemotron"
+        if key == "nemotron" and "(demo: límite)" in prompt:
+            return web.json_response({"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. "
+                                                "Add 10 credits to unlock 1000 free model requests per day"}}, status=429)
         text = API_ANSWERS[key]
         if "critica" in prompt.lower() or "Otra IA" in prompt or "ojo crítico" in prompt:
             text = ("**Mi opinión:** la respuesta es correcta y clara. Le añadiría que un poco de inflación "

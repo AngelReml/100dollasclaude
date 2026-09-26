@@ -27,9 +27,11 @@ def test_generic_detection_types_sends_and_reads_on_an_unknown_site():
                          capture_output=True, text=True, timeout=180)
     lines = out.stdout.strip().splitlines()
     assert out.returncode == 0, out.stdout + out.stderr
-    assert [line.split()[0] for line in lines] == ["?copy=1", "?copy=0", "?editable=1", "?login=1"]
+    assert [line.split()[0] for line in lines] == ["?copy=1", "?copy=0", "?editable=1", "?login=1",
+                                                   "?stopfuera=1", "?clasestop=1"]
     assert "leer=copy-button" in lines[0] and "leer=dom" in lines[1] and "enviar=enter" in lines[2]
     assert "login detectado" in lines[3]
+    assert all("BIEN" in line and "sigue_escribiendo=false" in line for line in lines[4:])
 
 
 def run_real(script: str) -> list[str]:
@@ -59,3 +61,10 @@ def test_add_a_site_with_the_real_extension_and_bridge():
 def test_time_solving_a_verification_does_not_lose_the_answer():
     """Iván's report: a verification made the app give up on chats and lose their late answers."""
     assert len(run_real("captcha_flow.mjs")) == 14
+
+
+@needs_chromium
+@needs_openssl
+def test_a_misleading_stop_button_does_not_hide_a_finished_answer():
+    """Iván's Meta (2026-09-25): the answer was written but webllm kept waiting for it."""
+    assert len(run_real("stuck_stop.mjs")) == 9

@@ -54,10 +54,35 @@ async function drive(query, expect) {
   await page.close();
 }
 
+// After a finished answer, is the page still "writing"? Pages that park the "stop" button
+// off-screen, or have a button whose class contains "stop", must read as finished.
+async function settled(query) {
+  const page = await ctx.newPage();
+  await page.goto(base + query);
+  await page.addScriptTag({ path: join(root, "extension", "driver.js") });
+  const call = (op, ...args) => page.evaluate(([o, a]) => window.__webllmDriver[o](...a), [op, args]);
+  await call("insert", site, PROMPT);
+  await call("send", site);
+  let st;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(250);
+    st = await call("state", site);
+    if (st.copyCount > 0) break;
+  }
+  await page.waitForTimeout(500);
+  st = await call("state", site);
+  const good = st.copyCount > 0 && !st.generating;
+  if (!good) failed++;
+  console.log(`${query.padEnd(14)} ${good ? "BIEN" : "FALLO"}: terminada=${st.copyCount > 0} sigue_escribiendo=${st.generating}`);
+  await page.close();
+}
+
 await drive("?copy=1", "copy-button");
 await drive("?copy=0", "dom");
 await drive("?editable=1", "copy-button");
 await drive("?login=1", "login");
+await settled("?stopfuera=1");
+await settled("?clasestop=1");
 await browser.close();
 server.close();
 process.exitCode = failed ? 1 : 0;

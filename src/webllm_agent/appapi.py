@@ -61,7 +61,7 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 # Codes (flows.error_code) that say something about the AI right now, for the traffic light.
 RECENT_STATE = {
     "login_required": "sin_sesion",
-    "site_busy": "saturada", "overloaded": "saturada", "rate_limited": "saturada",
+    "site_busy": "saturada", "overloaded": "saturada", "rate_limited": "saturada", "no_credit": "saturada",
 }
 
 

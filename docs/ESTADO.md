@@ -1,4 +1,4 @@
-# ESTADO — webllm-agent (25-sep-2026)
+# ESTADO — webllm-agent (26-sep-2026)
 
 > 🚧 **EN CONSTRUCCIÓN.**
 > - La pieza principal ya está hecha: **tu Chrome escribe en los chats de IA como si fueran una API**, y aider programa con ellos.
@@ -42,6 +42,36 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
    - **Baneo o límite:** entra con otra cuenta y haz doble clic en `REANUDAR`.
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
+
+## Novedades del 26-sep-2026 (PLAN-v5, fase F0)
+
+**Una vez, después de ACTUALIZAR:** la extensión cambia a la versión **0.5.1**. Abre `chrome://extensions` y pulsa la flecha ↻ en "webllm puente".
+
+1. **Meta respondía y la app seguía "Esperando".**
+   - **Lo que pasaba:** webllm da una respuesta por terminada cuando desaparece el botón de "parar" del chat. Si la web deja en pantalla algo que parece ese botón, webllm espera para siempre.
+   - **Arreglado de cuatro formas, porque no sé cuál de ellas le pasa a tu Meta:**
+     - un "Detener" que se queda después de responder: si ya está el botón "Copiar" y nada cambia en 12 segundos, la respuesta está terminada;
+     - un "Detener" escondido fuera de la pantalla: ya no cuenta;
+     - un botón que solo tiene la palabra "stop" en su nombre interno: ya no cuenta;
+     - un botón "Detener" que ya estaba antes de preguntar: no dice nada de la respuesta, así que no cuenta.
+   - **Si aun así se queda esperando,** webllm apunta en `data/logs/bridge.log` cómo era la página en ese momento. Con eso se arregla sin adivinar.
+   - **Probado aquí:** una web de prueba con cada uno de los 4 casos, con la extensión de verdad en Chromium.
+     - Con la extensión anterior fallan los 4.
+     - Con la nueva llegan las 4 respuestas (entre 8 y 18 segundos).
+2. **"Nemotron no pudo responder", y los límites de z.ai por API.**
+   - **Lo que pasaba:** cuando un servicio por API decía "límite" con su propio código (OpenRouter pone un número como 429, z.ai los suyos como 1302), la app no lo entendía y ponía el mensaje general "no pudo responder".
+   - **Ahora la tarjeta dice qué pasó:**
+     - "ha llegado a su límite por ahora", "se ha quedado sin crédito gratis" o "está saturada";
+     - **lo que respondió el servicio**, palabra por palabra;
+     - y un botón **"Preguntar a …"** con otra IA que esté lista. Solo pasa si lo pulsas tú.
+   - **Qué no sé:** la causa exacta de tu fallo de Nemotron. La próxima vez la tarjeta enseñará lo que dijo el servicio.
+   - Capturas: `docs/capturas/f0/` (la 19 y la 20 son este caso).
+
+**Para ti, cómo probarlo (es la prueba de F0):**
+1. `ACTUALIZAR`, y ↻ en "webllm puente" en `chrome://extensions`.
+2. Abre webllm y haz **3 veces seguidas "Preguntar a todas"** con una pregunta cualquiera.
+3. **Lo que debes ver:** cada chat responde, o su tarjeta dice claramente por qué no. Ninguno se queda "Esperando" con la respuesta ya escrita en su web.
+4. Si Meta (u otro) se queda esperando, mándame `data/logs/bridge.log`.
 
 ## Novedades del 25-sep-2026, noche
 

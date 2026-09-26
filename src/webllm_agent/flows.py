@@ -490,25 +490,50 @@ def error_code(r: ChatResult) -> str:
         return ""
     if r.status == "skipped":
         return r.error or "cooldown"
+    code: Any = None
+    message = ""
     try:
         err = json.loads(r.body_excerpt or "")["error"]
-        if isinstance(err, dict) and err.get("code"):
-            return str(err["code"])
+        if isinstance(err, dict):
+            code, message = err.get("code"), str(err.get("message") or "")
     except (ValueError, KeyError, TypeError):
         pass
-    if r.status == TIMEOUT or r.http_status == 504:
+    # Only webllm's own codes pass through; a provider's code is its own vocabulary (OpenRouter
+    # sends the HTTP number, z.ai its own numbers) and is read like the HTTP status instead.
+    if isinstance(code, str) and code in OWN_ERROR_CODES:
+        return code
+    number = int(code) if isinstance(code, int) or (isinstance(code, str) and code.isdigit()) else None
+    status = number if number and 100 <= number <= 599 else r.http_status
+    if r.status == TIMEOUT or status == 504:
         return "timeout"
     if r.status == CONNECTION_ERROR:
         return "unreachable"
-    if r.http_status == 429:
+    # "no credit" = money, not a pace limit: a 429 whose message also mentions credits
+    # ("Rate limit exceeded: free-models-per-day. Add 10 credits...") is still a limit.
+    if status == 402 or _CREDIT_TEXT.search(str(code or "")) or (status != 429 and _CREDIT_TEXT.search(message)):
+        return "no_credit"
+    if status == 429 or _RATE_TEXT.search(f"{code or ''} {message}"):
         return "rate_limited"
-    if r.http_status in (401, 403):
+    if status in (401, 403):
         return "unauthorized"
-    if r.http_status in (502, 503, 529):
+    if status in (502, 503, 529) or _BUSY_TEXT.search(message):
         return "overloaded"
     if r.status == "malformed":
         return "malformed"
     return "error"
+
+
+# Codes webllm itself puts in error.code (bridge, extension, app API): the app has a message for each.
+OWN_ERROR_CODES = frozenset({
+    "login_required", "banned", "rate_limited", "challenge", "timeout", "extension_disconnected",
+    "site_busy", "not_sent", "paused", "bridge_unavailable", "unknown_site", "model_not_found",
+    "empty_prompt", "no_input", "insert_failed", "send_failed", "empty_answer", "extension_error",
+    "unauthorized", "unreachable",
+})
+# Whole words: a "load balancer" is not a balance, and "insufficient context" is not money.
+_CREDIT_TEXT = re.compile(r"insufficient[ _-]?(balance|credits?|funds|quota)|\bcredits?\b|\bbalance\b", re.I)
+_RATE_TEXT = re.compile(r"rate.?limit|too many requests|quota|concurren", re.I)
+_BUSY_TEXT = re.compile(r"overloaded|at capacity|temporarily unavailable", re.I)
 
 
 def _error_text(r: ChatResult) -> str:

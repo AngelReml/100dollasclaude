@@ -13,6 +13,10 @@
      ?captcha=1 shows a slider verification after each message (except "pong") and only
      answers once someone clicks "Resolver" in it, ?lento=1 writes a long answer slowly and,
      like real chat sites, does not write while the page cannot be seen.
+     Pages whose "stop" button misleads (Iván's Meta, 2026-09-25), all in Spanish:
+     ?stopfijo=1 never removes "Detener" after the answer, ?stopfuera=1 moves it off-screen instead
+     of removing it, ?clasestop=1 has a button whose class contains "stop" ("nonstop-toggle"), ?detenersiempre=1
+     always shows a "Detener lectura en voz alta" button, even before anything is asked.
      The same modes work as a path (/login/, /captcha/...): "+ Añadir otra IA" keeps only the path. -->
 <div id="app"></div>
 <script>
@@ -23,7 +27,10 @@ const realHidden = Object.getOwnPropertyDescriptor(Document.prototype, "hidden")
 Object.defineProperty(document, "hidden", { configurable: true, get: () => covered || realHidden.call(document) });
 window.__setCovered = (v) => { covered = v; document.dispatchEvent(new Event("visibilitychange")); };
 const q = new URLSearchParams(location.search);
-for (const m of ["login", "nobox", "editable", "captcha", "lento"]) if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
+for (const m of ["login", "nobox", "editable", "captcha", "lento", "stopfijo", "stopfuera", "clasestop", "detenersiempre"]) {
+  if (location.pathname.includes(`/${m}/`)) q.set(m, "1");
+}
+const es = ["stopfijo", "stopfuera", "clasestop", "detenersiempre"].some((m) => q.get(m) === "1");
 const app = document.getElementById("app");
 if (q.get("login") === "1") {
   app.innerHTML = '<h1>Log in to continue</h1><input type="email"><input type="password"><button>Sign in</button>';
@@ -32,7 +39,9 @@ if (q.get("login") === "1") {
 } else {
   app.innerHTML = '<div id="log"></div>' + (q.get("editable") === "1"
     ? '<div id="box" contenteditable="true" aria-label="Message"></div>'
-    : '<textarea id="box" placeholder="Message"></textarea><button id="send" aria-label="Send message">➤</button>');
+    : `<textarea id="box" placeholder="Message"></textarea><button id="send" aria-label="${es ? "Enviar mensaje" : "Send message"}">➤</button>`);
+  if (q.get("clasestop") === "1") app.insertAdjacentHTML("afterbegin", '<button class="nonstop-toggle">∞</button>');
+  if (q.get("detenersiempre") === "1") app.insertAdjacentHTML("afterbegin", '<button aria-label="Detener lectura en voz alta">🔇</button>');
   const box = document.getElementById("box");
   const read = () => (box.value !== undefined ? box.value : box.innerText).trim();
   const clear = () => { if (box.value !== undefined) box.value = ""; else box.innerText = ""; };
@@ -43,7 +52,7 @@ if (q.get("login") === "1") {
     const log = document.getElementById("log");
     log.insertAdjacentHTML("beforeend", `<div class="msg user">${text.replace(/</g, "&lt;")}</div>`);
     const stop = document.createElement("button");
-    stop.setAttribute("aria-label", "Stop generating");
+    stop.setAttribute("aria-label", es ? "Detener" : "Stop generating");
     stop.textContent = "■";
     document.body.appendChild(stop);
     const answer = document.createElement("div");
@@ -57,10 +66,11 @@ if (q.get("login") === "1") {
       answer.innerHTML = words.slice(0, ++i).join(" ").replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
       if (i >= words.length) {
         clearInterval(tick);
-        stop.remove();
+        if (q.get("stopfuera") === "1") stop.style.cssText = "position:fixed;left:-10000px;top:0";
+        else if (q.get("stopfijo") !== "1") stop.remove();
         if (q.get("copy") !== "0") {
           const copy = document.createElement("button");
-          copy.setAttribute("aria-label", "Copy response");
+          copy.setAttribute("aria-label", es ? "Copiar respuesta" : "Copy response");
           copy.textContent = "⧉";
           copy.onclick = () => navigator.clipboard.writeText(words.join(" "));
           answer.after(copy);

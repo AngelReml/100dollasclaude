@@ -12,6 +12,7 @@ from aiohttp.test_utils import TestServer
 from conftest import GOOD_KEY, make_config
 from test_bridge import TOKEN, FakeExtension
 from webllm_agent import flows
+from webllm_agent.client import ChatResult
 from webllm_agent.bridge import Bridge
 from webllm_agent.broadcaster import GatewayError, verify_run
 from webllm_agent.config import GuardConfig, ProviderConfig
@@ -351,3 +352,30 @@ def test_cli_cadena_runs_a_council_and_reports_the_lock(tmp_path, mock_server, c
     out = capsys.readouterr().out
     assert "[OK] alpha respondió" in out and "RESULTADO FINAL (El juez compara)" in out
     assert "answer from g/ok" in out and "Candado: VERDE" in out
+
+
+# What an API provider puts in error.code is its own vocabulary, not webllm's: OpenRouter sends the
+# HTTP number (429, 402), z.ai its own numbers ("1302"), OpenAI-style gateways words. Iván saw
+# "Nemotron no pudo responder" (the app's message for a code it does not know) instead of "límite".
+# Bodies below have the shape those providers use; the messages are illustrative.
+@pytest.mark.parametrize("http, body, code", [
+    (429, {"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day"}}, "rate_limited"),
+    (429, {"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. "
+                                            "Add 10 credits to unlock 1000 free model requests per day"}}, "rate_limited"),
+    (400, {"error": {"code": "1113", "message": "Insufficient balance"}}, "no_credit"),
+    (200, {"error": {"code": 429, "message": "Rate limit exceeded"}}, "rate_limited"),
+    (429, {"error": {"code": "1302", "message": "High concurrency usage of this API"}}, "rate_limited"),
+    (429, {"error": {"code": "rate_limit_exceeded", "message": "Too many requests"}}, "rate_limited"),
+    (402, {"error": {"code": 402, "message": "Insufficient credits"}}, "no_credit"),
+    (429, {"error": {"code": "insufficient_quota", "message": "You exceeded your current quota"}}, "no_credit"),
+    (429, {"error": {"code": 1302, "message": "High concurrency usage of this API"}}, "rate_limited"),
+    (400, {"error": {"code": "1301", "message": "contenido no permitido"}}, "error"),
+    (503, {"error": {"code": "service_unavailable", "message": "overloaded"}}, "overloaded"),
+    (503, {"error": {"code": "no_upstream", "message": "no healthy upstream in load balancer"}}, "overloaded"),
+    (400, {"error": {"code": "context_length", "message": "insufficient context length"}}, "error"),
+    (403, {"error": {"code": "paused", "message": "en pausa"}}, "paused"),
+    (401, {"error": {"code": "login_required", "message": "sin sesión"}}, "login_required"),
+])
+def test_provider_error_codes_become_webllm_codes(http, body, code):
+    r = ChatResult(status="http_error", http_status=http, error=f"HTTP {http}", body_excerpt=json.dumps(body))
+    assert flows.error_code(r) == code

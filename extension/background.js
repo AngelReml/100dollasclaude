@@ -330,6 +330,11 @@ async function runJob(job) {
   }
 
   // 3. wait until the answer is complete (time spent on a verification does not count)
+  // A "stop" button already there before sending is not an answer being written (a page that
+  // never hides it, or a button that only looks like one): then it says nothing about the end.
+  // And once the page has put a new "copy" button and nothing has changed for 12 s, the answer
+  // is finished even if something still looks like "stop" (Iván's Meta, 2026-09-25).
+  const stopMeansNothing = !!before.generating;
   const limit = job.timeout_ms || 300000;
   const answerClock = jobClock();
   let lastSig = "";
@@ -345,10 +350,15 @@ async function runJob(job) {
     const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
     if (sig !== lastSig) { lastSig = sig; stable = 0; changed = true; } else { stable++; }
     const newCopy = st.copyCount > before.copyCount;
-    if (!st.generating && changed && ((newCopy && stable >= 1) || stable >= 5)) break;
+    const writing = st.generating && !stopMeansNothing;
+    if (changed && !writing && ((newCopy && stable >= 1) || stable >= 5)) break;
+    if (changed && newCopy && stable >= 8) break;
   }
   if (answerClock() >= limit || Date.now() - jobStart > JOB_HARD_CAP_MS) {
-    throw new JobError("timeout", `${Math.round(limit / 1000)} s`);
+    // What the page looked like at the end: the evidence to fix this site (it goes to bridge.log).
+    const d = await call(tabId, "diagnose", site).catch(() => null);
+    throw new JobError("timeout", JSON.stringify({ limit_s: Math.round(limit / 1000), stop_before_send: stopMeansNothing,
+                                                    state: st, diagnose: d }).slice(0, 6000));
   }
 
   // 4. take the answer: the page's own copy button first, HTML as fallback

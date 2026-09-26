@@ -1,12 +1,14 @@
 // Turns a failure code (src/webllm_agent/flows.py: error_code) into what Iván reads:
 // what happened + what to do + the button that fixes it.
 
-export type FixAction = "reanudar" | "conectar" | "guia" | "encender" | "encender_local" | "reintentar";
+export type FixAction = "reanudar" | "conectar" | "guia" | "encender" | "encender_local" | "reintentar" | "otra";
 
 export interface Problem {
   title: string;
   text: string;
   actions: FixAction[];
+  /** Show what the AI's service said: its own words help when webllm has no better explanation. */
+  said?: boolean;
 }
 
 export function problemFor(code: string, label: string, kind: "chat" | "api" | "local" = "chat", server = ""): Problem {
@@ -44,8 +46,8 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
     case "daily_cap":
       return {
         title: `${label} ya ha gastado los mensajes de hoy`,
-        text: "Es el tope que pusimos para cuidar tu cuenta. Mañana vuelve sola, o pregunta a otra IA.",
-        actions: [],
+        text: "Es el tope que pusimos para cuidar tu cuenta. Mañana vuelve sola, o pregúntaselo a otra IA.",
+        actions: ["otra"],
       };
     case "busy":
       return {
@@ -57,14 +59,23 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
     case "overloaded":
       return {
         title: `${label} está saturada ahora mismo`,
-        text: "No es cosa de tu cuenta: tiene demasiada gente. Prueba en un rato o pregunta a otra IA.",
-        actions: ["reintentar"],
+        text: "No es cosa de tu cuenta: tiene demasiada gente. Prueba en un rato o pregúntaselo a otra IA.",
+        actions: ["otra", "reintentar"],
+        said: kind === "api",
       };
     case "rate_limited":
       return {
         title: `${label} ha llegado a su límite por ahora`,
-        text: "Espera un rato antes de volver a preguntarle, o pregunta a otra IA.",
-        actions: ["reintentar"],
+        text: "Su servicio gratis limita cuántas preguntas acepta seguidas. Espera un rato antes de volver a preguntarle, o pregúntaselo a otra IA.",
+        actions: ["otra", "reintentar"],
+        said: true,
+      };
+    case "no_credit":
+      return {
+        title: `${label} se ha quedado sin crédito gratis`,
+        text: "Su servicio pide saldo para seguir. Pregúntaselo a otra IA; si es un cupo diario, vuelve solo cuando se renueve.",
+        actions: ["otra"],
+        said: true,
       };
     case "bridge_unavailable":
     case "extension_disconnected":
@@ -82,8 +93,8 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
     case "timeout":
       return {
         title: `${label} tardó demasiado en contestar`,
-        text: "Puede que la web vaya lenta. Vuelve a intentarlo.",
-        actions: ["reintentar"],
+        text: "Puede que la web vaya lenta. Vuelve a intentarlo o pregúntaselo a otra IA.",
+        actions: ["reintentar", "otra"],
       };
     case "unreachable":
       return {
@@ -95,7 +106,8 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
       return {
         title: `${label} no acepta la clave`,
         text: "La clave guardada en OmniRoute no vale o ha caducado. Revísala en el panel de OmniRoute.",
-        actions: [],
+        actions: ["otra"],
+        said: true,
       };
     case "offline":
       return {
@@ -106,8 +118,9 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
     default:
       return {
         title: `${label} no pudo responder`,
-        text: "Vuelve a intentarlo. Si se repite, abre «Pruebas a fondo» desde Inicio.",
-        actions: ["reintentar"],
+        text: "Vuelve a intentarlo o pregúntaselo a otra IA. Si se repite, abre «Pruebas a fondo» desde Inicio.",
+        actions: ["reintentar", "otra"],
+        said: true,
       };
   }
 }

@@ -172,11 +172,13 @@ function waitingText(answer: TurnAnswer, ais: Ai[]): { mine: boolean; text: stri
 }
 
 function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAnswer; now: number; onPass: (kind: "pasar" | "criticar", to: Ai) => void }) {
-  const { ask, estado } = useStore();
+  const { ask, estado, labelOf } = useStore();
   const waiting = waitingText(answer, estado?.ais ?? []);
   const toast = useToast();
   const elapsed = answer.startedAt ? Math.max(0, Math.round((now - answer.startedAt) / 1000)) : 0;
   const retry = () => ask({ prompt: turn.prompt, to: [answer.target], title: `${turn.title} (otra vez)`, question: turn.question, from: turn.from });
+  const askOther = (other: string) =>
+    ask({ prompt: turn.prompt, to: [other], title: `${turn.title} (a ${labelOf(other)})`, question: turn.question, from: turn.from });
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(answer.text);
@@ -219,7 +221,7 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
             </p>
           ))}
         {answer.phase === "done" && answer.ok && <Markdown text={answer.text} />}
-        {answer.phase === "done" && !answer.ok && <ProblemBox code={answer.code} ai={answer.target} onRetry={retry} />}
+        {answer.phase === "done" && !answer.ok && <ProblemBox code={answer.code} ai={answer.target} said={answer.error} onRetry={retry} onAskOther={askOther} />}
       </div>
       {answer.phase === "done" && answer.ok && (
         <div data-footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">

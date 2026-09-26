@@ -85,8 +85,23 @@
   };
 
   const SEND_RE = /send|enviar|submit|发送/i;
-  const STOP_RE = /stop|detener|interrumpir|停止/i;
+  // Whole words only, and only in a button's own name (aria-label, title, test id, short text):
+  // class names are not names (a "nonstop-toggle" is not a stop button), and a false "stop"
+  // would make webllm wait for an answer that is already finished.
+  const STOP_RE = /(^|[^a-z])(stop|detener|parar|interrumpir)([^a-z]|$)|停止/i;
   const COPY_RE = /copy|copiar|复制/i;
+
+  const nameOf = (el) => {
+    const text = (el.innerText || "").trim();
+    return [el.getAttribute("aria-label"), el.getAttribute("title"), el.getAttribute("data-testid"),
+      text.length <= 40 ? text : ""].filter(Boolean).join(" ");
+  };
+  // Inside the window: pages often park a finished "stop" button off-screen instead of removing it.
+  const onScreen = (el) => {
+    const r = el.getBoundingClientRect();
+    return r.right > 0 && r.bottom > 0 && r.left < window.innerWidth && r.top < window.innerHeight;
+  };
+  const isEnabled = (b) => !b.disabled && b.getAttribute("aria-disabled") !== "true";
 
   const findSend = (site) => {
     const bySite = all(site.send).map((el) => el.closest("button,[role='button']") || el);
@@ -95,10 +110,10 @@
     return enabled.length ? enabled[enabled.length - 1] : null;
   };
 
-  const isGenerating = (site) => {
-    if (all(site.stop).length) return true;
-    return clickables().some((b) => STOP_RE.test(labelOf(b)) && !/stop-?watch/i.test(labelOf(b)));
-  };
+  // The "stop" button that says an answer is being written, or null.
+  const stopButton = (site) =>
+    all(site.stop).find(onScreen) || clickables().find((b) => onScreen(b) && isEnabled(b) && STOP_RE.test(nameOf(b))) || null;
+  const isGenerating = (site) => !!stopButton(site);
 
   const inCode = (el) => !!el.closest("pre,code,[class*='code-block'],[class*='codeblock'],[class*='code-header']");
 
@@ -306,6 +321,7 @@
       answerCandidates: [...document.querySelectorAll("[class*='markdown' i],[class*='answer' i],[class*='response' i],[class*='assistant' i],[class*='message' i]")]
         .filter((el) => visible(el)).map((el) => ({ tag: el.tagName, label: labelOf(el).slice(0, 100), textLen: (el.innerText || "").length })).slice(-12),
       overlays: overlays().map((o) => (o.innerText || "").trim().slice(0, 120)).slice(-5),
+      stop: (() => { const b = stopButton(site); return b ? { ...d(b), name: nameOf(b).slice(0, 80) } : null; })(),
     };
   };
 
