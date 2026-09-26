@@ -233,7 +233,7 @@ export interface HistoryStep {
 export interface RunSummary {
   id: string;
   ts: string | null;
-  kind: "pregunta" | "cadena";
+  kind: "pregunta" | "cadena" | "web";
   title: string;
   text: string;
   status: string;
@@ -244,7 +244,7 @@ export interface RunSummary {
 export interface RunDetail {
   id: string;
   ts: string | null;
-  kind: "pregunta" | "cadena";
+  kind: "pregunta" | "cadena" | "web";
   title: string;
   template: string;
   text: string;

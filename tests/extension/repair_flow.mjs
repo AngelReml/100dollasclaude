@@ -212,12 +212,39 @@ try {
       own = readdirSync(join(w.tmp, "data", "runs")).map((d) => lines(join(w.tmp, "data", "runs", d, "journal.jsonl")))
         .filter((l) => l[0]?.kind === "observed" && !l[0].follows);
     }
+    // the extension now knows which conversation this tab's next turns belong to (a restart of webllm does not split it)
+    let followsKept = null;
+    for (let i = 0; i < 20 && !followsKept; i++) { await sleep(150); followsKept = await w.sw.evaluate((t) => observers[t]?.follows ?? null, tabId); }
     await popup.reload();
     await popup.getByRole("button", { name: "Dejar de registrar" }).click();
     await popup.getByRole("button", { name: "Registrar esta conversación" }).waitFor({ timeout: 10000 });
     const badgeGone = await mine.evaluate(() => !document.querySelector("[data-webllm-observe]"));
-    say(own.length === 1 && own[0].find((x) => x.kind === "flow")?.by === "ivan" && badgeGone,
-      "«Registrar esta conversación» desde el icono de la extensión: se guarda lo que escribes, y «Dejar de registrar» lo para (y quita el aviso de la página)");
+    say(own.length === 1 && own[0].find((x) => x.kind === "flow")?.by === "ivan" && badgeGone && followsKept === own[0][0].run_id,
+      `«Registrar esta conversación» desde el icono de la extensión: se guarda lo que escribes (y la extensión recuerda de qué conversación es: ${followsKept}), y «Dejar de registrar» lo para (y quita el aviso de la página)`);
+  });
+
+  // 10. A turn written by hand while webllm is closed is kept, and recorded when it connects again.
+  await part("webllm cerrado", async () => {
+    const runsNow = () => readdirSync(join(w.tmp, "data", "runs")).map((d) => lines(join(w.tmp, "data", "runs", d, "journal.jsonl")));
+    const before = runsNow().length;
+    const kept = await w.sw.evaluate(async () => {
+      ws.close();
+      for (let i = 0; i < 40 && ws; i++) await new Promise((r) => setTimeout(r, 100));
+      await sendObserved({ type: "observed", tab: 999, site: "observa", follows: null, url: "https://chat.observa.test/",
+                           user: "Escrito con webllm cerrado", answer: "Respuesta guardada después", via: "dom", seconds: 4.2 });
+      return ((await chrome.storage.local.get("pending_observed")).pending_observed || []).length;
+    });
+    const lostMeanwhile = runsNow().length - before;
+    await w.sw.evaluate(() => connect());
+    // the run whose message (what he wrote) is that text
+    const find = () => readdirSync(join(w.tmp, "data", "runs")).map((d) => join(w.tmp, "data", "runs", d)).find((d) =>
+      lines(join(d, "journal.jsonl"))[0]?.kind === "observed" && existsSync(join(d, "messages")) &&
+      readdirSync(join(d, "messages")).some((f) => readFileSync(join(d, "messages", f), "utf8").includes("Escrito con webllm cerrado")));
+    let got = null;
+    for (let i = 0; i < 40 && !got; i++) { await sleep(250); got = find() ?? null; }
+    const left = await w.sw.evaluate(async () => ((await chrome.storage.local.get("pending_observed")).pending_observed || []).length);
+    say(kept === 1 && lostMeanwhile === 0 && !!got && left === 0,
+      `un turno escrito con webllm cerrado se guarda en Chrome (${kept}) y llega al historial al volver a conectar (${got ? "sí" : "no"}; quedan ${left})`);
   });
 } catch (e) {
   say(false, `error: ${e && e.stack ? e.stack : e}`);

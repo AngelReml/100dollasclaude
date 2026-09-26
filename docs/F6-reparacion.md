@@ -1,6 +1,6 @@
 # F6 — Webs que se reparan solas, y seguir tú en la web (26-sep-2026)
 
-**Resultado en la nube: hecho y probado con la extensión de verdad en Chromium (15 de 15) y en el Open WebUI de verdad (5 de 5).** El mismo recorrido con la extensión anterior (0.7.0) falla en cada caso. Falta lo que solo se ve en tu PC: seguir en la web de Kimi una conversación empezada en webllm, y volver a probar las webs del catálogo que quedaron «No funciona todavía».
+**Resultado en la nube: hecho y probado con la extensión de verdad en Chromium (16 de 16) y en el Open WebUI de verdad (5 de 5).** El mismo recorrido con la extensión anterior (0.7.0) falla en cada caso. Falta lo que solo se ve en tu PC: seguir en la web de Kimi una conversación empezada en webllm, y volver a probar las webs del catálogo que quedaron «No funciona todavía».
 
 **La extensión pasa a la versión 0.8.0:** en `chrome://extensions`, pulsa ↻ en la tarjeta «webllm puente».
 
@@ -58,7 +58,9 @@
   - Solo en webs de tu catálogo a las que diste permiso.
   - Solo la pestaña que tú marcas, y nunca a escondidas: la marca está en la página.
   - «Dejar de registrar» lo para, en el icono o en la propia marca.
+- **Si webllm está cerrado mientras escribes en la web**, tus turnos esperan en Chrome y se guardan al abrirlo. La conversación sigue siendo la misma aunque cierres y abras webllm.
 - **Tus mensajes escritos a mano cuentan en el contador del día de ese chat**, solo para informarte; no esperan ni se frenan.
+- **En el Historial** salen como «En la web», con lo que escribiste, la respuesta y lo que tardó la web (medido desde que pulsaste Enter).
 
 ## Seguridad (lo que no se ve)
 
@@ -90,17 +92,64 @@
 | Comprobación diaria: abre cada chat y no envía nada; repara una caja perdida | **Bien** | Chromium y aquí |
 | «Continuar en la web» + **2 turnos escritos a mano** en la misma conversación y en la misma nota del vault | **Bien** | Chromium |
 | «Registrar esta conversación» desde el icono de la extensión, y «Dejar de registrar» | **Bien** | Chromium |
+| Un turno escrito con webllm cerrado: se guarda en Chrome y llega al historial al volver a conectar | **Bien** | Chromium |
 | En Open WebUI: el botón bajo la respuesta de un chat web (no bajo una IA por API), abre la conversación, y lo escrito en la web va con tu siguiente pregunta | **Bien** | Open WebUI de verdad |
+| Un chat que abriste tú y registras: todos sus turnos quedan en una sola conversación | **Bien** | aquí |
+| Un error largo de la página ya no se lee como «saturada» | **Bien** (falla con el código anterior) | aquí |
+| Pantallas de la app: claro/oscuro × 1280/1920, 87 capturas, 0 problemas de diseño | **Bien** | `docs/capturas/f6/` |
+| Open WebUI: las 4 capturas del botón | **Bien** | `docs/capturas/f6/openwebui/` |
 | El mismo recorrido de Chromium con la extensión anterior (0.7.0) | **Falla en cada caso** (abajo) | Chromium |
 | Una web de verdad que cambia de diseño | Pendiente | tu PC |
+
+### El registro de un arreglo (simulado)
+
+La salida de F6 pide el registro de un arreglo automático real o, si ninguna web cambia durante la prueba, del simulado. Este es el simulado, tal como lo apuntó la prueba en Chromium (la IA del demo eligió el bloque número 4 de la radiografía; se probó en la página sin enviar nada y quedó guardado en la Ficha con fecha y quién):
+
+```
+BIEN  capa 3: la web cuyas respuestas no se podían leer se conecta gracias a la reparación (guardada, IA zai, eligió {"answer":4}); el «pong» se envió una sola vez
+BIEN  el arreglo queda en su ficha, con fecha y quién lo hizo: {"index":0,"when":"2026-09-26 12:07:58","what":"la respuesta","by":"una IA (z.ai)","why":"no podía leer la respuesta","active":true,"undone":null}
+```
+
+El real saldrá en tu PC, en `data\state\reparaciones.jsonl`, la primera vez que una web cambie.
 
 ### La prueba de que cada caso falla con el código anterior
 
 `tests/extension/repair_flow.mjs` con `WEBLLM_EXTENSION_DIR` apuntando a la extensión 0.7.0 (la de F5):
 
 ```
-(se rellena con la salida real)
+BIEN  la extensión 0.7.0 se conecta al puente
+FALLO capa 1: una web en francés con caja moderna («Envoyer», «Copier la réponse») se conecta sin ayuda (no_funciona)
+FALLO capa 3: la web cuyas respuestas no se podían leer se conecta gracias a la reparación (undefined, IA undefined, eligió undefined); el «pong» se envió una sola vez
+FALLO una IA que responde con código: rechazada («undefined»), nada guardado, nada reenviado; la web queda «no_funciona»
+FALLO el arreglo queda en su ficha, con fecha y quién lo hizo: undefined
+FALLO la siguiente pregunta ya funciona sin preguntar a ninguna IA: «(model_not_found: No conozco esta IA: rara.)»
+FALLO deshacer: error: Cannot read properties of undefined (reading 'index')
+FALLO reparada otra vez tras una pregunta: se lee, en la página hay 1 mensaje tuyo (se envió una vez) y la respuesta lo dice: «undefined…»
+FALLO la IA solo vio la estructura de la página: ni la pregunta, ni la respuesta, ni los títulos privados de la barra lateral (fugas: [])
+FALLO enséñame: error: locator.click: Target page, context or browser has been closed
+FALLO «Parar» pulsa también el botón de parar de la web (clics en la página: ["Send message"])
+FALLO la comprobación diaria abre cada chat conectado y no envía nada: 
+FALLO observador: error: Cannot read properties of null (reading 'locator')
+FALLO registrar: error: page.goto: net::ERR_FILE_NOT_FOUND at chrome-extension://…/popup.html?tab=1060182687
 ```
+
+Con la extensión 0.8.0, el mismo guion da 16 BIEN y ningún FALLO. La primera línea («se conecta al puente») pasa con las dos: no es un caso de F6.
+
+## Lo que encontré y arreglé por el camino
+
+Las pruebas y las capturas sacaron seis fallos antes de que llegaran a ti:
+1. **Un error de una web se leía como «está saturada».** El diagnóstico de la página era tan largo que se comía el código del error. Ahora el código va primero y el diagnóstico largo queda solo en el registro.
+2. **El observador perdía un mensaje pegado y enviado al instante.** Solo miraba la caja cada segundo y medio. Ahora nota tu mensaje justo al enviarlo, y empieza a escuchar antes de poner la marca «registrando».
+3. **En un chat que abrías tú, cada turno era una conversación distinta.** Ahora todos los turnos de esa pestaña van a la misma.
+4. **En Open WebUI, pulsar el botón tapaba la línea «Respondió Qwen…»** de esa respuesta (la que dice qué se usó de verdad). Ahora solo sale un aviso.
+5. **En el Historial, un turno escrito a mano ponía «Cadena» y «Respondió en 0 s».** Ahora pone «En la web» y el tiempo medido.
+6. **«Enséñame esta web» salía también en webs que se han cambiado de dirección**, donde tres clics no arreglan nada. Ahora solo sale cuando el problema es la página.
+
+## Lo que no está hecho
+
+- **Proponer los arreglos que funcionan como cambio de `sites.js`** (el plan dice «pueden proponerse», con tu aprobación). Hoy cada arreglo vive en tu PC, en la Ficha de esa web. Llevarlos a `sites.js` para todos queda para más adelante.
+- **Escribir dentro de la misma conversación de la web** desde webllm: llega en F7.
+- **Lo que solo se ve en tu PC** (abajo).
 
 ## Para ti: cómo probarlo
 

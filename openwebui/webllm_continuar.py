@@ -38,8 +38,8 @@ class Action:
                      __event_emitter__: Callable[[dict[str, Any]], Awaitable[None]] | None = None) -> None:
         ok, text = await self.ask(str(body.get("chat_id") or ""), str(body.get("id") or ""))
         if __event_emitter__ is not None:
+            # a notice only: the answer's own status line ("Respondió X…", what was really used) stays as it is
             await __event_emitter__({"type": "notification", "data": {"type": "success" if ok else "warning", "content": text}})
-            await __event_emitter__({"type": "status", "data": {"description": text, "done": True}})
 
     async def ask(self, chat_id: str, message_id: str) -> tuple[bool, str]:
         try:

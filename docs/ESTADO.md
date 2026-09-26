@@ -58,7 +58,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   - lo que escribas allí a mano queda en la misma conversación (historial y vault), marcado como tuyo;
   - al volver a Open WebUI, tu siguiente pregunta lo lleva consigo, y la respuesta te lo dice.
 - **«Registrar esta conversación»:** en el icono de la extensión, para un chat que abriste tú. Solo si tú lo pulsas, y con «Dejar de registrar».
-- **Probado aquí:** la extensión de verdad en Chromium, **15 de 15**; con la extensión anterior, cada caso falla. **El Open WebUI de verdad, 5 de 5.** Y 32 pruebas de código nuevas.
+- **Probado aquí:** la extensión de verdad en Chromium, **16 de 16**; con la extensión anterior, cada caso falla. **El Open WebUI de verdad, 5 de 5.** Y 32 pruebas de código nuevas.
 - **Falta tu PC:** seguir en la web de Kimi una conversación empezada en webllm, y volver a probar las webs del catálogo que «No funcionan todavía». Guía en `docs/F6-reparacion.md`.
 - **Qué hacer:**
   1. `ACTUALIZAR`;

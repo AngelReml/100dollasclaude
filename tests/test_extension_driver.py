@@ -101,6 +101,7 @@ def test_webs_that_repair_themselves_and_the_observer_with_the_real_extension():
     is repaired by an AI that sees only the page's structure and answers with numbers (layer 3), tried on the page
     sending nothing; an AI answering with code is refused; "Deshacer"; "Enséñame" with 3 clicks (layer 4); "Parar"
     also presses the site's own stop; the daily check sends nothing; "Continuar en la web" and "Registrar esta
-    conversación" record 2 turns written by hand into the same conversation and the vault. The same script with
+    conversación" record 2 turns written by hand into the same conversation and the vault; a turn written while
+    webllm is closed is kept and recorded when it connects again. The same script with
     extension 0.7.0 fails (docs/F6-reparacion.md)."""
-    assert len(run_real("repair_flow.mjs", timeout=1200)) == 15
+    assert len(run_real("repair_flow.mjs", timeout=1200)) == 16

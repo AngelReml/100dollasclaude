@@ -545,7 +545,7 @@ def to_vault(cfg: AppConfig, run_dir: Path, **kw: Any) -> None:
 
 
 def record_observed(cfg: AppConfig, p: ProviderConfig, *, follows: str | None, user: str, answer: str, url: str = "",
-                    via: str | None = None, error: str | None = None) -> Path:
+                    via: str | None = None, error: str | None = None, seconds: float | None = None) -> Path:
     """One turn Iván wrote himself in the chat's own page (observer mode, PLAN-v5 F6 / D16), recorded like any
     question: its own run, marked as written by him, in the same conversation as the run it follows (so the
     history and the vault keep it together)."""
@@ -573,7 +573,8 @@ def record_observed(cfg: AppConfig, p: ProviderConfig, *, follows: str | None, u
     message_file, message_sha = start_run(run_dir, flow, step, user)
     ok = bool(answer.strip())
     outcome = Outcome(p, ChatResult("ok" if ok else "error", text=answer if ok else "", model=p.model,
-                                    error=None if ok else (error or "empty_answer"), webllm={"url": url} if url else None))
+                                    error=None if ok else (error or "empty_answer"), webllm={"url": url} if url else None,
+                                    latency_s=seconds or 0.0))  # 0 = not measured
     journal_call(run_dir, run_id, 1, step.id, message_file, message_sha, outcome, "first", p.name,
                  extra={"by": "ivan", "via": via})
     close_run(run_dir, run_id, flow.name, OK if ok else FAILED, {step.id: OK if ok else FAILED})

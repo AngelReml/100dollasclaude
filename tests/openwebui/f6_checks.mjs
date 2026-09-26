@@ -85,7 +85,10 @@ try {
   const estado = await (await fetch(WEBLLM + "/api/estado", { headers: DEMO })).json();
   const watching = (estado.observing ?? []).find((o) => o.follows === asked?.id);
   await shot(page, "02-abierta");
-  say(toast && !!watching, `al pulsarlo: «Abierta en tu Chrome la conversación de Qwen…», y webllm registra esa conversación (${watching?.label ?? "no"}, sigue a ${asked?.id})`);
+  // the answer's own line (what was really used, D21) is still there: the button only shows a notice
+  const ownLine = await page.getByText(/Respondió Qwen/).count();
+  say(toast && !!watching && ownLine > 0,
+    `al pulsarlo: «Abierta en tu Chrome la conversación de Qwen…», webllm registra esa conversación (${watching?.label ?? "no"}, sigue a ${asked?.id}) y la respuesta sigue diciendo quién respondió`);
 
   // 3. The turn written by hand in the web is recorded in the same conversation.
   const hand = await until(() => runs().find((r) => r.lines[0].kind === "observed" && r.lines[0].follows === asked?.id), 20000);

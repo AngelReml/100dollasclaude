@@ -460,6 +460,8 @@ Cada fase tiene:
   - las webs del catálogo que en F3 quedaron "No funciona todavía", probadas otra vez.
 - **Salida:** la conversación completa en el vault; el recuento de webs del catálogo que ahora funcionan gracias a la capa 1, a la 3 o a la 4 (apuntado en `docs/ESTADO.md`), y el registro de un arreglo automático real (o, si ninguna web cambia durante la prueba, del simulado).
 
+> **Estado (26-sep-2026):** hecho y probado en la nube con la extensión de verdad (16 de 16; con la extensión anterior, 0.7.0, cada caso falla) y en el Open WebUI de verdad (5 de 5: el botón «Continuar en la web» y lo escrito en la web vuelve con tu siguiente pregunta). Diferencias a propósito: la IA que repara contesta números de la radiografía, no selectores (más estricto: nunca ve tu conversación y no puede apuntar a nada que la página no enseñó); «seguir desde donde lo dejaste» lleva lo que escribiste en la web con tu siguiente pregunta (escribir dentro de la misma conversación de la web es de F7); «Parar» pulsa también el botón de parar de la web (estaba pendiente). No hecho: proponer los arreglos como cambio de `sites.js`. Falta la salida en tu PC: la conversación seguida en Kimi, entera en el vault, y el recuento de webs del catálogo que ahora funcionan (y por qué capa). Detalle: `docs/F6-reparacion.md`.
+
 ### F7 — El Comité
 
 - **Puerta:** F2, F3, F4, F5 y F6.

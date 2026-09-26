@@ -1,4 +1,4 @@
-import { ArrowLeft, CircleCheck, CircleX, Copy, Download, History, Link2, Lock, LockOpen, MessageSquarePlus, Search, Workflow } from "lucide-react";
+import { ArrowLeft, CircleCheck, CircleX, Copy, Download, Globe, History, Link2, Lock, LockOpen, MessageSquarePlus, Search, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError, type Ai, type HistoryAnswer, type RunDetail, type RunSummary } from "../api";
 import { go } from "../nav";
@@ -43,6 +43,8 @@ export function LockBadge({ ok }: { ok: boolean }) {
   );
 }
 
+const KIND_WORD = { pregunta: "Pregunta", cadena: "Cadena", web: "En la web" } as const;
+
 function RunRow({ run }: { run: RunSummary }) {
   return (
     <a
@@ -51,8 +53,8 @@ function RunRow({ run }: { run: RunSummary }) {
     >
       <div className="flex shrink-0 items-center gap-2 md:w-44 md:flex-col md:items-start md:gap-1">
         <span className="text-[15px] font-semibold text-ink-2">{when(run.ts)}</span>
-        <Badge tone="neutral" icon={run.kind === "cadena" ? <Workflow size={15} aria-hidden /> : <MessageSquarePlus size={15} aria-hidden />}>
-          {run.kind === "cadena" ? "Cadena" : "Pregunta"}
+        <Badge tone="neutral" icon={run.kind === "cadena" ? <Workflow size={15} aria-hidden /> : run.kind === "web" ? <Globe size={15} aria-hidden /> : <MessageSquarePlus size={15} aria-hidden />}>
+          {KIND_WORD[run.kind]}
         </Badge>
       </div>
       <div className="min-w-0 flex-1">
@@ -142,7 +144,7 @@ function HistoryAnswerCard({ a, onPass, question, runId }: { a: HistoryAnswer; q
           <p className="truncate text-[17px] font-semibold">{a.provider_label}</p>
           {a.provider !== a.target && <p className="text-[15px] text-muted">en lugar de {a.label}</p>}
         </div>
-        <DoneBadge ok={a.ok}>{a.ok ? `Respondió en ${a.seconds} s` : stopped ? "Parado por ti" : "No respondió"}</DoneBadge>
+        <DoneBadge ok={a.ok}>{a.ok ? (a.seconds > 0 ? `Respondió en ${a.seconds} s` : "Respondió") : stopped ? "Parado por ti" : "No respondió"}</DoneBadge>
       </div>
       <div className="max-h-[560px] overflow-y-auto px-5 py-4">
         {a.ok ? <Markdown text={a.text} /> : <p className="text-bad-ink">{stopped ? "Lo has parado tú." : a.error || "No respondió."}</p>}
@@ -187,8 +189,8 @@ function HistoryDetail({ id }: { id: string }) {
 
   return (
     <Page
-      title={run ? (run.title === "Pregunta" ? shortTitle(plain(run.text)) : run.title) : "Registro"}
-      subtitle={run ? `${run.kind === "cadena" ? "Cadena" : "Pregunta"} · ${when(run.ts)}` : undefined}
+      title={run ? (run.title === "Pregunta" || run.kind === "web" ? shortTitle(plain(run.text)) : run.title) : "Registro"}
+      subtitle={run ? `${KIND_WORD[run.kind]} · ${when(run.ts)}` : undefined}
       action={
         run && (
           <ButtonLink variant="primary" size="lg" href={api.exportUrl(run.id)} icon={<Download size={20} aria-hidden />}>
@@ -221,7 +223,7 @@ function HistoryDetail({ id }: { id: string }) {
                 </h2>
               )}
               <div className="mb-4 rounded-2xl bg-surface-2 px-5 py-4">
-                <p className="mb-1 text-[15px] font-semibold text-muted">Mensaje enviado</p>
+                <p className="mb-1 text-[15px] font-semibold text-muted">{run.kind === "web" ? "Lo que escribiste en su web" : "Mensaje enviado"}</p>
                 <p className="whitespace-pre-wrap">{s.message || "(este paso no llegó a enviarse)"}</p>
               </div>
               <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(min(100%,440px),1fr))]">

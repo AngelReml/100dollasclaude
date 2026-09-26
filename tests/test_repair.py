@@ -334,7 +334,7 @@ def test_turns_written_by_hand_in_the_web_join_the_same_conversation(tmp_path, m
             status, body = await app.post("/api/continuar", {"run_id": first})
             (obs,) = [m for m in ext.seen if m["type"] == "observe"]
             assert status == 200 and obs["url"] == "https://chat.qwen.ai/c/abc" and obs["follows"] == first
-            ext_turn = {"type": "observed", "tab": 7, "site": "qwen", "url": "https://chat.qwen.ai/c/abc", "via": "dom"}
+            ext_turn = {"type": "observed", "tab": 7, "site": "qwen", "url": "https://chat.qwen.ai/c/abc", "via": "dom", "seconds": 12.3}
             await ext.ws.send_json({**ext_turn, "state": "on"} | {"type": "observe_state", "on": True, "follows": first})
             for n in (1, 2):
                 await ext.ws.send_json({**ext_turn, "follows": first, "user": f"Turno {n} a mano", "answer": f"Respuesta {n}"})
@@ -345,6 +345,10 @@ def test_turns_written_by_hand_in_the_web_join_the_same_conversation(tmp_path, m
             assert [x["kind"] for x in heads] == ["observed", "observed"] and {x["follows"] for x in heads} == {first}
             calls = [next(x for x in journal_lines(app, d.name) if x["kind"] == "flow") for d in runs]
             assert [c["by"] for c in calls] == ["ivan", "ivan"] and all(verify_run(d).ok for d in runs)
+            # the history says what it is: written by him in the web, and how long the page took (measured there)
+            _, seen, _ = await app.get(f"/api/historial/{runs[0].name}")
+            (said,) = seen["steps"][0]["answers"]
+            assert seen["kind"] == "web" and seen["title"] == "En la web de Qwen" and said["by_ivan"] and said["seconds"] == 12.3
             assert app.bridge.guard._load()["providers"]["qwen"]["count_today"] == 3  # his 2 count, nothing waited
             assert vault.flush(10)
             (note,) = [p for p in (folder / "webllm").rglob("*.md") if p.name != "Índice.md" and "Respuestas" not in p.parts]
@@ -371,6 +375,8 @@ def test_a_chat_ivan_opened_himself_and_registered_is_one_conversation(tmp_path,
             heads = sorted((journal_lines(app, d.name)[0] for d in app.cfg.paths.runs_dir.iterdir()), key=lambda x: x["ts"])
             root = heads[0]["run_id"]
             assert heads[0]["follows"] is None and [x["follows"] for x in heads[1:]] == [root, root]
+            # the extension is told too (so a restart of webllm does not split the conversation)
+            assert {(m["tab"], m["follows"]) for m in ext.seen if m["type"] == "observe_follows"} == {(11, root)}
             _, est, _ = await app.get("/api/estado")
             assert est["observing"] == []  # stopped, and it stays stopped
             # a turn with nothing typed is not recorded
@@ -416,6 +422,7 @@ def test_continuar_under_an_open_webui_answer_finds_it_by_open_webuis_own_ids(tm
             await button.action({"chat_id": "owui-1", "id": "m-2"}, __event_emitter__=emit)
             (obs,) = [m for m in ext.seen if m["type"] == "observe"]
             assert obs["follows"] == h["x-webllm-run"] and obs["url"] == "https://chat.qwen.ai/c/xyz"
+            assert [e["type"] for e in events] == ["notification"]  # the answer's own status line is left alone
             assert events[0]["data"]["type"] == "success" and "Abierta en tu Chrome la conversación de Qwen" in events[0]["data"]["content"]
             ok, text = await button.ask("owui-1", "m-4")  # an answer by API: no web conversation
             assert not ok and "no vino de un chat web" in text

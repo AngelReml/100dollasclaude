@@ -39,7 +39,10 @@ async function connect() {
     const up = await fetch(health, { cache: "no-store" }).then((r) => r.ok).catch(() => false);
     if (!up) return;
     const sock = new WebSocket(`${cfg.bridge}?token=${encodeURIComponent(cfg.token)}`);
-    sock.onopen = () => sock.send(JSON.stringify({ type: "hello", sites: Object.keys(SITES), version: chrome.runtime.getManifest().version }));
+    sock.onopen = () => {
+      sock.send(JSON.stringify({ type: "hello", sites: Object.keys(SITES), version: chrome.runtime.getManifest().version }));
+      flushObserved(sock);  // turns Iván wrote while webllm was closed
+    };
     sock.onmessage = (ev) => onMessage(JSON.parse(ev.data));
     sock.onclose = () => { if (ws === sock) ws = null; };
     sock.onerror = () => {};
@@ -53,6 +56,20 @@ async function connect() {
 
 function sendToBridge(obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+// A turn Iván wrote by hand (observer mode) is never dropped: with webllm closed it waits here, and goes when the
+// bridge connects again (at most 200 kept).
+async function sendObserved(obj) {
+  if (ws && ws.readyState === 1) return ws.send(JSON.stringify(obj));
+  const kept = ((await chrome.storage.local.get("pending_observed")).pending_observed || []).slice(-199);
+  await chrome.storage.local.set({ pending_observed: [...kept, obj] });
+}
+async function flushObserved(sock) {
+  const kept = (await chrome.storage.local.get("pending_observed")).pending_observed || [];
+  if (!kept.length) return;
+  await chrome.storage.local.set({ pending_observed: [] });
+  for (const obj of kept) sock.send(JSON.stringify(obj));
 }
 
 // Keep the service worker and the socket alive (Chrome 116+: WebSocket
@@ -710,12 +727,14 @@ async function watchOnce(tabId, o) {
   if (!st.badge) call(Number(tabId), "observeBadge", true).catch(() => {});  // the page was reloaded: the mark again
   const typed = String(st.typed || "").trim();
   // what the page noted as sent (Enter or the send button), in order
-  const sent = (st.sent || []).map((x) => String((x && x.text) || "").trim()).filter(Boolean);
+  const sent = (st.sent || []).filter((x) => x && String(x.text || "").trim())
+    .map((x) => ({ text: String(x.text).trim(), t: Number(x.t) || Date.now() }));
   if (sent.length) { o.queue = [...(o.queue || []), ...sent]; o.typed = ""; }
   if (!o.turn) {
     if (o.queue && o.queue.length) {
       const before = o.last || o.before || st;
-      o.turn = { user: o.queue.splice(0).join("\n\n"), before, t0: Date.now() };
+      const items = o.queue.splice(0);
+      o.turn = { user: items.map((x) => x.text).join("\n\n"), before, t0: items[0].t };  // t0 = when he sent it
       o.sig = sigOf(before); o.stable = 0; o.typed = "";
     } else {
       o.last = st;
@@ -742,9 +761,10 @@ async function watchOnce(tabId, o) {
                                   (st.bodyLen !== b0.bodyLen && o.stable >= 12));
   if (!done && Date.now() - o.turn.t0 < 30 * 60000) return;
   const out = await call(Number(tabId), "fallback", site).catch(() => null);  // read from the page: no click in his tab
-  sendToBridge({ type: "observed", tab: Number(tabId), site: o.site, follows: o.follows, site_config: o.site_config || null, url: st.url,
+  await sendObserved({ type: "observed", tab: Number(tabId), site: o.site, follows: o.follows, site_config: o.site_config || null, url: st.url,
                  user: o.turn.user, answer: out && out.ok ? out.text : "", via: out && out.ok ? out.via : null,
-                 error: out && out.ok ? null : (done ? "empty_answer" : "timeout") });
+                 error: out && out.ok ? null : (done ? "empty_answer" : "timeout"),
+                 seconds: Math.round((Date.now() - o.turn.t0) / 100) / 10 });
   o.turn = null;
   o.last = st;
 }
@@ -967,5 +987,9 @@ function onMessage(msg) {
   else if (msg.type === "reread") handleReread(msg);
   else if (msg.type === "check") handleCheck(msg);
   else if (msg.type === "observe") handleObserve(msg);
+  else if (msg.type === "observe_follows") {  // the conversation this tab's turns belong to (kept across restarts)
+    const o = observers[msg.tab];
+    if (o && !o.follows && msg.follows) { o.follows = String(msg.follows); saveObservers(); }
+  }
   else if (msg.type === "observe_stop") { for (const t of Object.keys(observers)) if (!msg.tab || Number(t) === Number(msg.tab)) stopObserving(t, "app"); }
 }

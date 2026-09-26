@@ -58,6 +58,9 @@ function why(ai: CatalogAi): string {
   return [ai.may_fail, ai.note].filter(Boolean).join(" · ");
 }
 
+/** What three clicks can fix (PLAN-v5 F6, layer 4): the page itself. Not a login, a limit or an address that moved. */
+const TEACHABLE = new Set(["no_input", "insert_failed", "not_sent", "empty_answer", "unexpected_answer"]);
+
 function CatalogCard({ ai, onConnect, onTeach, busy, defaultCap }: {
   ai: CatalogAi; onConnect: (key: string) => void; onTeach: (ai: CatalogAi) => void; busy: boolean; defaultCap: number;
 }) {
@@ -80,7 +83,7 @@ function CatalogCard({ ai, onConnect, onTeach, busy, defaultCap }: {
       <div className="mt-auto flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
         <span className="min-w-0 truncate text-[15px] text-muted">{ai.url.replace(/^https:\/\//, "").replace(/\/$/, "")}</span>
         <div className="flex flex-wrap gap-2">
-          {ai.state === "no_funciona" && (
+          {ai.state === "no_funciona" && TEACHABLE.has(ai.reason) && (
             <Button variant="ghost" icon={<MousePointerClick size={18} aria-hidden />} disabled={busy} onClick={() => onTeach(ai)}>
               Enséñame esta web
             </Button>

@@ -443,10 +443,15 @@ class AppApi:
                               "answers": answers, "ran": bool(calls)})
             end = next((x for x in reversed(lines) if x.get("kind") == "flow_end"), None)
             inputs = spec.get("inputs") or {}
-            kind = "pregunta" if spec.get("template") == "pregunta" else "cadena"
+            template = spec.get("template")
+            kind = "pregunta" if template == "pregunta" else "web" if template == "observado" else "cadena"
             text = inputs.get("pregunta") or inputs.get("objetivo") or inputs.get("entrada") or (
                 steps[0]["message"] if steps else "")
-            return {"kind": kind, "title": spec.get("name") or "Cadena", "template": spec.get("template", ""),
+            title = spec.get("name") or "Cadena"
+            if kind == "web":  # a turn Iván wrote himself in a chat's page (PLAN-v5 F6)
+                who = next((a["provider_label"] for s in steps for a in s["answers"]), "")
+                title = f"En la web de {who}" if who else "En la web"
+            return {"kind": kind, "title": title, "template": spec.get("template", ""),
                     "text": text, "steps": steps, "status": end.get("status") if end else "unfinished",
                     "ts": lines[0].get("ts") if lines else None}
         prompt = read("prompt.txt")
@@ -1388,11 +1393,14 @@ class AppApi:
         follows = str(data.get("follows") or "") or self.tab_conversation.get((tab, site)) or None
         run_dir = await asyncio.to_thread(flows.record_observed, self.cfg, p, follows=follows, user=user[:MAX_PROMPT],
                                           answer=str(data.get("answer") or ""), url=str(data.get("url") or "")[:500],
-                                          via=data.get("via"), error=data.get("error"))
+                                          via=data.get("via"), error=data.get("error"), seconds=_seconds(data.get("seconds")))
         if tab:  # the next turns in that tab follow the same conversation
             self.tab_conversation[(tab, site)] = follows or run_dir.name
             if tab in self.observing:
                 self.observing[tab]["follows"] = self.tab_conversation[(tab, site)]
+            if not data.get("follows") and self.bridge.ws is not None and not self.bridge.ws.closed:
+                # the extension keeps it too, so a restart of webllm does not split the conversation
+                await self.bridge.ws.send_json({"type": "observe_follows", "tab": tab, "follows": self.tab_conversation[(tab, site)]})
         self.bridge.log(f"Observador: {p.display}: turno escrito por Iván guardado ({run_dir.name}).")
 
     async def encender_local(self, request: web.Request) -> web.Response:
@@ -1408,6 +1416,15 @@ class AppApi:
             name = st.server.name if st else key
             return self._fail(404, f"No encuentro {name} instalado en este PC.", "not_installed")
         return web.json_response({"ok": True, "already": False})
+
+
+def _seconds(value: Any) -> float | None:
+    """How long a page took to answer a turn Iván wrote himself, as the extension measured it (or None)."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if 0 < v < 24 * 3600 else None
 
 
 # ------------------------------------------------------------------ add a chat site
