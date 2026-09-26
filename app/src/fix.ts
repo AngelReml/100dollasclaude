@@ -77,6 +77,12 @@ export function problemFor(code: string, label: string, kind: "chat" | "api" | "
         actions: ["otra"],
         said: true,
       };
+    case "cancelled":
+      return {
+        title: "Lo has parado tú",
+        text: "Si ya se había enviado, la web puede haber contestado igualmente; pregunta otra vez cuando quieras.",
+        actions: ["reintentar"],
+      };
     case "bridge_unavailable":
     case "extension_disconnected":
       return {

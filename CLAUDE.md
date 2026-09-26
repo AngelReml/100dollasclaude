@@ -43,7 +43,9 @@ API models (z.ai GLM-4.7-Flash, groq gpt-oss-120b, Nemotron :free) ──► Omn
 | `extension/common.js`, `add.html`, `add.js` | Address rules shared with the server (`parseChatUrl`, `siteKey`, blocked hosts, `genericSite`), and the "Añadir … a webllm" page: `chrome.permissions.request` for that one origin (needs Iván's click), then `add_test` → open the site, find the box, `add_ready` (the bridge sends the "pong" test through the guard). |
 | `extension/driver.js` | Injected in the chat page (MAIN world): state, insert, send, capture (hooks the page's own copy button → exact markdown), HTML→markdown fallback, diagnose. |
 | `extension/sites.js` | Per-site selectors (qwen, deepseek, zai, meta). Qwen/DeepSeek/Meta selectors are first drafts. |
-| `src/webllm_agent/gateway.py`, `problems.py` | PLAN-v5 D2 (F1): `/gw/v1/models` + `/gw/v1/chat/completions`, webllm as Open WebUI's one connection. Each question is a one-step flow (guard, journal, history "Desde Open WebUI", error codes); notes stream as `reasoning_content` (incl. `WAITING_SHORT` "te espera"); SSE keep-alive comments; the last chunk carries `webllm.avisos` (must-see: files/modes not used yet, a stand-in answered). Body extension `webllm: {chat_id, message_id, task, files[b64+sha256], modes}`; a `task` never reaches a web chat; files are checked, saved under the run (`kind: gateway` journal line, verified by `verify_run`). `problems.py` = the app's Spanish texts (a test keeps it in sync with `app/src/fix.ts`). |
+| `src/webllm_agent/gateway.py`, `problems.py` | PLAN-v5 D2 (F1): `/gw/v1/models` + `/gw/v1/chat/completions`, webllm as Open WebUI's one connection. Each question is a one-step flow (guard, journal, history "Desde Open WebUI", error codes); notes stream as `reasoning_content` (incl. `WAITING_SHORT` "te espera"); SSE keep-alive comments; the last chunk carries `webllm.avisos` (must-see: files/modes not used yet, a stand-in answered). Body extension `webllm: {chat_id, message_id, task, files[b64+sha256], modes}`; a `task` never reaches a web chat; files are checked, saved under the run (`kind: gateway` journal line, verified by `verify_run`). `problems.py` = the app's Spanish texts (a test keeps it in sync with `app/src/fix.ts`, both ways). F2: web chats go through `flows.run_flow`; APIs and this PC's models go direct (`_direct`/`_upstream`: streamed as written, `tools`/`tool_calls` passed through, JSON answers to a stream request re-chunked, only a stand-in configured in `fallback_models` is ever tried and it is said), always ending with `Respondió X [con modelo]`. `/gw/v1/parar` = "Parar todo" (gateway questions + `AppApi.stop_all` + `bridge.cancel_all`). |
+| `src/webllm_agent/budget.py` | PLAN-v5 F2 daily cap per AI by API (`guard.api_daily_cap`, default 300; per provider `daily_cap`; this PC's models uncapped): every call counts, stand-ins too; `data/state/api_budget.json`. `AppApi.usage()` is the one source of "today / cap" for the app and `/gw/v1/models` (chat sites: the guard's). |
+| Stop ("parar") | Each question's tag (= run id) travels as `x-webllm-run` to the bridge: `bridge.jobs[site] = (job_id, tag)`, `bridge.stop(tag)` (a queued question is never sent), `bridge.cancel(site, tag)` (resolves it as `cancelled` and sends `{"type":"cancel"}`; extension 0.5.2 `stillWanted()` stops driving the page; it does NOT press the site's own stop button). `run_flow(stop=Event)`: the call in progress ends as `cancelled`, no retry/stand-in/next step, journal still closed. The app's questions register in `AppApi.asking`. |
 | `openwebui/` | Functions Open WebUI runs: `webllm_pipe.py` (manifold pipe: models from the gateway, current message's files from `metadata.user_message` read whole from Open WebUI storage, `webllm_modes`, local answers for Open WebUI's background tasks, notes on the status line, whole-answer mode for `stream: false`), `webllm_modo_*.py` (filters with `self.toggle` = switches in the "+"). Installed by `scripts/openwebui_setup.py` (idempotent: functions + valves, per-model `file_context` off / `filterIds`, background tasks and compaction off, bypass embedding, Spanish suggestions, no Arena, tool permissions on; finds Open WebUI on 8080/3000/8081). Iván: `herramientas\poner-en-openwebui.cmd`. Results: `docs/F1-cara.md`. |
 | `src/webllm_agent/broadcaster.py` | `webllm ask`: one prompt to many targets, concurrent across upstreams, journal. `verify_run` checks chain + manifest + response/message files. |
 | `src/webllm_agent/flows.py` | Chain engine ("Mesa de IAs", PLAN-v3 phase 1): steps with `{{input}}` / `{{step}}` / `{{step.ai}}` placeholders (single pass), parallel when independent, one call at a time per upstream, `on_error` stop / wait / fallback, `error_code()`, journal per call + `flow_end`, `estimate_messages()`, templates (consejo, reparto, debate, cadena). `webllm cadena`. |
@@ -109,7 +111,7 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   the real bridge (`app_demo.py --sin-chrome`) and `fake_chat.html` served over https under
   `*.test` names (`harness.mjs`): `generic_driver.mjs`, `add_flow.mjs` (add a site),
   `captcha_flow.mjs` (a verification solved after 20 s with a 10 s limit; a covered window),
-  `stuck_stop.mjs` (four misleading "stop" buttons). Only
+  `stuck_stop.mjs` (four misleading "stop" buttons), `parar_flow.mjs` ("Parar todo" mid-answer). Only
   Chrome's permission prompt and window occlusion are simulated (headless never reports a covered
   window, so the page is told `document.hidden`). Chromium must get `--no-proxy-server` here.
 - Watch out for `\b`, `\t` in Windows paths written from scripts: a literal backspace once ended up
@@ -144,6 +146,16 @@ footers that wrap; `docs/capturas/<fase>/revision.json` keeps its report. Look a
   to the status line (`__event_emitter__` status); API keys are OFF by default (`ENABLE_API_KEYS`);
   the "$" skill picker inserts `<$id|name>` tags (plain "$name" text is not a mention); with
   `stream: false` a pipe must return text, not the SSE lines.
+- **Stopping must reach Chrome before the task dies** (F2): aiohttp's `TestServer` cancels a handler when
+  the client goes (`handler_cancellation=True`; production `run_app` does not), and awaiting a task
+  propagates that cancellation into it. The gateway awaits its work through `asyncio.shield` and tells the
+  bridge/extension first. Tests that pass only because of handler cancellation prove nothing about Iván's PC.
+- **Open WebUI sends the whole conversation**: anything matched in a prompt (the demo's "(demo: N minutos)")
+  must look at the last question only. A streamed error is `data: {"error": …}` with no `choices`; Open
+  WebUI shows it, so the pipe must pass it on (and drop only lines that are not JSON).
+- **Open WebUI 0.11.4 tool approval bug:** with `tool_approval_mode="ask"` the `function_call` stays
+  "queued" and a "Preparando <tool>…" spinner stays after the answer; "full" mode records it. The stream
+  from webllm is identical in both: not ours, kept on (Iván's click before any tool use).
 - **A provider's `error.code` is its own vocabulary** (OpenRouter: 429/402 numbers, z.ai: "1302"):
   `flows.error_code` only passes webllm's own codes (`OWN_ERROR_CODES`) and reads the rest like the
   HTTP status; a 429 that mentions credits is still a limit. Unknown codes made the app say

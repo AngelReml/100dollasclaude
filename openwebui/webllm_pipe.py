@@ -191,16 +191,27 @@ class Pipe:
                             line = raw.decode("utf-8").strip()
                             if not line.startswith("data:") or line == "data: [DONE]":
                                 continue  # keep-alive comments; Open WebUI adds its own end
+                            data, choice = {}, {}
                             try:
                                 data = json.loads(line[5:])
-                                avisos += list((data.get("webllm") or {}).get("avisos") or [])
-                                delta = data["choices"][0]["delta"]
+                                avisos += [str(x) for x in (data.get("webllm") or {}).get("avisos") or []]
+                                choice = data["choices"][0]
                             except (ValueError, KeyError, IndexError, TypeError, AttributeError):
-                                delta = {}
+                                pass
+                            if not isinstance(data, dict):
+                                continue  # a broken line: nothing for Open WebUI
+                            if data.get("error"):
+                                yield line  # Open WebUI shows it and keeps it in the conversation
+                                continue
+                            if not isinstance(choice, dict) or not choice:
+                                continue  # not an answer chunk
+                            delta = choice.get("delta") or {}
                             if delta.get("reasoning_content"):
                                 await self._status(emitter, delta["reasoning_content"].strip())
                             elif delta.get("content"):
                                 await self._status(emitter, "", done=True)
+                            if data.get("webllm") and not delta and not choice.get("finish_reason"):
+                                continue  # webllm's own last word (what to keep on view), nothing for the answer
                             yield line
         except aiohttp.ClientError:
             yield {"error": {"message": "webllm no responde: ábrelo con su icono y pregunta otra vez."}}

@@ -68,3 +68,10 @@ def test_time_solving_a_verification_does_not_lose_the_answer():
 def test_a_misleading_stop_button_does_not_hide_a_finished_answer():
     """Iván's Meta (2026-09-25): the answer was written but webllm kept waiting for it."""
     assert len(run_real("stuck_stop.mjs")) == 9
+
+
+@needs_chromium
+@needs_openssl
+def test_parar_stops_the_job_in_chrome_and_leaves_the_chat_ready():
+    """PLAN-v5 "Parar": a slow chat stopped halfway; the extension lets go at once, the next question works."""
+    assert len(run_real("parar_flow.mjs")) == 6

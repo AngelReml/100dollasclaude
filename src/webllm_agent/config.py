@@ -93,6 +93,8 @@ class ProviderConfig:
     # A chat site Iván added from the app ("+ Añadir otra IA"): its address.
     url: str = ""
     custom: bool = False
+    # Most questions per day (budget.py); None = the default for its kind (API: guard.api_daily_cap).
+    daily_cap: int | None = None
 
     @property
     def guarded(self) -> bool:
@@ -124,6 +126,8 @@ class GuardConfig:
     min_spacing_s: float = 20.0
     daily_cap: int = 150
     cooldown_hours: float = 6.0
+    # Every AI by API: most questions per day (budget.py), so a loop cannot use up a free quota.
+    api_daily_cap: int = 300
 
 
 @dataclass(frozen=True)
@@ -212,6 +216,7 @@ def _coerce_providers(raw: Any) -> dict[str, ProviderConfig]:
             fallback_models=_as_tuple(spec.get("fallback_models")),
             relogin_hint=str(spec.get("relogin_hint", "")),
             label=str(spec.get("label", "")),
+            daily_cap=int(spec["daily_cap"]) if spec.get("daily_cap") is not None else None,
         )
     return out
 
@@ -327,6 +332,7 @@ def load_config(data_dir: Path | None = None) -> AppConfig:
             min_spacing_s=float(guard_raw.get("min_spacing_s", 20)),
             daily_cap=int(guard_raw.get("daily_cap", 150)),
             cooldown_hours=float(guard_raw.get("cooldown_hours", 6)),
+            api_daily_cap=int(guard_raw.get("api_daily_cap", 300)),
         ),
         blocked_model_prefixes=_as_tuple(merged.get("blocked_model_prefixes")),
         blocked_model_substrings=tuple(s.lower() for s in _as_tuple(merged.get("blocked_model_substrings"))),

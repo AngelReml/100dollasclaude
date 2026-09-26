@@ -27,6 +27,7 @@ from . import journal
 from .client import OK, TRANSPARENT_HEADERS, ChatResult, auth_headers, chat
 from .config import JOB_HARD_CAP_S, AppConfig, ProviderConfig, is_blocked_model
 from .guard import Guard, GuardBlocked
+from .budget import budget_for
 from .local import server_lock as local_lock
 
 SKIPPED = "skipped"
@@ -127,13 +128,17 @@ async def _run_target(
     timeout_s: float | None,
     notify: Callable[[str], None],
     bridge_key: str | None = None,
+    run_tag: str | None = None,
 ) -> Outcome:
+    # A chat job carries the question it belongs to, so "parar" stops that one and no other.
+    tag = {"x-webllm-run": run_tag} if run_tag and t.gateway == "bridge" else None
     if t.gateway == "bridge":
         base_url, key = cfg.bridge_url, bridge_key or ""
     elif t.gateway == "local":
         base_url, key = t.base_url, ""
     else:
         base_url, key = cfg.base_url, api_key
+    budget = budget_for(cfg)
     permit = None
     if t.guarded:
         try:
@@ -145,11 +150,15 @@ async def _run_target(
     server = local_lock(upstream_key(t.model)) if t.gateway == "local" else contextlib.nullcontext()
     try:
         for model in (t.model, *t.fallback_models):
+            if not budget.take(t):  # every call counts, a stand-in model too
+                outcome.result = ChatResult(SKIPPED, model=model, error="daily_cap")
+                outcome.notices.append(budget.notice(t))
+                break
             outcome.tried_models.append(model)
             async with server:
                 res = await chat(client, base_url=base_url, api_key=key,
                                  model=t.remote_model or model if t.gateway == "local" else model,
-                                 prompt=prompt, timeout_s=timeout_s or client_timeout(t))
+                                 prompt=prompt, timeout_s=timeout_s or client_timeout(t), extra_headers=tag)
             outcome.result = res
             if t.guarded:
                 notice = guard.report(t, res)

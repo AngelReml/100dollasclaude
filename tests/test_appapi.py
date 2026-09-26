@@ -27,10 +27,12 @@ class DiagnosingExtension(FakeExtension):
         self.page_state = page_state or {"input": True, "loginWall": False, "challenge": None}
         self.knows_show = knows_show  # False = an extension older than 0.4.0
         self.shown: list[str] = []
+        self.seen: list[dict] = []  # every message the bridge sent, in order
 
     async def _loop(self):
         async for msg in self.ws:
             job = json.loads(msg.data)
+            self.seen.append(job)
             if job.get("type") == "show" and self.knows_show:
                 self.shown.append(job["site"])
                 await self.ws.send_json({"type": "result", "id": job["id"], "ok": True, "text": "", "via": "show"})

@@ -11,6 +11,9 @@ The behaviour is chosen by the last segment of the requested model id:
     flaky      503 on the first call to that model, then like ok
     malformed  200 with a body that is not JSON
     html200    200 whose content is an HTML login page
+    tools      with "tools" in the request: calls the first tool (no arguments); after a "tool"
+               message: answers "La herramienta dijo: <its content>"
+With "stream": true, ok* and tools answer as server-sent events (the text in 3 pieces).
 GET /v1/models returns 200, or 401 when the Bearer key is "bad-key".
 """
 
@@ -55,6 +58,35 @@ def _make_handler(state: MockState):
             self.end_headers()
             self.wfile.write(body)
 
+        def _answer(self, body: dict, model: str, message: dict, hdr: dict, finish: str = "stop"):
+            """A chat.completion, or the same as server-sent events when the request asked to stream."""
+            if not body.get("stream"):
+                out = {"id": "x", "object": "chat.completion", "model": model,
+                       "choices": [{"index": 0, "message": {"role": "assistant", **message}, "finish_reason": finish}]}
+                return self._send(200, json.dumps(out).encode(), headers=hdr)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Connection", "close")
+            for k, v in hdr.items():
+                self.send_header(k, v)
+            self.end_headers()
+            text = message.get("content") or ""
+            deltas = [{"role": "assistant"}]
+            if text:
+                third = max(1, len(text) // 3)
+                deltas += [{"content": text[i:i + third]} for i in range(0, len(text), third)]
+            for n, call in enumerate(message.get("tool_calls") or []):
+                deltas.append({"tool_calls": [{"index": n, "id": call["id"], "type": "function",
+                                               "function": {"name": call["function"]["name"], "arguments": ""}}]})
+                deltas.append({"tool_calls": [{"index": n, "function": {"arguments": call["function"]["arguments"]}}]})
+            for i, delta in enumerate(deltas + [{}]):
+                chunk = {"id": "x", "object": "chat.completion.chunk", "model": model,
+                         "choices": [{"index": 0, "delta": delta, "finish_reason": finish if i == len(deltas) else None}]}
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                self.wfile.flush()
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.close_connection = True
+
         def do_GET(self):
             if self.headers.get("Authorization") == "Bearer bad-key":
                 return self._send(401, b'{"error":"invalid api key"}')
@@ -67,7 +99,7 @@ def _make_handler(state: MockState):
             behaviour = model.rsplit("/", 1)[-1]
             with state.lock:
                 state.requests.append({"model": model, "t": time.time(), "headers": dict(self.headers),
-                                       "prompt": body["messages"][0]["content"]})
+                                       "prompt": body["messages"][0]["content"], "body": body})
                 state.inflight[upstream] += 1
                 state.max_inflight[upstream] = max(state.max_inflight[upstream], state.inflight[upstream])
             try:
@@ -76,6 +108,17 @@ def _make_handler(state: MockState):
                     time.sleep(2.0)
                 elif behaviour.startswith("ok"):
                     time.sleep(0.3)
+                if behaviour == "tools":
+                    last = body["messages"][-1]
+                    if last.get("role") == "tool":
+                        return self._answer(body, model, {"content": f"La herramienta dijo: {last.get('content')}"}, hdr)
+                    if body.get("tools"):
+                        name = body["tools"][0]["function"]["name"]
+                        call = {"id": "call_1", "type": "function", "function": {"name": name, "arguments": "{}"}}
+                        return self._answer(body, model, {"content": None, "tool_calls": [call]}, hdr, "tool_calls")
+                    return self._answer(body, model, {"content": "sin herramientas"}, hdr)
+                if body.get("stream") and behaviour.startswith("ok"):
+                    return self._answer(body, model, {"content": f"answer from {model}"}, hdr)
                 if behaviour.startswith("ok") or behaviour == "slow":
                     out = {"id": "x", "object": "chat.completion", "model": model,
                            "choices": [{"index": 0, "message": {"role": "assistant",

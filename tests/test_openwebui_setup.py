@@ -26,6 +26,7 @@ class FakeOpenWebUI:
                       "ENABLE_RETRIEVAL_QUERY_GENERATION": True, "TASK_MODEL": ""}
         self.chat = {"ENABLE_TOOL_PERMISSIONS": False, "ENABLE_CONTEXT_COMPACTION": True}
         self.config: dict = {}
+        self.settings = {"ui": {"theme": "dark", "params": {"temperature": 0.5}}}  # Iván's own choices
         self.calls: list[str] = []
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -65,6 +66,11 @@ class FakeOpenWebUI:
             if method == "POST":
                 self.chat = body
             return httpx.Response(200, json=dict(self.chat))
+        if path == "/api/v1/users/user/settings":
+            return httpx.Response(200, json=self.settings)
+        if path == "/api/v1/users/user/settings/update":
+            self.settings = body
+            return httpx.Response(200, json=body)
         if path in ("/api/v1/retrieval/config/update", "/api/v1/configs/suggestions", "/api/v1/evaluations/config"):
             self.config[path] = body
             return httpx.Response(200, json=body)
@@ -73,8 +79,8 @@ class FakeOpenWebUI:
 
 def run_install(fake: FakeOpenWebUI):
     ow = setup.OpenWebUI("http://ow.test", "clave", transport=httpx.MockTransport(fake.handler))
-    names = {m: f"Nombre de {m}" for m in fake.pipe_models}
-    return setup.install(ow, "http://127.0.0.1:20130", "llave-webllm", say=lambda _m: None, names=names)
+    known = {m: {"name": f"Nombre de {m}", "card": f"Ficha de {m}"} for m in fake.pipe_models}
+    return setup.install(ow, "http://127.0.0.1:20130", "llave-webllm", say=lambda _m: None, known=known)
 
 
 def test_installs_the_pipe_and_the_switches_active_with_webllms_key():
@@ -91,9 +97,10 @@ def test_every_webllm_model_gets_whole_files_and_its_switches():
     run_install(fake)
     assert set(fake.models) == {"webllm.qwen", "webllm.zai"}
     for m in fake.models.values():
-        assert m["name"] == f"Nombre de {m['id']}"
+        assert m["name"] == f"Nombre de {m['id']}" and m["meta"]["description"] == f"Ficha de {m['id']}"
         caps = m["meta"]["capabilities"]
         assert caps["file_context"] is False and caps["vision"] is True and caps["file_upload"] is True
+        assert caps["builtin_tools"] is False  # only the tools Iván switches on
         assert m["meta"]["filterIds"] == ["webllm_pensar"]
     assert fake.config["/api/v1/retrieval/config/update"] == {"BYPASS_EMBEDDING_AND_RETRIEVAL": True}
     assert fake.config["/api/v1/evaluations/config"] == {"ENABLE_EVALUATION_ARENA_MODELS": False}
@@ -132,3 +139,11 @@ def test_it_refuses_when_webllm_is_not_answering():
 def test_frontmatter_reads_the_header_of_each_function():
     meta = setup.frontmatter((ROOT / "openwebui" / "webllm_modo_pensar.py").read_text("utf-8"))
     assert meta["title"] == "Pensar más" and meta["required_open_webui_version"] == "0.11.0"
+
+
+
+def test_every_conversation_asks_before_using_a_tool_and_ivans_settings_stay():
+    fake = FakeOpenWebUI()
+    run_install(fake)
+    assert fake.settings["ui"]["params"] == {"temperature": 0.5, "tool_approval_mode": "ask"}
+    assert fake.settings["ui"]["theme"] == "dark"

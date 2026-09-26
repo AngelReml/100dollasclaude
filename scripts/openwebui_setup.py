@@ -9,15 +9,17 @@ What it does (running it again updates everything, nothing is duplicated):
 1. installs the "webllm" pipe (openwebui/webllm_pipe.py) and gives it webllm's address and key;
 2. installs the mode switches (openwebui/webllm_modo_*.py) for the "+" of the text box;
 3. sets every webllm model in Open WebUI: its files go whole to webllm (Open WebUI does not read them
-   itself: "file_context" off), pictures allowed, the mode switches it can use, no built-in tools;
+   itself: "file_context" off), pictures allowed, the mode switches it can use, and only the tools Iván
+   switches on (Open WebUI's own built-in tools off: "builtin_tools");
 4. turns off the background jobs that would only add noise (tags, follow-up suggestions,
    autocompletion, search queries); titles stay on, and the pipe makes them without asking anyone;
 5. hides Open WebUI's own "Arena" model (not used);
 6. files are not read nor indexed by Open WebUI on upload (webllm gets them whole; this also avoids
    downloading its embedding model to the PC);
 7. the suggestions under the text box, in Spanish;
-8. tool approvals can be used (each conversation can be set to "ask me first"), and "context
-   compaction" is off (it would ask the model for summaries: messages of Iván's chats).
+8. tool approvals are on, and every conversation asks first by default (Iván's own setting,
+   D21: nothing runs without his yes); "context compaction" is off (it would ask the model for
+   summaries: messages of Iván's chats).
 The Open WebUI key: Open WebUI → Ajustes → Cuenta → Claves de API → Crear (an administrator's key).
 Without --webllm-token it reads webllm's own key from data/state/bridge_token on this PC.
 """
@@ -42,8 +44,10 @@ SUGGESTIONS = [
     {"title": ["Ayúdame a programar", "paso a paso"], "content": "Ayúdame a programar esto, paso a paso: "},
     {"title": ["Resume un texto", "en cinco puntos"], "content": "Resume este texto en cinco puntos:\n\n"},
 ]
+# builtin_tools off: Open WebUI would hand every model its own tools (the time, memory, notes...) without
+# Iván switching them on; with it off, an AI only gets the tools he turns on in the "+" (D21).
 CAPABILITIES = {"file_context": False, "vision": True, "file_upload": True, "web_search": False,
-                "image_generation": False, "code_interpreter": False, "citations": False}
+                "image_generation": False, "code_interpreter": False, "citations": False, "builtin_tools": False}
 
 
 def frontmatter(source: str) -> dict[str, str]:
@@ -79,14 +83,15 @@ class OpenWebUI:
         return r.json() if r.content else None
 
 
-def webllm_names(webllm_url: str, webllm_token: str) -> dict[str, str]:
-    """webllm's own names for its models (Open WebUI keeps the ones it saved the first time)."""
+def webllm_models(webllm_url: str, webllm_token: str) -> dict[str, dict[str, str]]:
+    """webllm's own name and card for each model (Open WebUI keeps the names it saved the first time)."""
     data = httpx.get(f"{webllm_url}/gw/v1/models", headers={"Authorization": f"Bearer {webllm_token}"}, timeout=10).json()
-    return {PIPE_ID + "." + m["id"]: m.get("name") for m in data["data"]}
+    return {PIPE_ID + "." + m["id"]: {"name": m.get("name") or m["id"], "card": (m.get("webllm") or {}).get("card", "")}
+            for m in data["data"]}
 
 
-def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print, names: dict[str, str] | None = None
-            ) -> dict[str, list[str]]:
+def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print,
+            known: dict[str, dict[str, str]] | None = None) -> dict[str, list[str]]:
     report: dict[str, list[str]] = {"functions": [], "models": []}
     existing = {f["id"]: f for f in ow.call("GET", "/api/v1/functions/")}
     filters: list[str] = []
@@ -111,11 +116,12 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print, names:
     if not models or any(m["id"] in (f"{PIPE_ID}.apagado", f"{PIPE_ID}.sin-llave") for m in models):
         raise SystemExit("webllm no contesta a Open WebUI (¿está apagado, o la llave no vale?). "
                          "Abre webllm con su icono y vuelve a ejecutar esto.")
-    names = names if names is not None else webllm_names(webllm_url, webllm_token)
+    known = known if known is not None else webllm_models(webllm_url, webllm_token)
     for m in models:
-        form = {"id": m["id"], "base_model_id": None, "name": names.get(m["id"]) or m.get("name") or m["id"], "params": {},
-                "meta": {"description": "Una IA de webllm.", "capabilities": CAPABILITIES, "filterIds": filters,
-                         "builtinTools": {}}}
+        mine = known.get(m["id"], {})
+        form = {"id": m["id"], "base_model_id": None, "name": mine.get("name") or m.get("name") or m["id"], "params": {},
+                "meta": {"description": mine.get("card") or "Una IA de webllm.", "capabilities": CAPABILITIES,
+                         "filterIds": filters}}
         if ow.call("GET", "/api/v1/models/model", missing_ok=True, params={"id": m["id"]}):
             ow.call("POST", "/api/v1/models/model/update", json=form)
         else:
@@ -129,7 +135,11 @@ def install(ow: OpenWebUI, webllm_url: str, webllm_token: str, say=print, names:
     chat = ow.call("GET", "/api/v1/chats/config")
     chat.update(ENABLE_TOOL_PERMISSIONS=True, ENABLE_CONTEXT_COMPACTION=False)
     ow.call("POST", "/api/v1/chats/config", json=chat)
-    say("  aprobación de herramientas: disponible; resúmenes automáticos del contexto: apagados")
+    settings = ow.call("GET", "/api/v1/users/user/settings", params={"raw": "true"}) or {}
+    ui = dict(settings.get("ui") or {})
+    ui["params"] = {**(ui.get("params") or {}), "tool_approval_mode": "ask"}
+    ow.call("POST", "/api/v1/users/user/settings/update", json={**settings, "ui": ui})
+    say("  herramientas: siempre te preguntan antes de usarse; resúmenes automáticos del contexto: apagados")
     # Open WebUI's own "Arena" model (blind comparisons) is not used: out of the selector (D18).
     ow.call("POST", "/api/v1/evaluations/config", json={"ENABLE_EVALUATION_ARENA_MODELS": False})
     tasks = ow.call("GET", "/api/v1/tasks/config")

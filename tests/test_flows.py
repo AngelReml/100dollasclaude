@@ -379,3 +379,53 @@ def test_cli_cadena_runs_a_council_and_reports_the_lock(tmp_path, mock_server, c
 def test_provider_error_codes_become_webllm_codes(http, body, code):
     r = ChatResult(status="http_error", http_status=http, error=f"HTTP {http}", body_excerpt=json.dumps(body))
     assert flows.error_code(r) == code
+
+
+# ------------------------------------------------------------------ parar
+
+def test_stop_ends_a_call_in_progress_and_sends_nothing_more(tmp_path, mock_server):
+    """Iván's "parar" while an API AI is answering: that call ends as "cancelled" at once (not after the
+    answer), its stand-in is not asked, the next step is not sent, and the journal still closes and verifies."""
+    cfg = cfg_for(tmp_path, mock_server, [P("lenta", "l/slow"), P("reserva", "r/ok"), P("juez", "j/ok")])
+    flow = Flow("x", (Step("s1", ("lenta",), "hola", on_error="fallback", fallback=("reserva",)),
+                      Step("s2", ("juez",), "{{s1}}")))
+    stop = asyncio.Event()
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.4, stop.set)
+        guard = Guard(cfg.paths.state_dir / "guard.json", cfg.guard)
+        events: list[dict] = []
+        t0 = time.perf_counter()
+        result = await flows.run_flow(cfg, flow, api_key=GOOD_KEY, guard=guard, emit=events.append, stop=stop)
+        return result, events, time.perf_counter() - t0
+
+    result, events, took = asyncio.run(main())
+    assert took < 1.5  # the slow AI takes 2 s: it was not waited for
+    done = [e for e in events if e["type"] == "target_done"]
+    assert [(e["target"], e["code"], e["ok"]) for e in done] == [("lenta", "cancelled", False)]
+    assert [r["model"] for r in mock_server.requests] == ["l/slow"]  # no stand-in, no judge
+    assert result.status == flows.STOPPED and result.steps["s2"].status == flows.SKIPPED
+    lines = [json.loads(x) for x in (result.run_dir / "journal.jsonl").read_text("utf-8").splitlines()]
+    assert [x["kind"] for x in lines] == ["flow", "flow_end"] and lines[0]["code"] == "cancelled"
+    assert result.verified and verify_run(result.run_dir).ok
+
+
+def test_stop_never_sends_a_call_still_waiting_its_turn(tmp_path, mock_server):
+    """Two AIs behind the same service go one at a time; "parar" during the first: the second never goes."""
+    cfg = cfg_for(tmp_path, mock_server, [P("lenta", "u/slow"), P("otra", "u/ok")])
+    stop = asyncio.Event()
+
+    async def main():
+        asyncio.get_running_loop().call_later(0.4, stop.set)
+        guard = Guard(cfg.paths.state_dir / "guard.json", cfg.guard)
+        events: list[dict] = []
+        result = await flows.run_flow(cfg, Flow("x", (Step("s1", ("lenta", "otra"), "hola"),)), api_key=GOOD_KEY,
+                                      guard=guard, emit=events.append, stop=stop)
+        return result, events
+
+    result, events = asyncio.run(main())
+    assert [r["model"] for r in mock_server.requests] == ["u/slow"]
+    assert {e["target"]: e["code"] for e in events if e["type"] == "target_done"} == {"lenta": "cancelled", "otra": "cancelled"}
+    assert [e["target"] for e in events if e["type"] == "target_start"] == ["lenta"]  # "otra" never started
+    assert result.status == flows.STOPPED and verify_run(result.run_dir).ok

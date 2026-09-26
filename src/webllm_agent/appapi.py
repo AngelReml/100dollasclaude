@@ -36,6 +36,7 @@ from aiohttp import web
 
 from . import flows
 from .broadcaster import GatewayError, verify_run
+from .budget import budget_for
 from .config import (
     PROJECT_ROOT, AppConfig, ProviderConfig, custom_provider, is_blocked_model, remove_custom_ai, save_custom_ai,
 )
@@ -88,11 +89,22 @@ class AppApi:
         self.local = LocalModels()
         self.adding: dict[str, dict[str, Any]] = {}  # add_id -> progress of "+ Añadir otra IA"
         self._tasks: set[asyncio.Task] = set()  # test messages in flight (kept so they are not collected)
+        self.asking: dict[str, asyncio.Event] = {}  # run_id -> its "parar" (questions from this app in progress)
         self._last_omni_start = -1e9
 
     @property
     def cfg(self):
         return self.bridge.cfg
+
+    def stop_all(self) -> tuple[int, set[str]]:
+        """"Parar todo" for this app's questions: each one's calls end as "cancelled", nothing more is sent,
+        and a chat's job in Chrome that belongs to it is told to stop. (questions stopped, chat sites stopped)"""
+        sites: set[str] = set()
+        for run_id, stop in list(self.asking.items()):
+            stop.set()
+            self.bridge.stop(run_id)
+            sites.update(site for site in list(self.bridge.jobs) if self.bridge.cancel(site, tag=run_id))
+        return len(self.asking), sites
 
     def register(self, app: web.Application) -> None:
         app.router.add_get("/app", self.to_app)
@@ -136,6 +148,16 @@ class AppApi:
         if site:
             return self.bridge.guard, site
         return Guard(self.cfg.paths.state_dir / "guard.json", self.cfg.guard), p.name
+
+    def usage(self, cfg, p: ProviderConfig) -> tuple[int, int | None]:
+        """(messages today, the day's cap): the account guard for a chat site, the API budget (budget.py) for
+        the rest; one source for the app and for Open WebUI."""
+        if site_of(p) or p.guarded:
+            guard, key = self._guard_for(p)
+            st = guard.status().get(key, {})
+            return (st.get("count_today", 0) if st.get("day") == time.strftime("%Y-%m-%d") else 0), cfg.guard.daily_cap
+        budget = budget_for(cfg)
+        return budget.used(p.name), budget.cap(p)
 
     async def _omniroute_up(self) -> bool:
         import httpx
@@ -205,12 +227,11 @@ class AppApi:
                 state = "apagada"
             elif recent:
                 state, detail = recent[0], recent[1]
-            today = time.strftime("%Y-%m-%d")
+            today, cap = self.usage(cfg, p)
             ais.append({
                 "name": p.name, "label": p.display, "kind": "chat" if site else "local" if server else "api",
                 "state": state, "detail": detail, "until": until,
-                "url": p.url or SITE_URLS.get(site or ""), "today": st.get("count_today", 0) if st.get("day") == today else 0,
-                "cap": cfg.guard.daily_cap if (site or p.guarded) else None,
+                "url": p.url or SITE_URLS.get(site or ""), "today": today, "cap": cap,
                 "server": server.server.key if server else None,
                 "server_name": server.server.name if server else None,
                 "custom": p.custom,
@@ -295,11 +316,16 @@ class AppApi:
             except Exception:
                 api_key = ""
             guard = Guard(self.cfg.paths.state_dir / "guard.json", self.cfg.guard)
+            run_id = flows.new_run_id()
+            self.asking[run_id] = asyncio.Event()
             try:
                 await flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
-                                     emit=send)
+                                     emit=send, run_id=run_id, stop=self.asking[run_id])
             except GatewayError as exc:
                 await send({"type": "error", "code": "unreachable", "error": str(exc)})
+            finally:
+                self.asking.pop(run_id, None)
+                self.bridge.stopped.discard(run_id)
         finally:
             beat.cancel()
         if not closed:

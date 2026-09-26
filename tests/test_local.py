@@ -198,3 +198,32 @@ def test_local_ai_is_not_skipped_when_omniroute_is_off(tmp_path):
             _, events = await a.ask("hola", ["lmstudio:qwen2.5-1.5b-instruct"])
             assert [e["ok"] for e in events if e["type"] == "target_done"] == [True]
     run(go())
+
+
+def test_a_model_on_this_pc_answers_through_the_gateway(tmp_path, mock_server):
+    """PLAN-v5 F2: Open WebUI asks a model on this PC through webllm's gateway. It answers (even though the
+    program answers the stream request with one JSON), with its own id and no key, one question at a time,
+    uncapped, said and journaled like any other."""
+    from test_gateway import content, gw, journal_lines
+    from webllm_agent.broadcaster import verify_run
+
+    name = "lmstudio:qwen2.5-1.5b-instruct"
+    ask = {"model": name, "stream": True, "messages": [{"role": "user", "content": "hola"}]}
+
+    async def go():
+        async with LocalApp(tmp_path, mock_server.base_url) as a:
+            status, models, _ = await a.get("/gw/v1/models")
+            assert [m["name"] for m in models["data"] if m["webllm"]["kind"] == "local"] == ["LM Studio · qwen2.5-1.5b-instruct (tu PC)"]
+            first, second = await asyncio.gather(gw(a, ask), gw(a, ask))
+            (s1, lines, headers), s2 = first, second[0]
+            assert s1 == s2 == 200 and content(lines) == "local answer from qwen2.5-1.5b-instruct"
+            avisos = [x for x in lines if isinstance(x, dict) and x.get("webllm")][-1]["webllm"]["avisos"]
+            assert avisos == ["Respondió LM Studio · qwen2.5-1.5b-instruct."]  # its name already says the model
+            assert a.fake.requests == [{"model": "qwen2.5-1.5b-instruct", "auth": None}] * 2 and a.fake.max_inflight == 1
+            call = next(x for x in journal_lines(a, headers["x-webllm-run"]) if x["kind"] == "flow")
+            assert call["status"] == "ok" and call["provider"] == name
+            assert verify_run(a.cfg.paths.runs_dir / headers["x-webllm-run"]).ok
+            _, models, _ = await a.get("/gw/v1/models")
+            local = next(m for m in models["data"] if m["id"] == name)["webllm"]
+            assert local["daily_cap"] is None  # no quota to protect on this PC
+    run(go())

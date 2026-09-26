@@ -49,6 +49,7 @@ ERRORS: dict[str, tuple[int, float | None, str]] = {
     "extension_disconnected": (503, None, "Chrome se desconectó a mitad del envío"),
     "site_busy": (503, None, "está saturado ahora mismo (no es un límite de tu cuenta). Prueba en un rato o elige otro modelo en su web"),
     "not_sent": (502, None, "el mensaje se quedó sin enviar (una ventana emergente lo tapó). Vuelve a pedirlo"),
+    "cancelled": (409, None, "lo has parado tú"),
 }
 
 
@@ -123,6 +124,8 @@ class Bridge:
         self.locks: dict[str, asyncio.Lock] = {}  # one message at a time per site
         self.alive: dict[str, float] = {}  # job id -> last time the extension said it is still on it
         self.waiting: dict[str, str] = {}  # site -> "challenge" | "popup" while the chat waits for Iván
+        self.jobs: dict[str, tuple[str, str]] = {}  # site -> (job id, question tag) the extension is doing there
+        self.stopped: set[str] = set()  # question tags Iván stopped: never sent, even if still waiting their turn
         self._last_launch = -1e9
         self._panel_running = False
         self.app_api = AppApi(self)
@@ -243,13 +246,15 @@ class Bridge:
         except asyncio.TimeoutError:
             return False
 
-    async def _send_to_extension(self, payload: dict[str, Any], wait_s: float) -> dict[str, Any]:
+    async def _send_to_extension(self, payload: dict[str, Any], wait_s: float, tag: str = "") -> dict[str, Any]:
         """Send one message to the extension and wait for its result: at least ``wait_s``, and
         longer while the extension keeps saying it is still on the job (extension 0.5.0+ says so
         every 10 s, e.g. while Iván solves a verification; it enforces the real time limits)."""
         job_id = uuid.uuid4().hex
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         self.pending[job_id] = fut
+        if payload.get("type") == "job":
+            self.jobs[str(payload.get("site"))] = (job_id, tag)
         start = time.monotonic()
         try:
             await self.ws.send_json({**payload, "id": job_id})
@@ -270,9 +275,35 @@ class Bridge:
             self.alive.pop(job_id, None)
             if payload.get("type") == "job":
                 self.waiting.pop(str(payload.get("site")), None)
+                if self.jobs.get(str(payload.get("site")), ("",))[0] == job_id:
+                    self.jobs.pop(str(payload.get("site")), None)
+
+    def stop(self, tag: str) -> None:
+        """Iván stopped this question: if it is still waiting its turn at a chat site, it is never sent."""
+        if tag:
+            self.stopped.add(tag)
+
+    def cancel(self, site: str, tag: str | None = None) -> bool:
+        """Stop the job a chat site is doing ("parar"): it ends as "cancelled" at once, and the extension
+        (0.5.2+) stops driving the page; an older one finishes on its own, but nobody waits for it.
+        With ``tag``, only if that job belongs to that question (never another conversation's)."""
+        job_id, job_tag = self.jobs.get(site, ("", ""))
+        fut = self.pending.get(job_id)
+        if not job_id or fut is None or fut.done() or (tag is not None and tag != job_tag):
+            return False
+        if self.ws is not None and not self.ws.closed:
+            asyncio.ensure_future(self.ws.send_json({"type": "cancel", "id": job_id, "site": site}))
+        if not fut.done():
+            fut.set_result({"ok": False, "error": "cancelled"})
+        return True
+
+    def cancel_all(self) -> list[str]:
+        """"Parar todo": every chat site with a job in progress."""
+        return [site for site in list(self.jobs) if self.cancel(site)]
 
     async def send_job(self, site: str, name: str, prompt: str, *, site_config: dict[str, str] | None = None,
-                       timeout_s: float | None = None) -> dict[str, Any]:
+                       timeout_s: float | None = None, tag: str = "",
+                       wanted: Callable[[], bool] | None = None) -> dict[str, Any]:
         """One message to a chat site, always through the account guard (one at a time per site,
         spacing, daily cap, pause on account limits). ``site_config`` is for a site being added
         that is not saved yet. On failure: {"ok": False, "status", "error", "message", "detail"}."""
@@ -285,6 +316,10 @@ class Bridge:
             except GuardBlocked as blocked:
                 return {"ok": False, "status": 403, "error": "paused", "message": blocked.message_es, "detail": ""}
             try:
+                if (tag and tag in self.stopped) or (wanted is not None and not wanted()):
+                    # stopped while it waited its turn: nothing is sent
+                    return {"ok": False, "status": 409, "error": "cancelled", "detail": "",
+                            "message": f"{name}: {ERRORS['cancelled'][2]}"}
                 if not await self._ensure_extension():
                     return {"ok": False, "status": 503, "error": "bridge_unavailable", "detail": "",
                             "message": "Chrome no está conectado: abre Chrome con la extensión webllm cargada"}
@@ -292,6 +327,7 @@ class Bridge:
                 res = await self._send_to_extension(
                     {"type": "job", **payload, "prompt": prompt, "timeout_ms": int(timeout_s * 1000)},
                     timeout_s + self.human_wait_s,  # room for a human to solve a verification
+                    tag=tag,
                 )
                 res["latency"] = time.perf_counter() - t0
             finally:
@@ -452,7 +488,9 @@ class Bridge:
         prompt = flatten_messages(body.get("messages") or [])
         if not prompt.strip():
             return self._error(400, "el prompt está vacío", "empty_prompt")
-        res = await self.send_job(site, names[site], prompt)
+        transport = request.transport
+        res = await self.send_job(site, names[site], prompt, tag=request.headers.get("x-webllm-run", ""),
+                                  wanted=lambda: transport is not None and not transport.is_closing())
         if not res.get("ok"):
             detail = res.get("detail")
             message = res["message"] + (f" ({detail})" if detail and res["status"] == 502 else "")

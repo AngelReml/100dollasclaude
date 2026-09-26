@@ -40,7 +40,7 @@ from .broadcaster import (
     GatewayError, Outcome, TargetError, _run_target, _safe, check_gateway, new_run_id,
     resolve_targets, upstream_key, verify_run,
 )
-from .client import CONNECTION_ERROR, TIMEOUT, ChatResult
+from .client import CANCELLED, CONNECTION_ERROR, TIMEOUT, ChatResult
 from .config import AppConfig, ProviderConfig
 from .guard import Guard
 
@@ -94,6 +94,7 @@ class Answer:
     error: str = ""
     code: str = ""            # machine-readable reason when not ok (see error_code)
     notices: list[str] = field(default_factory=list)
+    model: str = ""           # the model that answered, as its gateway reported it
 
 
 @dataclass
@@ -333,12 +334,17 @@ async def run_flow(
     timeout_s: float | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     transport: httpx.AsyncBaseTransport | None = None,
+    stop: asyncio.Event | None = None,
 ) -> FlowRun:
-    """Run ``flow`` and return every step's result; raise FlowError / GatewayError before sending anything."""
+    """Run ``flow`` and return every step's result; raise FlowError / GatewayError before sending anything.
+
+    ``stop`` is Iván's "parar": once set, a call in progress ends as "cancelled" at once (whoever sets it also
+    tells the bridge, so a chat's job in Chrome stops too), nothing more is sent (no retry, no stand-in, no
+    later step), and the run still closes its journal."""
+    stopping = stop.is_set if stop is not None else (lambda: False)
     resolved = validate(cfg, flow)
     run_id = run_id or new_run_id()
     run_dir = cfg.paths.runs_dir / run_id
-    jpath = run_dir / journal.JOURNAL_NAME
     step_ids = {s.id for s in flow.steps}
     deps = {s.id: dependencies(s, step_ids) for s in flow.steps}
     results = {s.id: StepResult() for s in flow.steps}
@@ -351,36 +357,7 @@ async def run_flow(
                  target: str) -> Answer:
         nonlocal counter
         counter += 1
-        r = outcome.result
-        resp_file = None
-        if r.ok:
-            resp_file = f"responses/{counter:02d}-{_safe(step.id)}-{_safe(outcome.target.name)}.md"
-            (run_dir / resp_file).write_text(r.text, encoding="utf-8", newline="")
-        journal.append(jpath, {
-            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-            "run_id": run_id,
-            "kind": "flow",
-            "step": step.id,
-            "attempt": attempt,
-            "target": target,
-            "provider": outcome.target.name,
-            "model": r.model or outcome.target.model,
-            "requested_models": outcome.tried_models or [outcome.target.model],
-            "upstream": r.upstream_provider,
-            "prompt_sha256": message_sha,
-            "message_file": message_file,
-            "response_sha256": journal.sha256_text(r.text) if r.ok else None,
-            "response_file": resp_file,
-            "status": r.status,
-            "http_status": r.http_status,
-            "latency_s": round(r.latency_s, 3),
-            "error": r.error,
-            "code": error_code(r),
-            "notices": outcome.notices,
-        })
-        return Answer(target=target, provider=outcome.target.name, ok=r.ok, text=r.text if r.ok else "",
-                      seconds=round(r.latency_s, 1), error=_error_text(r), code=error_code(r),
-                      notices=list(outcome.notices))
+        return journal_call(run_dir, run_id, counter, step.id, message_file, message_sha, outcome, attempt, target)
 
     async with httpx.AsyncClient(transport=transport) as client:
         if any(p.gateway == "omniroute" for ps in resolved.values() for p in ps):
@@ -397,27 +374,44 @@ async def run_flow(
         async def call(step: Step, provider: ProviderConfig, message: str, target: str) -> Outcome:
             lock = locks.setdefault(upstream_key(provider.model), asyncio.Lock())
             async with lock:
+                if stopping():  # stopped while it was queued: never sent
+                    return Outcome(target=provider, result=ChatResult(status=CANCELLED, error="lo has parado tú"))
                 # Started only now: until here it was queued behind another call to the same place
                 # (the app shows "En cola", not a clock that runs before anything was sent).
                 await _emit(emit, {"type": "target_start", "step": step.id, "target": target,
                                    "label": _label(cfg, target), "provider": provider.name})
-                return await _run_target(provider, prompt=message, client=client, cfg=cfg, api_key=api_key,
-                                         guard=guard, timeout_s=timeout_s, notify=lambda _m: None,
-                                         bridge_key=bridge_key)  # guard waits show as "esperando"
+                work = asyncio.ensure_future(_run_target(
+                    provider, prompt=message, client=client, cfg=cfg, api_key=api_key, guard=guard,
+                    timeout_s=timeout_s, notify=lambda _m: None,  # guard waits show as "esperando"
+                    bridge_key=bridge_key, run_tag=run_id))
+                if stop is None:
+                    return await work
+                t0 = asyncio.get_running_loop().time()
+                stopper = asyncio.ensure_future(stop.wait())
+                try:
+                    await asyncio.wait({work, stopper}, return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    stopper.cancel()
+                if work.done():
+                    return work.result()
+                work.cancel()
+                await asyncio.gather(work, return_exceptions=True)
+                return Outcome(target=provider, result=ChatResult(
+                    status=CANCELLED, error="lo has parado tú", latency_s=asyncio.get_running_loop().time() - t0))
 
         async def ask(step: Step, target: str, message: str, message_file: str, message_sha: str) -> Answer:
             provider = resolved[target][0]
             outcome = await call(step, provider, message, target)
             answer = log_call(step, message_file, message_sha, outcome, "first", target)
-            if not answer.ok and step.on_error == "wait" and _retryable(outcome):
+            if not answer.ok and step.on_error == "wait" and _retryable(outcome) and not stopping():
                 await _emit(emit, {"type": "target_wait", "step": step.id, "target": target,
                                    "label": _label(cfg, target), "seconds": step.wait_s, "error": answer.error})
                 await sleep(step.wait_s)
                 outcome = await call(step, provider, message, target)
                 answer = log_call(step, message_file, message_sha, outcome, "retry", target)
-            if not answer.ok and step.on_error == "fallback":
+            if not answer.ok and step.on_error == "fallback" and not stopping():
                 for alt in step.fallback:
-                    if alt in step.to:
+                    if alt in step.to or stopping():
                         continue
                     await _emit(emit, {"type": "target_fallback", "step": step.id, "target": target,
                                        "label": _label(cfg, target), "provider": alt,
@@ -431,7 +425,7 @@ async def run_flow(
                                "label": _label(cfg, target), "provider": answer.provider,
                                "provider_label": _label(cfg, answer.provider), "ok": answer.ok,
                                "text": answer.text, "seconds": answer.seconds, "error": answer.error,
-                               "code": answer.code, "notices": answer.notices})
+                               "code": answer.code, "notices": answer.notices, "model": answer.model})
             return answer
 
         async def run_step(step: Step) -> None:
@@ -440,7 +434,7 @@ async def run_flow(
                 for d in deps[step.id]:
                     await done[d].wait()
                 res = results[step.id]
-                if stopped or any(results[d].status in (FAILED, SKIPPED) for d in deps[step.id]):
+                if stopped or stopping() or any(results[d].status in (FAILED, SKIPPED) for d in deps[step.id]):
                     res.status = SKIPPED
                     await _emit(emit, {"type": "step_done", "step": step.id, "status": SKIPPED})
                     return
@@ -465,18 +459,69 @@ async def run_flow(
 
     statuses = [r.status for r in results.values()]
     status = STOPPED if (FAILED in statuses or SKIPPED in statuses) else PARTIAL if PARTIAL in statuses else OK
+    verified = close_run(run_dir, run_id, flow.name, status, {sid: r.status for sid, r in results.items()})
+    await _emit(emit, {"type": "flow_done", "run_id": run_id, "status": status, "verified": verified,
+                       "steps": {sid: r.status for sid, r in results.items()}})
+    return FlowRun(run_id=run_id, run_dir=run_dir, status=status, steps=results, verified=verified)
+
+
+def journal_call(run_dir: Path, run_id: str, counter: int, step_id: str, message_file: str, message_sha: str,
+                 outcome: Outcome, attempt: str, target: str, extra: dict[str, Any] | None = None) -> Answer:
+    """Write one call's answer file and journal line; used by run_flow and by the gateway's direct calls."""
+    r = outcome.result
+    resp_file = None
+    if r.ok:
+        resp_file = f"responses/{counter:02d}-{_safe(step_id)}-{_safe(outcome.target.name)}.md"
+        (run_dir / resp_file).write_text(r.text, encoding="utf-8", newline="")
+    journal.append(run_dir / journal.JOURNAL_NAME, {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "run_id": run_id,
+        "kind": "flow",
+        "step": step_id,
+        "attempt": attempt,
+        "target": target,
+        "provider": outcome.target.name,
+        "model": r.model or outcome.target.model,
+        "requested_models": outcome.tried_models or [outcome.target.model],
+        "upstream": r.upstream_provider,
+        "prompt_sha256": message_sha,
+        "message_file": message_file,
+        "response_sha256": journal.sha256_text(r.text) if r.ok else None,
+        "response_file": resp_file,
+        "status": r.status,
+        "http_status": r.http_status,
+        "latency_s": round(r.latency_s, 3),
+        "error": r.error,
+        "code": error_code(r),
+        "notices": outcome.notices,
+        **(extra or {}),
+    })
+    return Answer(target=target, provider=outcome.target.name, ok=r.ok, text=r.text if r.ok else "",
+                  seconds=round(r.latency_s, 1), error=_error_text(r), code=error_code(r),
+                  notices=list(outcome.notices), model=r.model or outcome.target.model)
+
+
+def close_run(run_dir: Path, run_id: str, name: str, status: str, steps: dict[str, str]) -> bool:
+    """The run's last journal line and its manifest (against truncation); True when it verifies."""
+    jpath = run_dir / journal.JOURNAL_NAME
     last = journal.append(jpath, {
         "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-        "run_id": run_id, "kind": "flow_end", "name": flow.name, "status": status,
-        "steps": {sid: r.status for sid, r in results.items()},
+        "run_id": run_id, "kind": "flow_end", "name": name, "status": status, "steps": steps,
     })
     lines = sum(1 for x in jpath.read_text(encoding="utf-8").splitlines() if x.strip())
     (run_dir / "run.json").write_text(json.dumps({"run_id": run_id, "kind": "flow", "lines": lines,
                                                   "last_hash": last["hash"]}, indent=2), encoding="utf-8")
-    verified = verify_run(run_dir).ok
-    await _emit(emit, {"type": "flow_done", "run_id": run_id, "status": status, "verified": verified,
-                       "steps": {sid: r.status for sid, r in results.items()}})
-    return FlowRun(run_id=run_id, run_dir=run_dir, status=status, steps=results, verified=verified)
+    return verify_run(run_dir).ok
+
+
+def start_run(run_dir: Path, flow: Flow, step: Step, message: str) -> tuple[str, str]:
+    """For a call made outside run_flow: the run's folders, flow.json and the message; (file, sha256)."""
+    (run_dir / "messages").mkdir(parents=True, exist_ok=True)
+    (run_dir / "responses").mkdir(parents=True, exist_ok=True)
+    (run_dir / "flow.json").write_text(json.dumps(flow_to_dict(flow), indent=2, ensure_ascii=False), encoding="utf-8")
+    message_file = f"messages/{_safe(step.id)}.md"
+    (run_dir / message_file).write_text(message, encoding="utf-8", newline="")
+    return message_file, journal.sha256_text(message)
 
 
 def error_code(r: ChatResult) -> str:
@@ -490,6 +535,8 @@ def error_code(r: ChatResult) -> str:
         return ""
     if r.status == "skipped":
         return r.error or "cooldown"
+    if r.status == CANCELLED:
+        return "cancelled"
     code: Any = None
     message = ""
     try:
@@ -528,7 +575,7 @@ OWN_ERROR_CODES = frozenset({
     "login_required", "banned", "rate_limited", "challenge", "timeout", "extension_disconnected",
     "site_busy", "not_sent", "paused", "bridge_unavailable", "unknown_site", "model_not_found",
     "empty_prompt", "no_input", "insert_failed", "send_failed", "empty_answer", "extension_error",
-    "unauthorized", "unreachable",
+    "unauthorized", "unreachable", "cancelled",
 })
 # Whole words: a "load balancer" is not a balance, and "insufficient context" is not money.
 _CREDIT_TEXT = re.compile(r"insufficient[ _-]?(balance|credits?|funds|quota)|\bcredits?\b|\bbalance\b", re.I)

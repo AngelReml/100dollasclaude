@@ -45,6 +45,7 @@ class FakeWebllm:
         await resp.write(chunk({"reasoning_content": "Preguntando a Qwen…\n\n"}))
         await resp.write(b": webllm sigue\n\n")
         await resp.write(chunk({"content": "x" * 200_000}))  # a long answer in one line
+        await resp.write(b"data: esto no es json\n\n")  # a broken line must not break the answer
         await resp.write(chunk({}, webllm={"avisos": ["Qwen no ha visto el archivo."]}))
         await resp.write(b"data: [DONE]\n\n")
         return resp
@@ -101,8 +102,40 @@ def test_a_question_carries_the_conversation_files_modes_and_ids_and_streams_bac
     assert sent["webllm"]["chat_id"] == "c-1" and sent["webllm"]["modes"] == ["pensar"]
     assert [(f["name"], f["sha256"]) for f in sent["webllm"]["files"]] == [("foto.png", hashlib.sha256(png).hexdigest())]
     assert all(line.startswith("data:") and "[DONE]" not in line for line in lines)  # no keep-alives, no double end
-    assert len(lines) == 3 and len(json.loads(lines[1][5:])["choices"][0]["delta"]["content"]) == 200_000
+    # webllm's last word (its avisos) is not part of the answer: it goes to the status line only; a broken
+    # line is dropped
+    assert len(lines) == 2 and len(json.loads(lines[1][5:])["choices"][0]["delta"]["content"]) == 200_000
+    assert not any("avisos" in line or "no es json" in line for line in lines)
     assert statuses[0] == {"description": "Preguntando a Qwen…", "done": False, "hidden": False}
+    assert statuses[-1] == {"description": "Qwen no ha visto el archivo.", "done": True, "hidden": False}
+
+
+def test_an_error_in_the_middle_of_the_answer_reaches_open_webui():
+    """webllm streams a failure as `data: {"error": ...}` (no choices); Open WebUI shows that and keeps it in
+    the conversation, so the pipe must pass it on, and the avisos still stay on view."""
+    class Failing(FakeWebllm):
+        async def chat(self, request):
+            self.requests.append(await request.json())
+            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await resp.prepare(request)
+            await resp.write(b'data: {"choices": [{"delta": {"reasoning_content": "Preguntando a Qwen\u2026"}}]}\n\n')
+            await resp.write(('data: ' + json.dumps({"error": {"message": "Lo has parado tú.", "code": "cancelled"},
+                                                      "webllm": {"avisos": ["Qwen no ha visto el archivo."]}}) + "\n\n").encode())
+            await resp.write(b"data: [DONE]\n\n")
+            return resp
+
+    statuses = []
+
+    async def emitter(event):
+        statuses.append(event["data"])
+
+    async def go(pipe):
+        gen = await pipe.pipe({"model": "webllm.qwen", "messages": [{"role": "user", "content": "hola"}]},
+                              __event_emitter__=emitter)
+        return [line async for line in gen]
+
+    lines = run(with_webllm(Failing(), go))
+    assert len(lines) == 2 and json.loads(lines[1][5:])["error"]["message"] == "Lo has parado tú."
     assert statuses[-1] == {"description": "Qwen no ha visto el archivo.", "done": True, "hidden": False}
 
 

@@ -47,6 +47,7 @@ guard:
   min_spacing_s: 20
   daily_cap: 150
   cooldown_hours: 6
+  api_daily_cap: 300  # most questions a day to each AI by API (one AI: daily_cap in its provider)
 blocked_model_prefixes:
 - codex/
 - cx/

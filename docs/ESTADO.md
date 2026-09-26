@@ -43,6 +43,24 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F2: webllm, la única conexión de Open WebUI)
+
+- **La salida de F2 se cumple en la nube.** Desde Open WebUI responden una IA web, una por API y una de tu PC, y el registro de webllm tiene las tres. Detalle y tu guía: `docs/F2-pasarela.md`.
+- **Parar:**
+  - el cuadrado «Detener» de Open WebUI corta la espera al momento;
+  - **«Parar todo»** en el Inicio de la app para todo lo que esté en marcha, venga de Open WebUI o de la app;
+  - una pregunta parada que aún esperaba turno no se envía nunca.
+  - Ojo: webllm no pulsa el botón de parar de cada web (eso llega en F4). Si la pregunta ya se envió, la web puede terminar su respuesta en la ventanita, pero no se usa.
+- **Herramientas:** las IAs por API pueden usar herramientas de Open WebUI (probado con una que da la hora). Open WebUI **te pide permiso antes** de cada uso. Tras «Permitir» queda una ruedita «Preparando…» girando: es un fallo de Open WebUI, la respuesta está completa.
+- **Nada se cambia solo:** si una IA falla, se dice y no se pregunta a otra. Cada respuesta por API o de tu PC dice qué modelo respondió.
+- **Tope diario por API:** como mucho 300 preguntas al día a cada una (`data/config.yaml`, `api_daily_cap`). Los chats siguen con 150. Las de tu PC, sin tope. La app y Open WebUI enseñan los mismos números.
+- **Claves:** una prueba revisa que ninguna clave vaya a GitHub. No las he pasado al almacén de claves de Windows: webllm no tiene claves propias que mover (explicado en `docs/F2-pasarela.md`).
+- **Qué hacer:**
+  1. `ACTUALIZAR`;
+  2. ↻ en «webllm puente» en `chrome://extensions` (debe poner **0.5.2**);
+  3. de nuevo `herramientas\poner-en-openwebui.cmd`;
+  4. las pruebas de la guía.
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F1: Open WebUI como cara)
 
 - **Todo lo que se puede probar en la nube, bien.** Open WebUI 0.11.4 muestra tus IAs de webllm en su selector y les pregunta a través de webllm, con el guardián de tus cuentas y el registro de siempre.
@@ -57,7 +75,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   4. doble clic en `herramientas\poner-en-openwebui.cmd`.
 - **Aún no:**
   - los archivos y los modos llegan a webllm, pero todavía no se pasan a las webs (fase F4). La respuesta lo dice a la vista;
-  - la prueba de una herramienta con permiso (comprobación 5) llega con F2.
+  - la prueba de una herramienta con permiso (comprobación 5) llega con F2 (hecha: ver arriba).
 
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F0)
 

@@ -1,6 +1,9 @@
-"""PLAN-v5 F1 from scratch: a fresh Open WebUI, webllm installed in it by scripts/openwebui_setup.py, and
-the checks on the real screen (tests/openwebui/f1_checks.mjs). Skipped unless WEBLLM_OPENWEBUI_PY points
-at a Python that has Open WebUI (it is 7 GB: `uv venv -p 3.11 .venv && uv pip install open-webui`)."""
+"""PLAN-v5 F1 + F2 from scratch: a fresh Open WebUI, webllm installed in it by scripts/openwebui_setup.py, and
+the checks on the real screen: tests/openwebui/f1_checks.mjs (10), then f2_checks.mjs (8: a harmless MCP
+tool, tests/openwebui/mcp_hora.py, used by an AI through webllm only after "Allow"; Open WebUI's
+"Detener" stops a web chat's long answer; a web chat, an API and a model on this PC all answer). Skipped unless
+WEBLLM_OPENWEBUI_PY points at a Python that has Open WebUI (it is 7 GB: `uv venv -p 3.11 .venv &&
+uv pip install open-webui`; it brings the `mcp` package the tool server needs)."""
 
 from __future__ import annotations
 
@@ -43,6 +46,16 @@ def wait_up(url: str, seconds: float) -> None:
     raise TimeoutError(f"{url} did not come up")
 
 
+def wait_port(port: int, seconds: float) -> None:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        with socket.socket() as s:
+            if s.connect_ex(("127.0.0.1", port)) == 0:
+                return
+        time.sleep(0.5)
+    raise TimeoutError(f"port {port} did not open")
+
+
 def post(url: str, body: dict, token: str = "") -> dict:
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})})
@@ -50,7 +63,7 @@ def post(url: str, body: dict, token: str = "") -> dict:
 
 
 def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
-    ow_port, demo_port = free_port(), free_port()
+    ow_port, demo_port, mcp_port = free_port(), free_port(), free_port()
     ow_url, demo_url = f"http://127.0.0.1:{ow_port}", f"http://127.0.0.1:{demo_port}"
     env = {**os.environ, "DATA_DIR": str(tmp_path / "ow"), "WEBUI_SECRET_KEY": "prueba", "OFFLINE_MODE": "true",
            "HF_HUB_OFFLINE": "1", "ENABLE_OLLAMA_API": "false", "ENABLE_OPENAI_API": "false", "DEFAULT_LOCALE": "es-ES",
@@ -59,7 +72,9 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
     procs = [subprocess.Popen([str(Path(OWPY).parent / "open-webui"), "serve", "--host", "127.0.0.1", "--port", str(ow_port)],
                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
              subprocess.Popen([sys.executable, str(ROOT / "scripts" / "app_demo.py"), "--port", str(demo_port),
-                               "--data", str(tmp_path / "demo")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+                               "--data", str(tmp_path / "demo")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL),
+             subprocess.Popen([OWPY, str(ROOT / "tests" / "openwebui" / "mcp_hora.py"), str(mcp_port)],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
     try:
         wait_up(f"{ow_url}/health", 240)
         wait_up(f"{demo_url}/health", 30)
@@ -74,6 +89,13 @@ def test_open_webui_is_webllms_face_on_the_real_screen(tmp_path):
                                                "WEBLLM_DATA": str(tmp_path / "demo"), "OUT": str(tmp_path / "capturas")})
         lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
         assert out.returncode == 0 and len(lines) == 10 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
+        wait_port(mcp_port, 30)
+        out = subprocess.run(["node", str(ROOT / "tests" / "openwebui" / "f2_checks.mjs")], capture_output=True, text=True,
+                             timeout=300, env={**os.environ, "OW_URL": ow_url, "OW_EMAIL": email, "OW_PASSWORD": password,
+                                               "WEBLLM_DATA": str(tmp_path / "demo"), "OUT": str(tmp_path / "capturas-f2"),
+                                               "MCP_URL": f"http://127.0.0.1:{mcp_port}/mcp"})
+        lines = [x for x in out.stdout.splitlines() if x.startswith(("BIEN", "FALLO"))]
+        assert out.returncode == 0 and len(lines) == 8 and all(x.startswith("BIEN") for x in lines), out.stdout + out.stderr
     finally:
         for p in procs:
             p.terminate()

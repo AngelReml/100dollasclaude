@@ -301,7 +301,7 @@ Cada fase tiene:
 
 ### F1 — Prueba de la cara (decide D1 con datos)
 
-> **Estado (26-sep-2026):** en la nube pasan la 1, 2, 3, 4, 7 (el mecanismo), 9, 11 y 12; la 5 llega con F2. Faltan en tu PC la 6, 7 (con tu prompt-forge), 8 y 10. Detalle: `docs/F1-cara.md`.
+> **Estado (26-sep-2026):** en la nube pasan la 1, 2, 3, 4, 5 (con F2), 7 (el mecanismo), 9, 11 y 12. Faltan en tu PC la 6, 7 (con tu prompt-forge), 8 y 10. Detalle: `docs/F1-cara.md`.
 
 - **Puerta:** F0 cerrada.
 - **Qué:** conectar Open WebUI a webllm con una pipe mínima de webllm y pasar esta lista de 12 comprobaciones:
@@ -328,6 +328,8 @@ Cada fase tiene:
   - La decisión, con la lista rellena, se apunta en `docs/ESTADO.md`.
 
 ### F2 — webllm como pasarela única
+
+> **Estado (26-sep-2026):** la salida se cumple en la nube (web + API + tu PC responden desde Open WebUI y el registro las tiene), con las 8 comprobaciones en pantalla y las pruebas de código. Diferencias con lo pedido, a propósito: la ficha es por tipo de IA (la de cada una llega con F3/F4); "Comité" y "Automático" no se listan hasta que funcionen (F7/F8); las claves no van al almacén de Windows porque webllm no tiene claves propias (en su lugar, un test de claves en el repositorio); "Parar" no pulsa el botón de parar de cada web (F4). Falta tu prueba en el PC. Detalle: `docs/F2-pasarela.md`.
 
 - **Puerta:** F1 decidida.
 - **Qué:**

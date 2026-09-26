@@ -45,6 +45,8 @@ PROBLEMS: dict[str, tuple[str, str]] = {
     "unauthorized": ("{ai} no acepta la clave",
                      "La clave guardada en OmniRoute no vale o ha caducado. Revísala en el panel de OmniRoute."),
     "offline": ("webllm no responde", "Cierra esta ventana y vuelve a abrir webllm con su icono."),
+    "cancelled": ("Lo has parado tú", "Si ya se había enviado, la web puede haber contestado igualmente; "
+                                      "pregunta otra vez cuando quieras."),
     "task_for_web_chat": ("Petición interna rechazada",
                           "Open WebUI quería usar {ai} para una tarea interna (un título, unas etiquetas). "
                           "webllm no gasta mensajes de tus cuentas en eso."),

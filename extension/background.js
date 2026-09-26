@@ -244,7 +244,13 @@ class JobError extends Error {
   constructor(code, detail) { super(code); this.code = code; this.detail = detail || ""; }
 }
 
-async function waitForHuman(site, tabId, what) {
+// "Parar" (Open WebUI's stop button, or "Parar todo"): the bridge names the job; it stops at the next look.
+const cancelled = new Set();
+function stillWanted(job) {
+  if (job && cancelled.has(job.id)) throw new JobError("cancelled", "parado por Iván");
+}
+
+async function waitForHuman(site, tabId, what, job) {
   humanStart(site, "challenge");
   try {
     const tab = await chrome.tabs.get(tabId);
@@ -254,6 +260,7 @@ async function waitForHuman(site, tabId, what) {
     const t0 = Date.now();
     while (Date.now() - t0 < HUMAN_WAIT_MS) {
       await sleep(2000);
+      stillWanted(job);
       const st = await call(tabId, "state", SITES[site]);
       if (!st.challenge) return;
     }
@@ -283,8 +290,9 @@ async function runJob(job) {
   let st;
   const boxClock = jobClock();
   for (;;) {
+    stillWanted(job);
     st = await call(tabId, "state", site);
-    if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
+    if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
     checkBlocks(job.site, st);
     if (st.input) break;
     if (boxClock() > 30000) throw new JobError("no_input", st.url);
@@ -292,6 +300,7 @@ async function runJob(job) {
   }
 
   // 2. type and send
+  stillWanted(job);
   const ins = await call(tabId, "insert", site, job.prompt);
   if (!ins || !ins.ok) throw new JobError("insert_failed", JSON.stringify(ins));
   await sleep(500);
@@ -307,8 +316,9 @@ async function runJob(job) {
   try {
     for (let tries = 0; ; tries++) {
       await sleep(2500);
+      stillWanted(job);
       st = await call(tabId, "state", site);
-      if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
+      if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
       checkBlocks(job.site, st);
       const stillThere = st.inputLen > 0 && st.inputLen >= before.inputLen * 0.5 && st.bodyLen <= before.bodyLen + 20;
       if (!stillThere) break;
@@ -342,10 +352,11 @@ async function runJob(job) {
   let changed = false;
   while (answerClock() < limit) {
     await sleep(1500);
+    stillWanted(job);
     if (Date.now() - jobStart > JOB_HARD_CAP_MS) break;
     st = await call(tabId, "state", site);
     if (await coveredWindow(tabId, st, job.site)) continue;
-    if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge); continue; }
+    if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
     checkBlocks(job.site, st);
     const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
     if (sig !== lastSig) { lastSig = sig; stable = 0; changed = true; } else { stable++; }
@@ -395,6 +406,7 @@ async function handleJob(job) {
       sendToBridge({ type: "result", id: job.id, ok: false, error: code, detail });
     } finally {
       delete runningJob[job.site];
+      cancelled.delete(job.id);
       humanEnd(job.site);
       jobFinished(job.site);
     }
@@ -522,6 +534,7 @@ async function handleShow(msg) {
 }
 
 function onMessage(msg) {
+  if (msg.type === "cancel") { cancelled.add(msg.id); return; }
   ensureSite(msg);
   if (msg.type === "add_site") handleAddSite(msg);
   else if (msg.type === "job") handleJob(msg);

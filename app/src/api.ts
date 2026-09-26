@@ -167,6 +167,8 @@ const post = <T>(path: string, body: unknown) => call<T>(path, { method: "POST",
 export const api = {
   estado: () => call<Estado>("/api/estado"),
   reanudar: (ia: string) => post<{ ok: boolean; cleared: boolean }>("/api/reanudar", { ia }),
+  /** "Parar todo" (PLAN-v5 D9): every question in progress, from here or from Open WebUI, and its job in Chrome. */
+  pararTodo: () => post<{ parados: number; chats: string[] }>("/gw/v1/parar", {}),
   comprobar: (ia: string) => post<{ session: Session }>("/api/comprobar", { ia }),
   conectar: (ia: string) => post<{ session: Session; shown: boolean }>("/api/conectar", { ia }),
   encenderOmniroute: () => post<{ ok: boolean; already: boolean }>("/api/encender-omniroute", {}),

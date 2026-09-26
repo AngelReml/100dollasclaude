@@ -152,7 +152,7 @@ try {
   await send(page, "¿Qué dicen estos archivos?");
   await finished(page);
   await shot(page, "08-adjuntos-respuesta");
-  const stillSays = await page.getByText(/no ha visto los archivos/).count();
+  const stillSays = await page.getByText(/no ha visto «prueba\.pdf», «prueba\.png»/).count(); // names each file (F2)
   say(stillSays > 0, "12. al terminar sigue a la vista que la IA aún no ha visto los archivos (lo que ves es lo que se usó)");
   const files = lastGatewayLine(since)?.files ?? [];
   const byHash = Object.fromEntries(files.map((f) => [f.sha256, f.name]));

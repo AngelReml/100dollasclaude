@@ -1,4 +1,4 @@
-import { AppWindow, Cpu, LifeBuoy, Plus, Power, Server, MessageSquarePlus, MonitorCheck, TestTube2, Unplug } from "lucide-react";
+import { AppWindow, Cpu, LifeBuoy, Plus, Power, Server, MessageSquarePlus, MonitorCheck, OctagonX, TestTube2, Unplug } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { api, ApiError, type Ai } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
@@ -144,6 +144,32 @@ function PieceCard({
   );
 }
 
+/** "Parar todo": stops every question in progress and its job in Chrome, and says what it stopped. */
+function StopAll() {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const stop = async () => {
+    setBusy(true);
+    try {
+      const r = await api.pararTodo();
+      const what = [
+        r.parados ? (r.parados === 1 ? "1 pregunta" : `${r.parados} preguntas`) : "",
+        r.chats.length ? (r.chats.length === 1 ? "1 chat de la ventanita" : `${r.chats.length} chats de la ventanita`) : "",
+      ].filter(Boolean);
+      toast(what.length ? `Parado: ${what.join(" y ")}.` : "No había nada en marcha.");
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : "No se pudo parar.", "bad");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Button variant="secondary" size="lg" icon={<OctagonX size={20} aria-hidden />} onClick={stop} disabled={busy}>
+      {busy ? "Parando…" : "Parar todo"}
+    </Button>
+  );
+}
+
 export function Inicio() {
   const { estado, offline } = useStore();
   const openGuide = useOpenGuide();
@@ -154,9 +180,12 @@ export function Inicio() {
       title="Inicio"
       subtitle={estado ? `${ready} de ${estado.ais.length} IAs listas para usar.` : "Mirando cómo está todo…"}
       action={
-        <Button variant="primary" size="lg" icon={<MessageSquarePlus size={20} aria-hidden />} onClick={() => go("preguntar")}>
-          Hacer una pregunta
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <StopAll />
+          <Button variant="primary" size="lg" icon={<MessageSquarePlus size={20} aria-hidden />} onClick={() => go("preguntar")}>
+            Hacer una pregunta
+          </Button>
+        </div>
       }
     >
       {offline && (

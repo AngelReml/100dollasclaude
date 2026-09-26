@@ -15,6 +15,8 @@ Everything the app talks to is real (bridge, app API, chain engine, journal, gua
   as extension 0.5.0 reports it, before answering;
 - a question with "(demo: límite)" in it makes Nemotron fail the way OpenRouter does when its free
   quota is used up (HTTP 429, the number 429 in error.code), to see the card Iván gets;
+- the fake OmniRoute calls a tool when the question brings tools (the first one, no arguments) and answers
+  with what the tool said; it streams when asked to (PLAN-v5 F2, check 5: a tool that asks first);
 - a question with "(demo: N minutos)" in it makes the chat take N minutes to answer, saying
   "still on it" every 10 s like the real extension (PLAN-v5 F1, check 3: long answers are not cut).
 Nothing leaves this machine. Used to look at the app and take its screenshots in the cloud,
@@ -106,7 +108,15 @@ def fake_omniroute() -> web.Application:
         body = await request.json()
         model = body["model"]
         await asyncio.sleep(1.2 if model.startswith("groq") else 2.5)
-        prompt = body["messages"][-1]["content"]
+        last = body["messages"][-1]
+        if last.get("role") == "tool":
+            return await answer(request, body, {"content": f"Según tu herramienta: {last.get('content')}"})
+        if body.get("tools"):
+            call = {"id": "call_1", "type": "function",
+                    "function": {"name": body["tools"][0]["function"]["name"], "arguments": "{}"}}
+            return await answer(request, body, {"content": None, "tool_calls": [call]}, "tool_calls")
+        prompt = last["content"] if isinstance(last["content"], str) else " ".join(
+            p.get("text", "") for p in last["content"] if isinstance(p, dict))
         key = "zai" if model.startswith("zai") else "groq" if model.startswith("groq") else "nemotron"
         if key == "nemotron" and "(demo: límite)" in prompt:
             return web.json_response({"error": {"code": 429, "message": "Rate limit exceeded: free-models-per-day. "
@@ -115,8 +125,26 @@ def fake_omniroute() -> web.Application:
         if "critica" in prompt.lower() or "Otra IA" in prompt or "ojo crítico" in prompt:
             text = ("**Mi opinión:** la respuesta es correcta y clara. Le añadiría que un poco de inflación "
                     "es normal (alrededor del 2 %) y que lo peligroso es cuando sube muy deprisa.")
-        return web.json_response({"id": "x", "object": "chat.completion", "model": model,
-                                  "choices": [{"index": 0, "message": {"role": "assistant", "content": text}}]})
+        return await answer(request, body, {"content": text})
+
+    async def answer(request, body, message, finish="stop"):
+        model = body["model"]
+        if not body.get("stream"):
+            return web.json_response({"id": "x", "object": "chat.completion", "model": model, "choices": [
+                {"index": 0, "message": {"role": "assistant", **message}, "finish_reason": finish}]})
+        resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+        await resp.prepare(request)
+        text = message.get("content") or ""
+        deltas = [{"role": "assistant"}] + [{"content": text[i:i + 40]} for i in range(0, len(text), 40)]
+        for n, c in enumerate(message.get("tool_calls") or []):
+            deltas.append({"tool_calls": [{"index": n, **c}]})
+        for i, delta in enumerate(deltas + [{}]):
+            chunk = {"id": "x", "object": "chat.completion.chunk", "model": model,
+                     "choices": [{"index": 0, "delta": delta, "finish_reason": finish if i == len(deltas) else None}]}
+            await resp.write(f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n".encode())
+            await asyncio.sleep(0.05)
+        await resp.write(b"data: [DONE]\n\n")
+        return resp
 
     app = web.Application()
     app.router.add_get("/api/health", health)
@@ -159,6 +187,8 @@ async def fake_extension(port: int) -> None:
             # the bridge then sends the test message ("pong") as a normal, guarded job
             await ws.send_json({"type": "add_ready", "add_id": add_id, "icon": DEMO_ICON})
 
+        cancelled: set[str] = set()  # "parar" (like the real extension 0.5.2: the job just stops)
+
         async def answer(job):
             if job.get("type") == "add_site":
                 return await add_site(job)
@@ -168,13 +198,21 @@ async def fake_extension(port: int) -> None:
                 if not logged_in.get(site, True):
                     asyncio.create_task(log_in_later(site))
                 return
-            slow = re.search(r"\(demo: (\d+) minutos?\)", job.get("prompt", ""))
+            # only the last question counts: Open WebUI sends the whole conversation, and an earlier
+            # "(demo: 3 minutos)" must not make every later question slow too
+            last = job.get("prompt", "").rsplit("=== USER ===", 1)[-1]
+            slow = re.search(r"\(demo: (\d+) minutos?\)", last)
             if slow:
                 until = time.monotonic() + 60 * int(slow.group(1))
+                beat = 0.0
                 while time.monotonic() < until:
-                    await ws.send_json({"type": "job_alive", "id": job["id"], "site": site, "waiting": None})
-                    await asyncio.sleep(min(10, max(0.1, until - time.monotonic())))
-            if site == "qwen" and "(demo: verificación)" in job.get("prompt", ""):
+                    if job["id"] in cancelled:
+                        return
+                    if time.monotonic() - beat >= 10:  # like the real extension: "still writing" every 10 s
+                        beat = time.monotonic()
+                        await ws.send_json({"type": "job_alive", "id": job["id"], "site": site, "waiting": None})
+                    await asyncio.sleep(min(0.5, max(0.1, until - time.monotonic())))
+            if site == "qwen" and "(demo: verificación)" in last:
                 for waiting in ["challenge"] * 8 + [None]:
                     await ws.send_json({"type": "job_alive", "id": job["id"], "site": site, "waiting": waiting})
                     await asyncio.sleep(1)
@@ -199,6 +237,8 @@ async def fake_extension(port: int) -> None:
             job = json.loads(msg.data)
             if job.get("type") in ("job", "diagnose", "show", "add_site"):
                 asyncio.create_task(answer(job))
+            elif job.get("type") == "cancel":
+                cancelled.add(str(job.get("id")))
 
 
 async def main(port: int, data: Path, chrome: bool = True, limit_s: float = 30) -> None:

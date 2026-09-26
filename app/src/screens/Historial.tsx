@@ -132,6 +132,7 @@ function HistoryList() {
 
 function HistoryAnswerCard({ a, onPass, question }: { a: HistoryAnswer; question: string; onPass: (a: HistoryAnswer) => void }) {
   const toast = useToast();
+  const stopped = !a.ok && a.code === "cancelled";
   return (
     <Card className="flex min-w-0 flex-col">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
@@ -140,10 +141,10 @@ function HistoryAnswerCard({ a, onPass, question }: { a: HistoryAnswer; question
           <p className="truncate text-[17px] font-semibold">{a.provider_label}</p>
           {a.provider !== a.target && <p className="text-[15px] text-muted">en lugar de {a.label}</p>}
         </div>
-        <DoneBadge ok={a.ok}>{a.ok ? `Respondió en ${a.seconds} s` : "No respondió"}</DoneBadge>
+        <DoneBadge ok={a.ok}>{a.ok ? `Respondió en ${a.seconds} s` : stopped ? "Parado por ti" : "No respondió"}</DoneBadge>
       </div>
       <div className="max-h-[560px] overflow-y-auto px-5 py-4">
-        {a.ok ? <Markdown text={a.text} /> : <p className="text-bad-ink">{a.error || "No respondió."}</p>}
+        {a.ok ? <Markdown text={a.text} /> : <p className="text-bad-ink">{stopped ? "Lo has parado tú." : a.error || "No respondió."}</p>}
       </div>
       {a.ok && (
         <div data-footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">

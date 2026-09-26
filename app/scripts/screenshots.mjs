@@ -99,6 +99,30 @@ async function waitingForYou(page, tag) {
   await waitAnswers(page);
 }
 
+// "Parar todo" (PLAN-v5 F2): a question to a chat that takes minutes; from Inicio, one click stops it and
+// its job in Chrome, and says what it stopped; the question's card says "Lo has parado tú".
+async function stopAll(page, tag) {
+  await page.goto(base + "#/preguntar");
+  await page.getByRole("button", { name: /^IAs: / }).click();
+  await page.getByRole("menuitem", { name: "Ninguna" }).click();
+  await page.getByRole("menuitemcheckbox", { name: /Qwen/ }).click();
+  await page.keyboard.press("Escape");
+  await page.getByLabel("Tu pregunta").fill("Resume este libro (demo: 3 minutos)");
+  await page.getByRole("button", { name: /^Preguntar a \d/ }).click(); // not "Preguntar a z.ai" left by apiLimit
+  await page.getByText(/Esperando…/).first().waitFor();
+  await page.goto(base + "#/");
+  const stop = page.getByRole("button", { name: "Parar todo" });
+  await stop.waitFor();
+  await shot(page, `${tag}-21-inicio-parar-todo`);
+  await stop.click();
+  await page.getByText("Parado: 1 pregunta y 1 chat de la ventanita.").waitFor({ timeout: 10000 });
+  await shot(page, `${tag}-22-parado`);
+  await page.goto(base + "#/historial");
+  await page.getByRole("link").filter({ hasText: "Resume este libro" }).first().click();
+  await page.getByText(/Lo has parado tú/).first().waitFor({ timeout: 10000 });
+  await shot(page, `${tag}-23-historial-parado`);
+}
+
 // An API AI out of free quota (OpenRouter's 429, F0): it says so, shows what the service answered
 // and offers to ask another AI, which only happens when Iván presses it.
 async function apiLimit(page, tag) {
@@ -188,6 +212,7 @@ async function run(theme, width, full) {
     await addAnAi(page, tag);
     await waitingForYou(page, tag);
     await apiLimit(page, tag);
+    await stopAll(page, tag);
   }
   await browser.close();
 }

@@ -19,6 +19,7 @@ HTTP_ERROR = "http_error"
 TIMEOUT = "timeout"
 MALFORMED = "malformed"
 CONNECTION_ERROR = "connection_error"
+CANCELLED = "cancelled"  # Iván stopped it (the stop button, or "Parar todo")
 
 # OmniRoute per-request opt-outs: no response cache (it would replay old
 # answers), no memory/skills injection and no prompt compression, so the
@@ -91,6 +92,7 @@ async def chat(
     timeout_s: float,
     temperature: float | None = 0.0,
     max_tokens: int | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> ChatResult:
     """Send one user prompt and wait for the full (non-streamed) answer."""
     payload: dict[str, Any] = {
@@ -108,7 +110,7 @@ async def chat(
         resp = await client.post(
             f"{base_url.rstrip('/')}/chat/completions",
             json=payload,
-            headers={**auth_headers(api_key), **TRANSPARENT_HEADERS},
+            headers={**auth_headers(api_key), **TRANSPARENT_HEADERS, **(extra_headers or {})},
             timeout=timeout_s,
         )
     except httpx.TimeoutException as exc:

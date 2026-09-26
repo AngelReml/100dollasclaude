@@ -1,17 +1,21 @@
 """webllm as the one connection of the face (PLAN-v5 D2): an OpenAI-compatible API under /gw/v1.
 
 Every AI webllm knows is a "model" here: the chat sites in Chrome, the API models (OmniRoute) and
-the models on this PC. A question goes through the same engine as the app (flows.run_flow): the
-account guard, the journal with its green padlock, the history, the error codes. While it runs,
-the answer's thinking block (OpenAI ``reasoning_content``) says what is happening in plain Spanish,
-including "te espera" while a chat waits for Iván; SSE comments keep long waits alive.
+the models on this PC.
+- A chat site: the question goes through the same engine as the app (flows.run_flow: the account
+  guard, the journal with its green padlock, the history, the error codes). While it runs, the
+  answer's thinking block (OpenAI ``reasoning_content``) says what is happening, "te espera" included.
+- An AI by API or on this PC: the request goes as it came (tools included) and the answer streams back
+  as it is written; the daily cap (budget.py) and the stand-ins configured for it apply, and the call is
+  journaled in the same shape as a one-step flow.
+Either way: SSE comments keep long waits alive; the last chunk carries ``webllm.avisos``, what Iván must
+still see (D21: what you see is what was used); if the face goes away (its stop button) or "Parar todo"
+is pressed, the work stops, the Chrome job included, and the journal says so.
 
 Webllm's own fields travel in the request body under ``webllm``:
     {"chat_id", "message_id", "task", "files": [{"name", "mime", "data" (base64), "sha256"?}], "modes": [...]}
-Files are checked (size, sha256) and recorded in the journal; handing them to the web chats is
-phase F4, and until then the answer says so (nothing is silently dropped: D21).
-A ``task`` (a title, tags... that Open WebUI generates in the background) never reaches a web chat:
-it would spend messages of Iván's accounts.
+Files are checked (size, sha256) and recorded in the journal; handing them to the web chats is phase F4.
+A ``task`` (a title, tags... that Open WebUI generates in the background) never reaches a web chat.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import contextlib
 import hashlib
 import json
 import re
@@ -28,14 +33,18 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from aiohttp import web
 
 from . import flows, journal
 from .appapi import MAX_PROMPT, site_of
-from .broadcaster import GatewayError, new_run_id
-from .client import _content_text
+from .broadcaster import SKIPPED as _SKIPPED, GatewayError, Outcome, new_run_id, upstream_key
+from .budget import budget_for
+from .client import (CANCELLED, CONNECTION_ERROR, HTTP_ERROR, MALFORMED, OK, TIMEOUT, TRANSPARENT_HEADERS, ChatResult,
+                     _content_text, auth_headers)
 from .config import ProviderConfig
 from .guard import Guard
+from .local import server_lock
 from .omniroute import load_api_key
 from .problems import WAITING_SHORT, problem_text
 
@@ -44,6 +53,9 @@ MAX_FILES_BYTES = 100 * 1024 * 1024
 HEARTBEAT_S = 10.0
 KIND_LABEL = {"bridge": "web", "omniroute": "API", "local": "tu PC"}
 DATA_URL = re.compile(r"^data:([\w.+-]+/[\w.+-]+);base64,(.*)$", re.S)
+# What an OpenAI-style request may carry besides model/messages/stream, passed on as it came.
+DIRECT_KEYS = ("tools", "tool_choice", "parallel_tool_calls", "temperature", "top_p", "max_tokens",
+               "max_completion_tokens", "stop", "seed", "response_format")
 
 
 class RequestError(Exception):
@@ -70,14 +82,14 @@ def _inline_images(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             hit = DATA_URL.match(url or "")
             if hit:
                 out.append({"name": f"imagen-{n + 1}.{hit.group(1).split('/')[-1]}", "mime": hit.group(1),
-                            "data": hit.group(2)})
+                            "data": hit.group(2), "inline": True})
         break
     return out
 
 
 def decode_files(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Check the files sent with a question: base64, size limits, and the sha256 when one is given.
-    Returns [{"name", "mime", "size", "sha256", "bytes"}] without duplicates (same content)."""
+    Returns [{"name", "mime", "size", "sha256", "bytes", "inline"}] without duplicates (same content)."""
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     total = 0
@@ -101,7 +113,7 @@ def decode_files(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         seen.add(digest)
         out.append({"name": name, "mime": str(item.get("mime") or "application/octet-stream")[:100],
-                    "size": len(data), "sha256": digest, "bytes": data})
+                    "size": len(data), "sha256": digest, "bytes": data, "inline": bool(item.get("inline"))})
     return out
 
 
@@ -109,13 +121,89 @@ def _size(n: int) -> str:
     return f"{n / 1024 / 1024:.1f} MB".replace(".", ",") if n >= 1024 * 1024 else f"{max(1, round(n / 1024))} KB"
 
 
+def card(p: ProviderConfig, cap: int | None) -> str:
+    """One line about an AI for the face (its description under the name): what it costs, how it goes."""
+    if p.gateway == "bridge":
+        return (f"Chat de tu Chrome: gasta mensajes de tu cuenta (webllm la protege: como mucho {cap} al día). "
+                "Va despacio; puede pedirte una verificación.")
+    if p.gateway == "local":
+        return "En tu PC: gratis y privada; va a la velocidad de tu ordenador."
+    return (f"Por API: gratis dentro del límite del servicio (y como mucho {cap} preguntas al día). "
+            "Rápida; puede usar herramientas.")
+
+
+class Reply:
+    """One answer to the face: a stream of OpenAI chunks (notes as reasoning, the answer, the last chunk
+    with what Iván must still see), or without stream one JSON at the end."""
+
+    def __init__(self, request: web.Request, stream: bool, run_id: str, model: str) -> None:
+        self.request, self.stream, self.run_id, self.model = request, stream, run_id, model
+        self.cid, self.created = "chatcmpl-" + uuid.uuid4().hex, int(time.time())
+        self.resp: web.StreamResponse | None = None
+        self.closed = False
+        self.notes: list[str] = []
+        self.avisos: list[str] = []
+
+    async def open(self) -> None:
+        if not self.stream:
+            return
+        self.resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache",
+                                                "X-Accel-Buffering": "no", "x-webllm-run": self.run_id})
+        await self.resp.prepare(self.request)
+        await self.chunk({"role": "assistant"})
+
+    def gone(self) -> bool:
+        """The face went away (its stop button closes the connection)."""
+        transport = self.request.transport
+        return self.closed or transport is None or transport.is_closing()
+
+    async def write(self, data: bytes) -> None:
+        if self.closed or self.resp is None:
+            return
+        try:
+            await self.resp.write(data)
+        except (ConnectionResetError, RuntimeError):
+            self.closed = True
+
+    async def chunk(self, delta: dict[str, Any], finish: str | None = None, **extra: Any) -> None:
+        data = {"id": self.cid, "object": "chat.completion.chunk", "created": self.created, "model": self.model,
+                "choices": [{"index": 0, "delta": delta, "finish_reason": finish}], **extra}
+        await self.write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8"))
+
+    async def say(self, text: str) -> None:
+        self.notes.append(text)
+        if self.stream:
+            await self.chunk({"reasoning_content": text + "\n\n"})
+
+    async def heartbeat(self) -> None:
+        while self.stream:
+            await asyncio.sleep(HEARTBEAT_S)
+            await self.write(b": webllm sigue\n\n")
+
+    async def end(self) -> web.StreamResponse:
+        await self.write(b"data: [DONE]\n\n")
+        if not self.closed and self.resp is not None:
+            with contextlib.suppress(ConnectionResetError, RuntimeError):
+                await self.resp.write_eof()
+        return self.resp  # type: ignore[return-value]
+
+    async def error(self, code: str, message: str, status: int = 502) -> web.StreamResponse:
+        if not self.stream:
+            return web.json_response({"error": {"message": message, "type": code, "code": code, "run_id": self.run_id},
+                                      "webllm": {"avisos": self.avisos}}, status=status, headers={"x-webllm-run": self.run_id})
+        await self.write(f"data: {json.dumps({'error': {'message': message, 'code': code}, 'webllm': {'avisos': self.avisos}}, ensure_ascii=False)}\n\n".encode("utf-8"))
+        return await self.end()
+
+
 class Gateway:
     def __init__(self, bridge: Any) -> None:
         self.bridge = bridge
+        self.running: dict[str, tuple[asyncio.Task, ProviderConfig]] = {}  # run id -> (work, AI), for "Parar todo"
 
     def register(self, app: web.Application) -> None:
         app.router.add_get("/gw/v1/models", self.models)
         app.router.add_post("/gw/v1/chat/completions", self.chat)
+        app.router.add_post("/gw/v1/parar", self.stop_all)
 
     @staticmethod
     def _error(status: int, code: str, message: str) -> web.Response:
@@ -129,11 +217,40 @@ class Gateway:
         cfg = await self.bridge.app_api._cfg()
         order = {"bridge": 0, "omniroute": 1, "local": 2}
         providers = sorted((p for p in cfg.enabled_providers if p.gateway in order), key=lambda p: order[p.gateway])
-        return web.json_response({"object": "list", "data": [{
-            "id": p.name, "object": "model", "owned_by": "webllm",
-            "name": f"{p.display.removesuffix(' (chat)')} ({KIND_LABEL[p.gateway]})",
-            "webllm": {"kind": {"bridge": "chat", "omniroute": "api", "local": "local"}[p.gateway], "label": p.display},
-        } for p in providers]})
+        data = []
+        for p in providers:
+            today, cap = self.bridge.app_api.usage(cfg, p)  # the same numbers the app shows
+            data.append({
+                "id": p.name, "object": "model", "owned_by": "webllm",
+                "name": f"{p.display.removesuffix(' (chat)')} ({KIND_LABEL[p.gateway]})",
+                "webllm": {"kind": {"bridge": "chat", "omniroute": "api", "local": "local"}[p.gateway], "label": p.display,
+                           "card": card(p, cap), "daily_cap": cap, "used_today": today}})
+        return web.json_response({"object": "list", "data": data})
+
+    # ----------------------------------------------------------------- stop
+
+    async def stop_all(self, request: web.Request) -> web.Response:
+        """"Parar todo": every question in progress through here, and every job in Chrome."""
+        if not self.bridge._authorized(request):
+            return self._error(401, "unauthorized", "token del puente incorrecto")
+        stopped, sites = len(self.running), set()
+        for run_id, (work, p) in list(self.running.items()):
+            if self._stop(p, work, run_id):
+                sites.add(site_of(p))
+        app_stopped, app_sites = self.bridge.app_api.stop_all()  # the app's own questions
+        stopped, sites = stopped + app_stopped, sites | app_sites
+        sites.update(self.bridge.cancel_all())  # and any other job in Chrome (e.g. `webllm cadena`)
+        return web.json_response({"parados": stopped, "chats": sorted(sites)})
+
+    def _stop(self, p: ProviderConfig, work: asyncio.Task, run_id: str) -> bool:
+        """Stop one question. A chat site: its job in Chrome ends as "cancelled" (the flow then finishes and
+        journals it) and, if it is still waiting its turn, it is never sent. Anything else: cancelled outright."""
+        self.bridge.stop(run_id)
+        site = site_of(p)
+        if site and self.bridge.cancel(site, tag=run_id):
+            return True  # a job in Chrome was stopped
+        work.cancel()
+        return False
 
     # ------------------------------------------------------------------ chat
 
@@ -159,7 +276,7 @@ class Gateway:
         modes = [str(m)[:40] for m in (ext.get("modes") or []) if isinstance(m, str)][:10]
         return cfg, p, {"question": question, "conversation": conversation, "files": files, "modes": modes,
                         "chat_id": str(ext.get("chat_id") or "")[:100], "message_id": str(ext.get("message_id") or "")[:100],
-                        "task": str(ext.get("task") or "")[:60]}
+                        "task": str(ext.get("task") or "")[:60], "tools": bool(body.get("tools"))}
 
     @staticmethod
     def bridge_flatten(messages: list[dict[str, Any]]) -> str:
@@ -184,14 +301,31 @@ class Gateway:
             "files": entries, "modes": req["modes"],
         })
 
-    def _notes_before(self, p: ProviderConfig, req: dict[str, Any]) -> list[str]:
-        notes = []
+    @staticmethod
+    def _flow(p: ProviderConfig, req: dict[str, Any]) -> flows.Flow:
+        return flows.Flow(
+            name="Desde Open WebUI", template="pregunta",
+            inputs={"pregunta": req["question"], "conversacion": req["conversation"], "origen": "Open WebUI",
+                    "chat_id": req["chat_id"], "message_id": req["message_id"]},
+            steps=(flows.Step(id="respuestas", title="Respuesta", to=(p.name,), message="{{conversacion}}"),))
+
+    async def _before(self, reply: Reply, p: ProviderConfig, req: dict[str, Any]) -> None:
+        """Say what came with the question and what of it the AI will not get (yet)."""
+        direct = p.gateway != "bridge"
+        unseen = [f for f in req["files"] if not (direct and f["inline"])]
         for f in req["files"]:
-            notes.append(f"Recibido «{f['name']}» ({_size(f['size'])}, huella {f['sha256'][:12]}). "
-                         f"Todavía no se lo paso a {p.display}: subir archivos a las IAs llega en la fase F4.")
+            used = direct and f["inline"]
+            await reply.say(f"Recibido «{f['name']}» ({_size(f['size'])}, huella {f['sha256'][:12]}). " +
+                            ("Va dentro del mensaje, tal cual." if used else
+                             f"Todavía no se lo paso a {p.display}: subir archivos a las IAs llega en la fase F4."))
+        if unseen:
+            names = ", ".join(f"«{f['name']}»" for f in unseen)
+            reply.avisos.append(f"{p.display} no ha visto {names}: pasar archivos a las IAs llega en la fase F4.")
         if req["modes"]:
-            notes.append(f"Pediste: {', '.join(req['modes'])}. Todavía no se activa en {p.display}: llega en la fase F4.")
-        return notes
+            await reply.say(f"Pediste: {', '.join(req['modes'])}. Todavía no se activa en {p.display}: llega en la fase F4.")
+            reply.avisos.append(f"{', '.join(req['modes']).capitalize()}: aún no se activa en {p.display} (fase F4).")
+        if req["tools"] and not direct:
+            reply.avisos.append(f"{p.display} todavía no puede usar herramientas: llega en la fase F9.")
 
     async def chat(self, request: web.Request) -> web.StreamResponse:
         if not self.bridge._authorized(request):
@@ -205,143 +339,266 @@ class Gateway:
             return self._error(400, "bad_request", "La petición no es JSON.")
         if p.gateway == "omniroute" and not await self.bridge.app_api._omniroute_up():
             return self._error(503, "unreachable", problem_text("unreachable", p.display))
-
-        run_id = new_run_id()
-        run_dir = cfg.paths.runs_dir / run_id
-        flow = flows.Flow(
-            name="Desde Open WebUI", template="pregunta",
-            inputs={"pregunta": req["question"], "conversacion": req["conversation"], "origen": "Open WebUI",
-                    "chat_id": req["chat_id"], "message_id": req["message_id"]},
-            steps=(flows.Step(id="respuestas", title="Respuesta", to=(p.name,), message="{{conversacion}}"),))
+        flow = self._flow(p, req)
         try:
             flows.validate(cfg, flow)
         except flows.FlowError as exc:
             return self._error(400, "invalid", str(exc))
+
+        run_id = new_run_id()
+        run_dir = cfg.paths.runs_dir / run_id
         self._record(run_dir, run_id, p, req)
+        reply = Reply(request, bool(body.get("stream")), run_id, p.name)
+        await reply.open()
+        await self._before(reply, p, req)
+        beat = asyncio.create_task(reply.heartbeat())
+        try:
+            if p.gateway == "bridge":
+                return await self._through_flow(reply, cfg, p, flow, run_dir)
+            return await self._direct(reply, cfg, p, flow, run_dir, req, body)
+        finally:
+            beat.cancel()
 
-        stream = bool(body.get("stream"))
-        cid, created = "chatcmpl-" + uuid.uuid4().hex, int(time.time())
-        resp: web.StreamResponse | None = None
-        closed = False
-        notes: list[str] = []
-        # What Iván must still see when the answer is done (D21: what you see is what was used):
-        # files or modes not used yet, a stand-in that answered instead. It travels in the last chunk
-        # ("webllm": {"avisos": [...]}); the pipe keeps it on the status line above the answer.
-        avisos: list[str] = []
-
-        async def write(data: bytes) -> None:
-            nonlocal closed
-            if closed or resp is None:
+    async def _watch(self, reply: Reply, work: asyncio.Task, p: ProviderConfig) -> None:
+        """While the work runs: "te espera" for a chat waiting for Iván, and stop it all if the face goes."""
+        site, last = site_of(p), None
+        while not work.done():
+            if reply.gone():
+                self._stop(p, work, reply.run_id)
                 return
-            try:
-                await resp.write(data)
-            except (ConnectionResetError, RuntimeError):
-                closed = True  # the face went away: keep going so the run is complete and journaled
+            kind = self.bridge.waiting.get(site) if site else None
+            if kind != last:
+                if kind in WAITING_SHORT:
+                    await reply.say(WAITING_SHORT[kind].format(ai=p.display))
+                elif last:
+                    await reply.say("Sigo.")
+                last = kind
+            await asyncio.sleep(0.5)
 
-        async def chunk(delta: dict[str, Any], finish: str | None = None) -> None:
-            data = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": p.name,
-                    "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
-            await write(f"data: {json.dumps(data, ensure_ascii=False)}\n\n".encode("utf-8"))
-
-        async def say(text: str) -> None:
-            notes.append(text)
-            if stream:
-                await chunk({"reasoning_content": text + "\n\n"})
-
-        if stream:
-            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache",
-                                               "X-Accel-Buffering": "no", "x-webllm-run": run_id})
-            await resp.prepare(request)
-            await chunk({"role": "assistant"})
-
+    # A chat site: the same engine as the app.
+    async def _through_flow(self, reply: Reply, cfg: Any, p: ProviderConfig, flow: flows.Flow, run_dir: Any):
         done: dict[str, Any] = {}
 
         async def emit(ev: dict[str, Any]) -> None:
             t = ev.get("type")
             if t == "target_start":
-                await say(f"Preguntando a {ev.get('label')}…")
+                await reply.say(f"Preguntando a {ev.get('label')}…")
             elif t == "target_wait":
-                await say(f"{ev.get('label')} falló ({ev.get('error')}). Lo intento otra vez en {ev.get('seconds')} s.")
+                await reply.say(f"{ev.get('label')} falló ({ev.get('error')}). Lo intento otra vez en {ev.get('seconds')} s.")
             elif t == "target_fallback":
-                await say(f"{ev.get('label')} falló ({ev.get('error')}). Pruebo con {ev.get('provider_label')}, "
-                          "la reserva que tienes configurada.")
+                await reply.say(f"{ev.get('label')} falló ({ev.get('error')}). Pruebo con {ev.get('provider_label')}, "
+                                "la reserva que tienes configurada.")
             elif t == "target_done":
                 self.bridge.app_api._remember(ev)
                 done.update(ev)
 
-        async def watch_waiting() -> None:
-            site, last = site_of(p), None
-            while site:
-                kind = self.bridge.waiting.get(site)
-                if kind != last:
-                    if kind in WAITING_SHORT:
-                        await say(WAITING_SHORT[kind].format(ai=p.display))
-                    elif last:
-                        await say("Sigo.")
-                    last = kind
-                await asyncio.sleep(1.0)
-
-        async def heartbeat() -> None:
-            while stream:
-                await asyncio.sleep(HEARTBEAT_S)
-                await write(b": webllm sigue\n\n")
-
-        for note in self._notes_before(p, req):
-            await say(note)
-        if req["files"]:
-            avisos.append(f"{p.display} no ha visto {'el archivo' if len(req['files']) == 1 else 'los archivos'}: "
-                          "pasarlos a las IAs llega en la fase F4.")
-        if req["modes"]:
-            avisos.append(f"{', '.join(req['modes']).capitalize()}: aún no se activa en {p.display} (fase F4).")
-        tasks = [asyncio.create_task(watch_waiting()), asyncio.create_task(heartbeat())]
         try:
-            try:
-                api_key = load_api_key()
-            except Exception:
-                api_key = ""
-            guard = Guard(cfg.paths.state_dir / "guard.json", cfg.guard)
-            await flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
-                                 emit=emit, run_id=run_id)
+            api_key = load_api_key()
+        except Exception:
+            api_key = ""
+        guard = Guard(cfg.paths.state_dir / "guard.json", cfg.guard)
+        work = asyncio.create_task(flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
+                                                  emit=emit, run_id=reply.run_id))
+        self.running[reply.run_id] = (work, p)
+        watch = asyncio.create_task(self._watch(reply, work, p))
+        try:
+            # shield: cancelling this request must not kill the work on the spot (asyncio would cancel the
+            # awaited task too) before its job in Chrome is told to stop; _stop decides how it ends.
+            await asyncio.shield(work)
+        except asyncio.CancelledError:
+            if not work.done():  # the face's request itself was cancelled: stop the work, let it journal it
+                self._stop(p, work, reply.run_id)
+                raise
+            self._journal_stop(run_dir, reply.run_id, p)  # stopped before anything was sent
+            done = {"ok": False, "code": "cancelled", "error": ""}
         except GatewayError:
             shutil.rmtree(run_dir, ignore_errors=True)  # nothing was sent
             done = {"ok": False, "code": "unreachable", "error": ""}
         finally:
-            for t in tasks:
-                t.cancel()
+            watch.cancel()
+            self.running.pop(reply.run_id, None)
+            self.bridge.stopped.discard(reply.run_id)
 
-        ok = bool(done.get("ok"))
-        text = str(done.get("text") or "")
-        if ok and done.get("provider") and done.get("provider") != p.name:
-            avisos.append(f"Respondió {done.get('provider_label')} en lugar de {p.display} (tu reserva).")
         for notice in done.get("notices") or []:
-            await say(str(notice))
-        if not ok:
-            message = problem_text(str(done.get("code") or "error"), p.display, str(done.get("error") or ""))
-        if not stream:
-            if not ok:
-                return web.json_response({"error": {"message": message, "type": done.get("code") or "error",
-                                                    "code": done.get("code") or "error", "run_id": run_id}},
-                                         status=502, headers={"x-webllm-run": run_id})
+            await reply.say(str(notice))
+        if not done.get("ok"):
+            code = str(done.get("code") or "error")
+            return await reply.error(code, problem_text(code, p.display, str(done.get("error") or "")))
+        if done.get("provider") and done.get("provider") != p.name:
+            reply.avisos.append(f"Respondió {done.get('provider_label')} en lugar de {p.display} (tu reserva).")
+        label = str(done.get("model") or "").partition(" · ")[2]
+        if label:
+            reply.avisos.append(f"Respondió {p.display} con el modelo «{label}» (leído en su web).")
+        return await self._finish_text(reply, str(done.get("text") or ""))
+
+    def _journal_stop(self, run_dir: Any, run_id: str, p: ProviderConfig) -> None:
+        journal.append(run_dir / journal.JOURNAL_NAME, {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"), "run_id": run_id,
+            "kind": "stopped", "provider": p.name, "by": "Iván (parar)"})
+
+    async def _finish_text(self, reply: Reply, text: str) -> web.StreamResponse:
+        if not reply.stream:
             return web.json_response({
-                "id": cid, "object": "chat.completion", "created": created, "model": p.name, "webllm": {"avisos": avisos},
+                "id": reply.cid, "object": "chat.completion", "created": reply.created, "model": reply.model,
+                "webllm": {"avisos": reply.avisos},
                 "choices": [{"index": 0, "finish_reason": "stop",
                              "message": {"role": "assistant", "content": text,
-                                         **({"reasoning_content": "\n\n".join(notes)} if notes else {})}}],
-            }, headers={"x-webllm-run": run_id})
-        if ok:
-            await chunk({"content": text})
-            final = {"id": cid, "object": "chat.completion.chunk", "created": created, "model": p.name,
-                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "webllm": {"avisos": avisos}}
-            await write(f"data: {json.dumps(final, ensure_ascii=False)}\n\n".encode("utf-8"))
+                                         **({"reasoning_content": "\n\n".join(reply.notes)} if reply.notes else {})}}],
+            }, headers={"x-webllm-run": reply.run_id})
+        await reply.chunk({"content": text})
+        await reply.chunk({}, "stop", webllm={"avisos": reply.avisos})
+        return await reply.end()
+
+    # An AI by API or on this PC: the request as it came, the answer as it is written.
+    async def _direct(self, reply: Reply, cfg: Any, p: ProviderConfig, flow: flows.Flow, run_dir: Any,
+                      req: dict[str, Any], body: dict[str, Any]) -> web.StreamResponse:
+        step = flow.steps[0]
+        message_file, message_sha = flows.start_run(run_dir, flow, step, req["conversation"])
+        if p.gateway == "local":
+            base, key = p.base_url, ""
         else:
-            await write(f"data: {json.dumps({'error': {'message': message, 'code': done.get('code') or 'error'}, 'webllm': {'avisos': avisos}}, ensure_ascii=False)}\n\n".encode("utf-8"))
-        await write(b"data: [DONE]\n\n")
-        if not closed and resp is not None:
             try:
-                await resp.write_eof()
-            except (ConnectionResetError, RuntimeError):
-                pass
-        return resp  # type: ignore[return-value]
+                key = load_api_key()
+            except Exception:
+                key = ""
+            base = cfg.base_url
+        budget = budget_for(cfg)
+        outcome = Outcome(p, ChatResult(_SKIPPED, model=p.model))
+        result: dict[str, Any] = {}
+        work = asyncio.current_task()
+        self.running[reply.run_id] = (work, p)  # type: ignore[assignment]
+        watch = asyncio.create_task(self._watch(reply, work, p))  # type: ignore[arg-type]
+        try:
+            for n, model in enumerate((p.model, *p.fallback_models)):
+                if not budget.take(p):
+                    outcome.result = ChatResult(_SKIPPED, model=model, error="daily_cap")
+                    outcome.notices.append(budget.notice(p))
+                    break
+                outcome.tried_models.append(model)
+                payload = {"model": (p.remote_model or model) if p.gateway == "local" else model,
+                           "messages": body.get("messages") or [], "stream": reply.stream,
+                           **{k: body[k] for k in DIRECT_KEYS if k in body}}
+                lock = server_lock(upstream_key(p.model)) if p.gateway == "local" else contextlib.nullcontext()
+                async with lock:
+                    outcome.result, result = await self._upstream(reply, base, key, payload, p)
+                if outcome.result.ok or result.get("started") or n == len(p.fallback_models):
+                    break
+                nxt = p.fallback_models[n]
+                await reply.say(f"{p.display} ({model}) falló: {outcome.result.error}. Pruebo con {nxt}, "
+                                "la reserva que tienes configurada.")
+        except asyncio.CancelledError:
+            outcome.result = ChatResult(CANCELLED, model=p.model, error="parado por Iván")
+            result = {"cancelled": True}
+        finally:
+            watch.cancel()
+            self.running.pop(reply.run_id, None)
+        if len(outcome.tried_models) > 1 and outcome.result.ok:
+            outcome.notices.append(f"{p.name}: respondió el respaldo {outcome.tried_models[-1]}")
+            reply.avisos.append(f"Respondió el respaldo {outcome.tried_models[-1]} en lugar de {p.model} "
+                                "(tu reserva configurada).")
+        extra = {"tool_calls": result.get("tool_calls")} if result.get("tool_calls") else None
+        answer = flows.journal_call(run_dir, reply.run_id, 1, step.id, message_file, message_sha, outcome, "first",
+                                    p.name, extra=extra)
+        status = flows.OK if answer.ok else flows.FAILED
+        flows.close_run(run_dir, reply.run_id, flow.name, status, {step.id: status})
+        self.bridge.app_api._remember({"target": p.name, "code": answer.code, "error": answer.error, "ok": answer.ok})
+        for notice in outcome.notices:
+            await reply.say(notice)
+        if outcome.result.ok and outcome.result.model:  # which model really answered (D21)
+            used = outcome.result.model
+            reply.avisos.append(f"Respondió {p.display}." if used.rsplit("/", 1)[-1] in p.display
+                                else f"Respondió {p.display} con {used}.")
+        if not answer.ok:
+            if result.get("started"):  # part of the answer was already shown: close it with the reason
+                await reply.chunk({"content": f"\n\n({problem_text(answer.code, p.display, answer.error)})"}, "stop",
+                                  webllm={"avisos": reply.avisos})
+                return await reply.end()
+            return await reply.error(answer.code, problem_text(answer.code, p.display, answer.error))
+        if not reply.stream:
+            return web.json_response({**result.get("body", {}), "webllm": {"avisos": reply.avisos}},
+                                     headers={"x-webllm-run": reply.run_id})
+        await reply.chunk({}, None, webllm={"avisos": reply.avisos})
+        return await reply.end()
+
+    async def _upstream(self, reply: Reply, base: str, key: str, payload: dict[str, Any], p: ProviderConfig
+                        ) -> tuple[ChatResult, dict[str, Any]]:
+        """One call to the API (or this PC's server); a stream is passed on as it comes."""
+        headers = {**auth_headers(key), **(TRANSPARENT_HEADERS if p.gateway == "omniroute" else {})}
+        timeout = httpx.Timeout(connect=10.0, read=p.timeout_s, write=30.0, pool=10.0)
+        t0 = time.perf_counter()
+        info: dict[str, Any] = {"started": False}
+        text, calls, served = [], {}, None
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", f"{base.rstrip('/')}/chat/completions", json=payload, headers=headers) as r:
+                    upstream = r.headers.get("x-omniroute-provider")
+                    if r.status_code != 200:
+                        excerpt = (await r.aread())[:500].decode("utf-8", "replace")
+                        return ChatResult(HTTP_ERROR, http_status=r.status_code, error=f"HTTP {r.status_code}",
+                                          body_excerpt=excerpt, latency_s=time.perf_counter() - t0,
+                                          upstream_provider=upstream), info
+                    if payload["stream"] and "text/event-stream" not in r.headers.get("content-type", ""):
+                        # asked to stream, answered with one JSON: pass it on as chunks all the same
+                        data = json.loads(await r.aread())
+                        message = data["choices"][0]["message"]
+                        delta = {k: v for k, v in (("content", message.get("content")),
+                                                   ("tool_calls", [{"index": i, **c} for i, c in enumerate(message.get("tool_calls") or [])]))
+                                 if v}
+                        await reply.chunk(delta)
+                        await reply.chunk({}, data["choices"][0].get("finish_reason") or "stop")
+                        info["started"] = True
+                        if message.get("tool_calls"):
+                            info["tool_calls"] = [{"name": c["function"]["name"]} for c in message["tool_calls"]]
+                        return ChatResult(OK, text=_content_text(message.get("content")) or "", model=data.get("model"),
+                                          latency_s=time.perf_counter() - t0, http_status=200,
+                                          upstream_provider=upstream), info
+                    if not payload["stream"]:
+                        data = json.loads(await r.aread())
+                        message = data["choices"][0]["message"]
+                        info["body"] = data
+                        if message.get("tool_calls"):
+                            info["tool_calls"] = [{"name": c["function"]["name"]} for c in message["tool_calls"]]
+                        return ChatResult(OK, text=_content_text(message.get("content")) or "", model=data.get("model"),
+                                          latency_s=time.perf_counter() - t0, http_status=200,
+                                          upstream_provider=upstream), info
+                    async for line in r.aiter_lines():
+                        if reply.gone():
+                            raise asyncio.CancelledError
+                        if not line.startswith("data:"):
+                            continue
+                        if line.strip() == "data: [DONE]":
+                            break
+                        try:
+                            chunk = json.loads(line[5:])
+                        except ValueError:
+                            continue
+                        if chunk.get("error"):
+                            err = chunk["error"]
+                            return ChatResult(HTTP_ERROR, http_status=int(err.get("code") or 0) if str(err.get("code") or "").isdigit() else None,
+                                              error="error a mitad de la respuesta", body_excerpt=json.dumps({"error": err})[:500],
+                                              latency_s=time.perf_counter() - t0), info
+                        served = served or chunk.get("model")
+                        for choice in chunk.get("choices") or []:
+                            delta = choice.get("delta") or {}
+                            if delta.get("content"):
+                                text.append(delta["content"])
+                            for c in delta.get("tool_calls") or []:
+                                slot = calls.setdefault(c.get("index", 0), {"name": "", "arguments": ""})
+                                fn = c.get("function") or {}
+                                slot["name"] += fn.get("name") or ""
+                                slot["arguments"] += fn.get("arguments") or ""
+                        info["started"] = True
+                        await reply.write(f"{line.strip()}\n\n".encode("utf-8"))
+        except httpx.TimeoutException as exc:
+            return ChatResult(TIMEOUT, latency_s=time.perf_counter() - t0, error=f"timeout ({type(exc).__name__})"), info
+        except httpx.HTTPError as exc:
+            return ChatResult(CONNECTION_ERROR, latency_s=time.perf_counter() - t0, error=f"{type(exc).__name__}: {exc}"), info
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            return ChatResult(MALFORMED, latency_s=time.perf_counter() - t0, error=f"respuesta mal formada: {exc}"), info
+        if calls:
+            info["tool_calls"] = [{"name": c["name"]} for c in calls.values()]
+        return ChatResult(OK, text="".join(text), model=served or payload["model"], latency_s=time.perf_counter() - t0,
+                          http_status=200), info
 
 
-__all__ = ["Gateway", "decode_files", "RequestError", "MAX_FILE_BYTES", "MAX_FILES_BYTES"]
+__all__ = ["Gateway", "decode_files", "RequestError", "MAX_FILE_BYTES", "MAX_FILES_BYTES", "card"]
