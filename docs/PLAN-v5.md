@@ -537,7 +537,7 @@ Cada fase tiene:
 - **En tu PC:** "crea un issue de prueba en mi repo" con una IA de API y con una web; las dos pasan por tu Permitir.
 - **Salida:** los dos issues creados; un intento de inyección, denegado y apuntado en el registro.
 
-> **Estado (26-sep-2026):** hecho y probado en la nube. 48 pruebas nuevas (reglas, intérprete estricto, paso por webllm; rompiendo cada protección, su prueba falla) y el Open WebUI de verdad con un GitHub de prueba que apunta lo que se ejecuta: 5 de 5 (API y chat web crean el issue solo tras «Permitir», «Denegar» no ejecuta nada, «borra el repo» denegado antes de preguntar y apuntado).
+> **Estado (26-sep-2026):** hecho y probado en la nube. 48 pruebas nuevas (reglas, intérprete estricto, paso por webllm; rompiendo cada protección, su prueba falla) y el Open WebUI de verdad con un GitHub de prueba que apunta lo que se ejecuta: 5 de 5 (API y chat web crean el issue solo tras «Permitir», «Denegar» no ejecuta nada, «borra el repo» denegado antes de preguntar y apuntado), y las 49 comprobaciones de F1 a F9 juntas, todas bien.
 >
 > **Diferencias a propósito:**
 > - **Doble filtro:** webllm decide qué herramientas ve cada IA (`acciones.yaml`: GitHub solo leer y proponer; ninguna herramienta que diga borrar/fusionar/publicar…) y revisa cada petición antes de la tarjeta de Open WebUI. Una IA engañada ni llega a preguntarte.

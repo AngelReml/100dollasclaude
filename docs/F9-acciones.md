@@ -2,7 +2,8 @@
 
 **Resultado en la nube: hecho y probado.**
 - **48 pruebas nuevas** (38 de las reglas y del intérprete, 10 del paso por webllm). Rompiendo a propósito cada protección, su prueba falla.
-- **El Open WebUI de verdad, con un GitHub de prueba que apunta todo lo que se ejecuta: 5 de 5** (capturas en `docs/capturas/f9/openwebui/`).
+- **El Open WebUI de verdad, con un GitHub de prueba que apunta todo lo que se ejecuta: 5 de 5** (capturas en `docs/capturas/f9/openwebui/`), y **las 49 comprobaciones de F1 a F9 juntas, todas bien**.
+- **Suite rápida: 445 pasan.** Las pruebas de la extensión en Chromium no se repitieron: la extensión no cambia en F9.
 - **El instalador** conecta GitHub y tu terminal (13 pruebas) y los `.cmd` son correctos para Windows (18 pruebas).
 
 Falta lo que solo se ve en tu PC (la salida del plan):

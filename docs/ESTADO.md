@@ -51,7 +51,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 - **GitHub, solo leer y proponer:** issues, comentarios, ramas `webllm/…` y PR. Nunca fusionar, borrar, publicar ni administrar: esas herramientas ni se le enseñan a la IA.
 - **Terminal:** cada comando te pregunta; los que podrían dejarte sin Windows (administrador, apagar, discos, borrar carpetas enteras, registro…) ni siquiera se pueden pedir.
 - **«Borra el repo»:** webllm lo deniega antes de preguntarte, lo dice en la respuesta y lo apunta en el registro.
-- **Probado aquí:** 48 pruebas nuevas; el Open WebUI de verdad con un GitHub de prueba: 5 de 5; la suite rápida: 445 pasan.
+- **Probado aquí:** 48 pruebas nuevas; el Open WebUI de verdad con un GitHub de prueba: 5 de 5, y las 49 comprobaciones de F1 a F9, todas bien; la suite rápida: 445 pasan.
 - **Falta tu PC:** conectar tu GitHub (token limitado) y tu terminal, y los dos issues de prueba. Guía en `docs/F9-acciones.md`.
 
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F8: «Automático»)
