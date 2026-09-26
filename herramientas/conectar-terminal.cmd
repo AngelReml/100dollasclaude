@@ -12,6 +12,8 @@ if "%CLAVE%"=="" (
 )
 set "COMANDO="
 if exist "data\state\terminal_mcp.txt" set /p COMANDO=<"data\state\terminal_mcp.txt"
+set "PUERTO=8765"
+if exist "data\state\terminal_port.txt" set /p PUERTO=<"data\state\terminal_port.txt"
 if not "%COMANDO%"=="" echo El comando de tu MCP de terminal que ya tenias: %COMANDO%
 set /p "NUEVO=Pega el comando que arranca tu MCP de terminal (o Enter para usar el de arriba): "
 if not "%NUEVO%"=="" set "COMANDO=%NUEVO%"
@@ -21,8 +23,8 @@ if "%COMANDO%"=="" (
   exit /b 1
 )
 > "data\state\terminal_mcp.txt" echo %COMANDO%
-start "webllm terminal (mcpo)" /min cmd /c uvx mcpo --host 127.0.0.1 --port 8765 -- %COMANDO%
+start "webllm terminal (mcpo)" /min cmd /c uvx --with "mcp<2" mcpo --host 127.0.0.1 --port %PUERTO% -- %COMANDO%
 echo Esperando a que arranque...
 timeout /t 8 /nobreak >nul
-python scripts\openwebui_setup.py --clave "%CLAVE%" --terminal http://127.0.0.1:8765 --solo-conectores
+python scripts\openwebui_setup.py --clave "%CLAVE%" --terminal http://127.0.0.1:%PUERTO% --solo-conectores
 pause
