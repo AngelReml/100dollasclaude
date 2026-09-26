@@ -25,7 +25,7 @@ from ..broadcaster import (
 )
 from ..bridge import SITES, call_admin, load_token
 from ..bridge import serve as serve_bridge
-from .. import flows
+from .. import flows, vault
 from ..config import AppConfig, ConfigError, load_config
 from ..flows import FlowError
 from ..guard import Guard
@@ -125,8 +125,10 @@ def _cmd_ask(cfg: AppConfig, args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 3
     run_id = new_run_id()
-    write_run(cfg.paths.runs_dir, run_id, prompt, outcomes)
+    vault.export_run(cfg.paths, write_run(cfg.paths.runs_dir, run_id, prompt, outcomes),
+                     labels={p.name: p.display for p in cfg.providers.values()})
     print(render(outcomes, run_id))
+    vault.flush(30)  # this program ends now: the memory's writer must finish first
     return 0 if any(o.result.ok for o in outcomes) else 1
 
 
@@ -319,6 +321,7 @@ def _cmd_cadena(cfg: AppConfig, args: argparse.Namespace) -> int:
     print(f"\nCadena {verdict}.")
     print(f"Registro: data/runs/{run.run_id}/  ·  Candado: "
           + ("VERDE (nadie lo ha tocado)" if run.verified else "ROJO (el registro no cuadra)"))
+    vault.flush(30)  # this program ends now: the memory's writer must finish first
     return 0 if run.status == "ok" and run.verified else 1
 
 

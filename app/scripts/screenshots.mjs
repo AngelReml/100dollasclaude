@@ -3,7 +3,9 @@
 //   node app/scripts/screenshots.mjs [outDir] [port]
 // Uses the Chromium that Playwright finds (PLAYWRIGHT_CHROMIUM or /opt/pw-browsers).
 import { chromium } from "playwright-core";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const out = process.argv[2] ?? "docs/capturas/fase3";
 const port = process.argv[3] ?? "20199";
@@ -179,6 +181,44 @@ async function fichas(page, tag) {
   await page.keyboard.press("Escape");
 }
 
+// "Memoria en Obsidian" (PLAN-v5 F5): off, then on in a folder (a temporary one), with one question from the
+// app written there (the conversation and each answer on its own), and "Reescribir todo" asking first.
+async function memoria(page, tag) {
+  const api = (path, body) => fetch(`http://127.0.0.1:${port}${path}`, { method: "POST",
+    headers: { Authorization: "Bearer demo-token", "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const vault = mkdtempSync(join(tmpdir(), "vault-demo-"));
+  await page.goto(base);
+  const card = page.locator('[data-card="memoria"]');
+  await card.getByText("Apagada").waitFor();
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-33-memoria-apagada`);
+  await card.getByRole("textbox").fill(vault);
+  await card.getByRole("button", { name: "Encender la memoria" }).click();
+  await card.getByText("Guardando").waitFor();
+  await page.goto(base + "#/preguntar");
+  await page.getByRole("button", { name: "Probar este ejemplo" }).first().click();
+  await page.waitForTimeout(500);
+  await waitAnswers(page);
+  await page.goto(base);
+  await card.getByText(/[1-9]\d* respuestas?/).waitFor(); // the card reads the memory when Inicio opens
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-34-memoria-guardando`);
+  // what this run asked before the memory was on (it starts each run off) comes in: more conversations
+  const count = (t) => Number((t.match(/(\d+) conversaci/) ?? [0, 0])[1]);
+  const before = count(await card.innerText());
+  await card.getByRole("button", { name: "Copiar también lo de antes" }).click();
+  await page.waitForFunction(([n, re]) => Number((document.querySelector('[data-card="memoria"]').innerText.match(new RegExp(re)) ?? [0, 0])[1]) > n,
+    [before, "(\\d+) conversaci"], { timeout: 30000 });
+  await card.scrollIntoViewIfNeeded();
+  await shot(page, `${tag}-35-memoria-lo-de-antes`);
+  await card.getByRole("button", { name: "Reescribir todo" }).click();
+  await page.getByRole("dialog").getByText("¿Reescribir todo?").waitFor();
+  await shot(page, `${tag}-36-memoria-reescribir`);
+  await page.getByRole("dialog").getByRole("button", { name: "Cancelar" }).click();
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  console.log(`vault ${tag}:\n` + walk(vault).map((f) => "  " + f.slice(vault.length + 1)).join("\n"));
+}
+
 // An API AI out of free quota (OpenRouter's 429, F0): it says so, shows what the service answered
 // and offers to ask another AI, which only happens when Iván presses it.
 async function apiLimit(page, tag) {
@@ -210,6 +250,10 @@ async function run(theme, width, full) {
   await ctx.addInitScript((t) => localStorage.setItem("webllm.tema", t), theme);
   const page = await ctx.newPage();
   const tag = `${theme === "oscuro" ? "oscuro" : "claro"}-${width}`;
+  if (full) { // the memory starts off: its scene turns it on and then copies what this run asked before
+    await fetch(`http://127.0.0.1:${port}/api/memoria`, { method: "POST", body: JSON.stringify({ enabled: false }),
+      headers: { Authorization: "Bearer demo-token", "Content-Type": "application/json" } });
+  }
 
   // With Chrome connected and chats ready, the guide must NOT open by itself.
   await page.goto(base);
@@ -271,6 +315,7 @@ async function run(theme, width, full) {
     await stopAll(page, tag);
     await conectores(page, tag);
     await fichas(page, tag);
+    await memoria(page, tag);
   }
   await browser.close();
 }

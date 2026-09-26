@@ -229,6 +229,7 @@ export type Memoria = {
   error: string | null;
   last: string | null;
   conversations: number;
+  answers: number;
 };
 
 export class ApiError extends Error {
@@ -293,6 +294,10 @@ export const api = {
   fichaOlvidar: (ai: string) => post<Ficha>(`/api/ficha/${encodeURIComponent(ai)}/olvidar`, {}),
   memoria: () => call<Memoria>("/api/memoria"),
   guardarMemoria: (dir: string, enabled: boolean) => post<Memoria>("/api/memoria", { dir, enabled }),
+  /** "Reescribir todo": every conversation and answer written again from the journal (hand edits there are lost). */
+  reescribirMemoria: () => post<Memoria>("/api/memoria/reescribir", {}),
+  /** "Copiar también lo de antes": the questions webllm recorded before the memory was on. */
+  memoriaAnteriores: () => post<Memoria>("/api/memoria/anteriores", {}),
   iconUrl: (key: string) => `/api/icono/${encodeURIComponent(key)}?token=${encodeURIComponent(TOKEN)}`,
   historial: (q: string) => call<{ runs: RunSummary[] }>(`/api/historial?q=${encodeURIComponent(q)}`),
   detalle: (id: string) => call<RunDetail>(`/api/historial/${encodeURIComponent(id)}`),

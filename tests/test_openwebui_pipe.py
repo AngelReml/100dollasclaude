@@ -159,3 +159,38 @@ def test_asked_for_the_whole_answer_at_once_it_returns_the_text_not_the_stream()
 
     assert run(with_webllm(fake, go)) == "respuesta entera"
     assert fake.requests[0]["stream"] is False
+
+
+def test_the_conversation_title_and_its_open_webui_folder_travel_with_the_question(monkeypatch):
+    """PLAN-v5 F5: Open WebUI's folder is the project in Obsidian; read with Open WebUI's own functions."""
+    import types
+
+    class Chats:
+        @staticmethod
+        async def get_chat_title_by_id(chat_id):
+            return {"c-1": "Precios y dinero", "c-2": "New Chat"}.get(chat_id)
+
+        @staticmethod
+        async def get_chat_folder_id(chat_id, user_id):
+            return "f-1" if (chat_id, user_id) == ("c-1", "u-1") else None
+
+    class Folders:
+        @staticmethod
+        async def get_folder_by_id_and_user_id(folder_id, user_id):
+            return types.SimpleNamespace(name="Clientes 2026") if (folder_id, user_id) == ("f-1", "u-1") else None
+
+    for name, attrs in (("open_webui", {}), ("open_webui.models", {}), ("open_webui.models.chats", {"Chats": Chats}),
+                        ("open_webui.models.folders", {"Folders": Folders})):
+        monkeypatch.setitem(sys.modules, name, types.SimpleNamespace(**attrs))
+    fake = FakeWebllm()
+
+    async def go(pipe):
+        body = {"model": "webllm.qwen", "messages": [{"role": "user", "content": "hola"}]}
+        for chat_id in ("c-1", "c-2", "local:x"):
+            gen = await pipe.pipe(dict(body), __chat_id__=chat_id, __user__={"id": "u-1"})
+            [line async for line in gen]
+
+    run(with_webllm(fake, go))
+    got = [{k: r["webllm"].get(k) for k in ("title", "project")} for r in fake.requests]
+    assert got == [{"title": "Precios y dinero", "project": "Clientes 2026"}, {"title": "New Chat", "project": None},
+                   {"title": None, "project": None}]

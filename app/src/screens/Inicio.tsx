@@ -4,6 +4,7 @@ import { api, ApiError, type Ai } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
+import { MemoriaCard } from "../ui/Memoria";
 import { RemoveAiButton } from "../ui/AddAi";
 import { Button } from "../ui/Button";
 import { Card } from "../ui/Card";
@@ -229,6 +230,7 @@ export function Inicio() {
                   {srv.installed && <StartLocal server={srv.key} name={srv.name} />}
                 </PieceCard>
               ))}
+              <MemoriaCard />
             </div>
           </section>
           <section className="mb-10">

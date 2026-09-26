@@ -28,8 +28,19 @@ def on(app, tmp_path) -> Path:
 
 
 def notes(base: Path) -> list[Path]:
+    """The conversation notes (not the index, not the answers' own files)."""
     assert vault.flush(10)
-    return sorted(p for p in base.rglob("*.md") if p.name != "Índice.md")
+    return sorted(p for p in base.rglob("*.md") if p.name != "Índice.md" and "Respuestas" not in p.parts)
+
+
+def own_files(base: Path) -> list[Path]:
+    assert vault.flush(10)
+    return sorted((base / "Respuestas").rglob("*.md")) if (base / "Respuestas").exists() else []
+
+
+def own_answer(path: Path) -> str:
+    """The answer in its own file: everything after "## Respuesta", exactly (defused parts undone)."""
+    return vault.undo_defuse(path.read_text("utf-8").split("\n## Respuesta\n\n", 1)[1])
 
 
 def sections(note: str) -> list[tuple[str, str]]:
@@ -40,16 +51,18 @@ def sections(note: str) -> list[tuple[str, str]]:
 
 def answers_in(note: str, label: str) -> list[str]:
     """The text of each answer by ``label``, without webllm's footer."""
-    return [body.split("\n\n<small>")[0].strip() for head, body in sections(note) if head.split(" · ")[0] == label]
+    return [vault.undo_defuse(body.split("\n\n<small>")[0].strip()) for head, body in sections(note)
+            if head.split(" · ")[0] == label]
 
 
-def journal_answers(app, run_id: str) -> list[str]:
+def journal_answers(app, run_id: str, exact: bool = False) -> list[str]:
     """The same answers, straight from the journal's response files (checked against their sha256)."""
     from webllm_agent.broadcaster import verify_run
     run_dir = app.cfg.paths.runs_dir / run_id
     assert verify_run(run_dir).ok
     lines = [json.loads(x) for x in (run_dir / "journal.jsonl").read_text("utf-8").splitlines() if x.strip()]
-    return [(run_dir / x["response_file"]).read_text("utf-8").strip() for x in lines if x.get("response_file")]
+    texts = [(run_dir / x["response_file"]).read_bytes().decode("utf-8") for x in lines if x.get("response_file")]
+    return texts if exact else [t.strip() for t in texts]
 
 
 def test_the_folder_must_exist_and_be_writable(tmp_path, mock_server):
@@ -138,6 +151,10 @@ def test_ten_conversations_in_a_row_all_in_the_vault_identical_to_the_journal(tm
                 assert answers_in(text, label) == journal_answers(app, run_id) and run_id in text
             index = (base / "Índice.md").read_text("utf-8")
             assert all(f"[Tema {n}]" in index for n in range(10))
+            own = own_files(base)
+            assert len(own) == 10
+            assert sorted(own_answer(p) for p in own) == sorted(a for r, _ in runs.values()
+                                                                for a in journal_answers(app, r, exact=True))
     run(go())
 
 
@@ -217,7 +234,8 @@ def test_the_vault_is_never_read(tmp_path, mock_server, monkeypatch):
             monkeypatch.setattr(os, "scandir", real_scandir)
             monkeypatch.setattr(os, "walk", real_walk)
             written = sorted(p.relative_to(tmp_path / "Mi unidad" / "Otra") for p in (tmp_path / "Mi unidad" / "Otra").rglob("*.*"))
-            assert len([p for p in written if p.suffix == ".md"]) == 1 + 4 + 1  # index + conversations; the doc stayed
+            # the index, 5 conversations and 8 answers; the Committee's document stayed in the first vault
+            assert len([p for p in written if p.suffix == ".md"]) == 1 + 5 + 8
             assert len([p for p in written if p.name == "a.txt"]) == 3 and len([p for p in written if p.name == "x.html"]) == 4
     run(go())
     assert reads == []
@@ -322,4 +340,156 @@ def test_the_apps_own_questions_and_the_committee_folder(tmp_path, mock_server):
             assert vault.flush(10)
             assert doc.parent == base / "Comités" and doc.read_text("utf-8") == "# Documento de fusión\n"
             assert again.name.endswith("(2).md") and again.read_text("utf-8") == "# Otro\n"
+            evil = vault.write_committee(app.cfg.paths, "Tema", "```dataviewjs\nx\n```\n")
+            assert vault.flush(10) and "```webllm-dataviewjs" in evil.read_text("utf-8")
+    run(go())
+
+
+def test_each_answer_of_each_ai_in_its_own_file_with_the_date_as_title(tmp_path, mock_server):
+    """Iván's decision (26-sep-2026): the conversation AND, separately, every answer of every AI, dated."""
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": "silent"}) as app:
+            base = on(app, tmp_path)
+            asking = asyncio.create_task(gw(app, ask("qwen", "¿Qué es la inflación?", chat_id="c-1")))
+            for _ in range(50):
+                await asyncio.sleep(0.1)
+                if app.bridge.jobs.get("qwen"):
+                    break
+            app.bridge.cancel("qwen")
+            await asyncio.wait_for(asking, 10)
+            assert own_files(base) == []  # a stopped question has no answer to keep
+            app.ext.behaviour["qwen"] = {"ok": True, "text": "La inflación es…\n", "via": "copy-button"}
+            _, _, h = await gw(app, ask("qwen", "¿Y la deflación?\nExplícalo fácil", chat_id="c-1",
+                                        title="Precios y dinero"))
+            status, events = await app.ask("¿Qué es el IPC?", ["zai", "qwen"])
+            assert status == 200
+            own = own_files(base)
+            assert [p.parent.name for p in own] == ["Qwen", "Qwen", "z.ai"]
+            for p in own:  # «2026-09-26 14.05.12 Qwen - ¿Y la deflación»: the date first, then who, then what
+                assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d\.\d\d\.\d\d (Qwen|z\.ai) - .+\.md", p.name), p.name
+            first = next(p for p in own if "deflación" in p.name)
+            text = first.read_text("utf-8")
+            fm = text.split("---\n")[1]
+            assert re.search(r"^fecha: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$", fm, re.M) and 'ia: "Qwen"' in fm
+            assert f"registro: {h['x-webllm-run']}" in fm and "huella: " in fm and 'proyecto: "Sin proyecto"' in fm
+            assert re.search(r"^# \d{4}-\d\d-\d\d \d\d:\d\d · Qwen$", text, re.M)
+            assert "> ¿Y la deflación?\n> Explícalo fácil" in text
+            # exactly the journal's answer, byte for byte
+            assert own_answer(first) == journal_answers(app, h["x-webllm-run"], exact=True)[0] == "La inflación es…\n"
+            # it points at its conversation, and the conversation points at it
+            (conv,) = [n for n in notes(base) if n.parent.name == vault.NO_PROJECT]
+            assert f"](<../../{vault.NO_PROJECT}/{conv.name}>)" in text
+            assert f"](<../Respuestas/Qwen/{first.name}>)" in conv.read_text("utf-8")
+            # written once: Iván's own edit in that file stays when the conversation goes on
+            first.write_text(text + "\n\nMi nota: repasar esto.", "utf-8")
+            app.ext.behaviour["qwen"] = {"ok": True, "text": "Tercera.", "via": "copy-button"}
+            await gw(app, ask("qwen", "¿Y la estanflación?", chat_id="c-1", title="Precios y dinero"))
+            assert "Mi nota: repasar esto." in first.read_text("utf-8") and len(own_files(base)) == 4
+            assert "# Precios y dinero" in conv.read_text("utf-8")  # the note follows Open WebUI's title
+            async with app.http.get(app.url("/api/memoria"), headers=AUTH) as r:
+                m = await r.json()
+            assert m["conversations"] == 2 and m["answers"] == 4
+            # "Reescribir todo" (Iván's gesture): everything again from the journal
+            async with app.http.post(app.url("/api/memoria/reescribir"), json={}, headers=AUTH) as r:
+                assert r.status == 200
+            assert vault.flush(10) and "Mi nota" not in first.read_text("utf-8") and own_answer(first) == "La inflación es…\n"
+    run(go())
+
+
+def test_what_an_obsidian_plugin_could_run_by_itself_is_defused(tmp_path, mock_server):
+    """Answers are untrusted (rule 5): Templater runs "<%*" JavaScript in NEW files if Iván has "trigger on new
+    file creation" on; Dataview runs dataviewjs blocks and "$=" queries when a note is opened."""
+    evil = ("Mira:\n<%* require('child_process').exec('calc') %>\n\n```dataviewjs\ndv.paragraph(1)\n```\n\n"
+            "y `$= dv.pages().length`.\n\n```python\nprint('esto sí se queda igual')\n```")
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url, behaviour={"qwen": {"ok": True, "text": evil, "via": "copy-button"}}) as app:
+            base = on(app, tmp_path)
+            _, _, h = await gw(app, ask("qwen", "hola", chat_id="c-1"))
+            (own,) = own_files(base)
+            (conv,) = notes(base)
+            for p in (own, conv):
+                text = p.read_text("utf-8")
+                assert "<%" not in text and "```dataviewjs" not in text and "`$=" not in text
+                assert "print('esto sí se queda igual')" in text and "webllm desactivó aquí" in text
+            assert "desactivado:" in own.read_text("utf-8").split("---\n")[1]
+            assert own_answer(own) == journal_answers(app, h["x-webllm-run"], exact=True)[0] == evil
+            assert answers_in(conv.read_text("utf-8"), "Qwen") == [evil]
+    run(go())
+
+
+def test_what_was_asked_before_the_memory_was_on_is_copied_when_ivan_asks(tmp_path, mock_server):
+    """Iván's conversation database: "Copiar también lo de antes" brings what webllm's record already had, each
+    question in its conversation and in time order; PREGUNTAR's questions (webllm ask) too."""
+    from webllm_agent.broadcaster import Outcome, write_run
+    from webllm_agent.client import OK, ChatResult
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url) as app:
+            await gw(app, ask("qwen", "antes 1", chat_id="c-old", title="Antiguo", project="Clientes"))
+            await gw(app, ask("qwen", "antes 2", chat_id="c-old", title="Antiguo", project="Clientes"))
+            await app.ask("¿Qué es el IPC?", ["zai"])
+            write_run(app.cfg.paths.runs_dir, "20260101-101010-abcd", "Pregunta de PREGUNTAR",
+                      [Outcome(app.cfg.providers["zai"], ChatResult(OK, text="Respuesta vieja.", model="z/ok"))])
+            base = on(app, tmp_path)
+            assert notes(base) == [] and own_files(base) == []  # nothing of before until Iván asks for it
+            # the same Open WebUI conversation goes on (the pipe always says its folder and title)
+            await gw(app, ask("qwen", "después", chat_id="c-old", title="Antiguo", project="Clientes"))
+            async with app.http.post(app.url("/api/memoria/anteriores"), json={}, headers=AUTH) as r:
+                assert r.status == 200
+            found = {p.relative_to(base).as_posix(): p.read_text("utf-8") for p in notes(base)}
+            (old,) = [k for k in found if k.startswith("Clientes/")]
+            assert old.endswith(" Antiguo.md")  # its Open WebUI folder and title, from webllm's record
+            text = found[old]
+            assert [x for x in ("antes 1", "antes 2", "después") if x in text] == ["antes 1", "antes 2", "después"]
+            assert text.index("antes 1") < text.index("antes 2") < text.index("después")  # in time order
+            mine = [k for k in found if k.startswith(f"{vault.APP_PROJECT}/")]
+            assert len(mine) == 2 and any("Pregunta de PREGUNTAR" in found[k] and "Respuesta vieja." in found[k] for k in mine)
+            assert any(k.endswith(" Pregunta de PREGUNTAR.md") for k in mine) and "esperando" not in "".join(found.values())
+            own = own_files(base)
+            assert len(own) == 5 and any(own_answer(p) == "Respuesta vieja." and 'modelo: "z/ok"' in p.read_text("utf-8")
+                                         for p in own)
+            # asking again changes nothing (no duplicates)
+            async with app.http.post(app.url("/api/memoria/anteriores"), json={}, headers=AUTH) as r:
+                assert r.status == 200
+            assert len(notes(base)) == 3 and len(own_files(base)) == 5
+    run(go())
+
+
+def test_a_file_that_is_busy_for_a_moment_on_windows_is_written_anyway(tmp_path, mock_server, monkeypatch):
+    """On Windows a file cannot be replaced while another program has it open (webllm's own app reading its
+    list, Drive uploading a note, Obsidian): the writer tries again instead of reporting a failure."""
+    real, busy = os.replace, {"left": 2}
+
+    def sometimes_busy(src, dst):
+        if "Mi unidad" in str(dst) and busy["left"]:
+            busy["left"] -= 1
+            raise PermissionError(13, "El proceso no tiene acceso al archivo porque está siendo utilizado")
+        return real(src, dst)
+
+    async def go():
+        async with App(tmp_path, mock_server.base_url) as app:
+            base = on(app, tmp_path)
+            monkeypatch.setattr(vault.os, "replace", sometimes_busy)
+            await gw(app, ask("zai", "hola", chat_id="c-1"))
+            assert len(notes(base)) == 1 and len(own_files(base)) == 1 and busy["left"] == 0
+            assert vault.settings(app.cfg.paths)["error"] is None
+            assert not [p for p in base.rglob("*") if p.name.startswith(".webllm-")]  # no temporary files left
+    run(go())
+
+
+def test_copying_a_long_history_writes_webllms_list_a_few_times_not_once_per_question(tmp_path, mock_server, monkeypatch):
+    async def go():
+        async with App(tmp_path, mock_server.base_url) as app:
+            for n in range(60):
+                await gw(app, ask("zai", f"pregunta {n}", chat_id=f"c-{n % 20}"))
+            base = on(app, tmp_path)
+            writes = []
+            real = vault._write_json
+            monkeypatch.setattr(vault, "_write_json", lambda path, data: (writes.append(path.name), real(path, data)))
+            vault.import_history(app.cfg.paths)
+            found = notes(base)
+            assert len(found) == 20 and len(own_files(base)) == 60
+            assert all(f.read_text("utf-8").count("## Tú") == 3 for f in found)
+            assert writes.count(vault.INDEX) <= 5, writes
     run(go())

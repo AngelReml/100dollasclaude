@@ -43,6 +43,22 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 8. **Protección automática:** 1 mensaje a la vez por chat, 20 s entre mensajes, 150 al día. Nunca se salta una verificación.
 9. **Todo queda apuntado** en `data/runs/`. Los comandos avanzados están en `herramientas\`.
 
+## Novedades del 26-sep-2026 (PLAN-v5, fase F5: tu memoria en Obsidian)
+
+- **En la app, en el Inicio, la tarjeta «Memoria en Obsidian».** Escribes la carpeta de tu vault (donde quieras: en tu PC o en Drive) y pulsas «Encender la memoria».
+- **Lo que escribe, siempre dentro de su carpeta `webllm`:**
+  - una nota por conversación, en la carpeta de su proyecto (la carpeta de Open WebUI donde la tengas);
+  - y aparte, como pediste, **cada respuesta de cada IA en su propio archivo, con la fecha y la hora como título** (`Respuestas\Qwen\2026-09-26 14.05.12 Qwen - ¿Qué es la inflación.md`), idéntica al registro.
+- **Se escribe mientras ocurre** y **nunca lee nada del vault.** Si Drive está cerrado, la pregunta sigue funcionando y la tarjeta te lo dice; al volver, escribe lo que faltaba.
+- **«Copiar también lo de antes»** pasa tu historial al vault. **«Reescribir todo»** lo rehace desde el registro.
+- Lo que un complemento de Obsidian podría ejecutar solo (Templater, Dataview) queda desactivado en la copia.
+- **Probado aquí:** 14 pruebas de la memoria (incluidas 10 conversaciones seguidas idénticas al registro y ni una lectura del vault) y **6 de 6 en el Open WebUI de verdad**.
+- **Falta tu PC:** abrir Obsidian y ver la conversación de hace un minuto (y en el móvil, si el vault está en Drive). Guía en `docs/F5-memoria.md`.
+- **Qué hacer:**
+  1. `ACTUALIZAR`;
+  2. `herramientas\poner-en-openwebui.cmd` otra vez;
+  3. en la app, tarjeta «Memoria en Obsidian» → tu carpeta → «Encender la memoria».
+
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F4: todo lo que sabe hacer cada chat, bajo tu control)
 
 - **Cada chat tiene su «Ficha»** (en la app, en su tarjeta):

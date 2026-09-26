@@ -106,6 +106,7 @@ class AppApi:
         self.login_wait_s = 180.0  # how long a site waits for Iván to log in during "Conectar varias"
         self.ack_wait_s = 15.0  # an extension that never acknowledges a message is too old for it
         self._last_omni_start = -1e9
+        self._memory_retry = -1e9  # when the app last asked the memory to write again what it missed
 
     @property
     def cfg(self):
@@ -149,6 +150,8 @@ class AppApi:
         app.router.add_post("/api/ficha/{ai}/olvidar", self.ficha_olvidar)
         app.router.add_get("/api/memoria", self.memoria)
         app.router.add_post("/api/memoria", self.guardar_memoria)
+        app.router.add_post("/api/memoria/reescribir", self.reescribir_memoria)
+        app.router.add_post("/api/memoria/anteriores", self.memoria_anteriores)
 
     # ---------------------------------------------------------------- helpers
 
@@ -1063,14 +1066,15 @@ class AppApi:
         except ValueError:
             last = None
         return {"dir": s["dir"], "enabled": s["enabled"], "error": s.get("error"), "last": last,
-                "conversations": vault.conversations(self.cfg.paths)}
+                "conversations": vault.conversations(self.cfg.paths), "answers": vault.answers(self.cfg.paths)}
 
     async def memoria(self, request: web.Request) -> web.Response:
         if not self._authorized(request):
             return self._unauthorized()
         view = self.memoria_view()
-        if view["enabled"] and view["error"]:
-            vault.retry(self.cfg.paths)  # Drive may be back: try again what it missed
+        if view["enabled"] and view["error"] and time.monotonic() - self._memory_retry > 60:
+            self._memory_retry = time.monotonic()  # the app asks every few seconds: try again once a minute
+            vault.retry(self.cfg.paths)  # Drive may be back: write what it missed
         return web.json_response(view)
 
     async def guardar_memoria(self, request: web.Request) -> web.Response:
@@ -1087,6 +1091,26 @@ class AppApi:
                                     bool(body.get("enabled", True)))
         except ValueError as exc:
             return self._fail(400, str(exc), "bad_folder")
+        return web.json_response(self.memoria_view())
+
+    async def memoria_anteriores(self, request: web.Request) -> web.Response:
+        """"Copiar también lo de antes": the questions webllm recorded before the memory was on."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        if not vault.settings(self.cfg.paths)["enabled"]:
+            return self._fail(409, "La memoria está apagada: enciéndela primero.", "memory_off")
+        cfg = await self._cfg()
+        vault.import_history(self.cfg.paths, labels={p.name: p.display for p in cfg.providers.values()})
+        return web.json_response(self.memoria_view())
+
+    async def reescribir_memoria(self, request: web.Request) -> web.Response:
+        """"Reescribir todo": everything written again from the journal (what Iván changed by hand in webllm's
+        files is lost; the app asks him first)."""
+        if not self._authorized(request):
+            return self._unauthorized()
+        if not vault.settings(self.cfg.paths)["enabled"]:
+            return self._fail(409, "La memoria está apagada: enciéndela primero.", "memory_off")
+        vault.rewrite_all(self.cfg.paths)
         return web.json_response(self.memoria_view())
 
     async def encender_local(self, request: web.Request) -> web.Response:

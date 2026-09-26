@@ -23,7 +23,7 @@
 | D2 | **Todo pasa por webllm.** Open WebUI tiene **una sola conexión**: la **"pipe" de webllm**, una función pequeña que Open WebUI ejecuta (está en git y es parte de webllm). Chats web, APIs, modelos de tu PC y skills de webllm aparecen como "modelos" en su selector | Así webllm es el único que escribe el registro y la memoria, y aplica el guardián y el presupuesto a todo. Una pipe, y no la conexión normal, porque es la que recibe los archivos enteros y los interruptores del "+" (F1, comprobaciones 11 y 12) |
 | D3 | **El núcleo funciona sin ningún chat web.** Las APIs gratis y los modelos de tu PC son la base; los chats web son un extra valioso | La extensión es la pieza más frágil (4 de 5 críticas) |
 | D4 | **El Comité es obligatorio y es la pieza central**, con el protocolo de Iván (sección 2). Aparece en el selector como **"webllm · Comité"** | Decisión de Iván |
-| D5 | **Memoria con un solo escritor.** webllm guarda todo en su registro local y lo **copia en un solo sentido** al vault de Obsidian, que está en una carpeta sincronizada con Google Drive. **Nunca se lee de vuelta desde Drive** | Obsidian + Drive en ambos sentidos = conflictos (5 de 5 críticas). Es la idea de Meta |
+| D5 | **Memoria con un solo escritor.** webllm guarda todo en su registro local y lo **copia en un solo sentido** al vault de Obsidian, que está en una carpeta sincronizada con Google Drive. **Nunca se lee de vuelta desde Drive**. **Actualizada el 26-sep-2026 por Iván:** el vault puede estar donde quieras (en tu PC o en Drive), y además de la nota de cada conversación, **cada respuesta de cada IA va en su propio archivo, con la fecha y la hora como título** (su base de conversaciones, que indexa con LM Studio) | Obsidian + Drive en ambos sentidos = conflictos (5 de 5 críticas). Es la idea de Meta |
 | D6 | **Un solo formato de "acción"** (el estándar `tool_calls`) para todas las IAs. Open WebUI enseña la tarjeta **Permitir/Denegar**. Con los chats web, webllm hace de intérprete: menú en texto → petición → `tool_calls` | Es la idea de z.ai: una tarjeta, un registro, un código |
 | D7 | **Ficha de capacidades por cada IA y modelo**, y **"Automático" con reglas escritas y a la vista**, afinadas antes de entregarlo. Siempre puedes elegir tú el modelo, y "Automático" no es el de partida (D21). **Sin aprendizaje automático** | Idea de DeepSeek; decisión de Iván |
 | D8 | **Claves de las APIs en el almacén de claves de Windows** (Administrador de credenciales), nunca en archivos del proyecto | 4 de 5 críticas |
@@ -424,8 +424,9 @@ Cada fase tiene:
 
 - **Puerta:** F2.
 - **Qué:**
-  - Carpeta del vault configurable (dentro de tu carpeta de Google Drive).
+  - Carpeta del vault configurable (donde quieras: tu PC o tu carpeta de Google Drive).
   - Un archivo Markdown por conversación, en su carpeta de proyecto.
+  - Cada respuesta de cada IA, además, en su propio archivo con la fecha y la hora como título (D5, 26-sep-2026).
   - Se escribe mientras ocurre.
   - Documentos del Comité en `Comités/`.
   - Un índice.
@@ -433,6 +434,8 @@ Cada fase tiene:
 - **Probado aquí:** tests que comparan el archivo con el registro, escritura a mitad de una conversación y caracteres raros en los títulos. Uno comprueba que no hay ni una lectura del vault.
 - **En tu PC:** abres Obsidian y ves la conversación de hace un minuto; desde el móvil, en Drive, ves el mismo archivo.
 - **Salida:** 10 conversaciones seguidas, las 10 en el vault, idénticas al registro.
+
+> **Estado (26-sep-2026):** hecho y probado en la nube, también en el Open WebUI de verdad (6 de 6: la carpeta de Open WebUI es el proyecto, se escribe mientras Qwen contesta, la respuesta suelta es idéntica al registro y a la pantalla). La salida (10 conversaciones idénticas al registro) pasa aquí. Añadidos a propósito: «Copiar también lo de antes» (tu historial), «Reescribir todo», y que lo que un complemento de Obsidian podría ejecutar solo (Templater, Dataview) queda desactivado en la copia. Falta tu PC: Obsidian y el móvil. Detalle: `docs/F5-memoria.md`.
 
 ### F6 — Webs que se reparan solas y modo observador
 

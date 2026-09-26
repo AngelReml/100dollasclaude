@@ -508,7 +508,8 @@ class Bridge:
         except GatewayError as exc:
             return web.json_response({"error": str(exc)}, status=503)
         run_id = new_run_id()
-        write_run(self.cfg.paths.runs_dir, run_id, prompt, outcomes)
+        vault.export_run(self.cfg.paths, write_run(self.cfg.paths.runs_dir, run_id, prompt, outcomes),
+                         labels={p.name: p.display for p in self.cfg.providers.values()})
         return web.json_response({"run_id": run_id, "skipped": skipped, "outcomes": [{
             "name": o.target.name, "model": o.result.model or o.target.model, "ok": o.result.ok,
             "text": o.result.text, "seconds": round(o.result.latency_s, 1),

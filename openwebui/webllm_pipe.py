@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import json
 from typing import Any, AsyncGenerator
 
@@ -125,6 +126,35 @@ class Pipe:
                         "data": base64.b64encode(raw).decode(), "sha256": hashlib.sha256(raw).hexdigest()})
         return out
 
+    async def _where(self, chat_id: str | None, user: dict[str, Any] | None) -> dict[str, str]:
+        """Where Open WebUI keeps this conversation: its title, and its folder (the project in Obsidian, PLAN-v5
+        F5). Read from Open WebUI's own database; nothing is sent anywhere else. Missing = webllm decides."""
+        if not chat_id or str(chat_id).startswith("local:"):
+            return {}
+        try:
+            from open_webui.models.chats import Chats  # only inside Open WebUI (0.11.4: async)
+            from open_webui.models.folders import Folders
+        except ImportError:
+            return {}
+
+        async def done(x: Any) -> Any:
+            return await x if inspect.isawaitable(x) else x
+
+        out: dict[str, str] = {}
+        try:
+            title = await done(Chats.get_chat_title_by_id(chat_id))
+            if title:
+                out["title"] = str(title)
+            uid = (user or {}).get("id")
+            folder_id = await done(Chats.get_chat_folder_id(chat_id, uid)) if uid else None
+            if folder_id:
+                folder = await done(Folders.get_folder_by_id_and_user_id(folder_id, uid))
+                if folder is not None and getattr(folder, "name", ""):
+                    out["project"] = str(folder.name)
+        except Exception:  # noqa: BLE001 - the answer matters more than its folder in Obsidian
+            pass
+        return out
+
     async def pipe(
         self,
         body: dict[str, Any],
@@ -134,6 +164,7 @@ class Pipe:
         __chat_id__: str | None = None,
         __message_id__: str | None = None,
         __event_emitter__: Any = None,
+        __user__: dict[str, Any] | None = None,
     ) -> Any:
         model = str(body.get("model", "")).split(".", 1)[-1]
         messages = body.get("messages") or []
@@ -145,7 +176,8 @@ class Pipe:
             "model": model, "stream": True, "messages": messages,
             "webllm": {"chat_id": __chat_id__ or "", "message_id": __message_id__ or "",
                        "task": str(__task__ or ""), "files": await self._files(__metadata__, __files__),
-                       "modes": list(body.get("webllm_modes") or [])},
+                       "modes": list(body.get("webllm_modes") or []),
+                       **await self._where(__chat_id__, __user__)},
         }
         if body.get("tools"):
             payload["tools"] = body["tools"]

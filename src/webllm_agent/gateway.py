@@ -334,6 +334,7 @@ class Gateway:
             "origin": "open-webui",
             "provider": p.name, "chat_id": req["chat_id"], "message_id": req["message_id"], "task": req["task"],
             "files": entries, "modes": req["modes"],
+            **({"project": req["project"]} if req["project"] else {}), **({"title": req["title"]} if req["title"] else {}),
         })
         # PLAN-v5 F5: the question is in Obsidian while the answer is on its way, in the project (Open WebUI's
         # folder) and under the title Open WebUI shows
