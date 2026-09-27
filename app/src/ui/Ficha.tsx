@@ -27,7 +27,7 @@ export function checkWords(c: SiteCheck): string {
 const TEACH_STEPS: { what: "input" | "send" | "answer"; text: string }[] = [
   { what: "input", text: "Paso 1 de 3: en la ventanita de webllm, haz clic en la caja donde se escribe." },
   { what: "send", text: "Paso 2 de 3: ahora haz clic en su botón de enviar (no se enviará nada)." },
-  { what: "answer", text: "Paso 3 de 3: y ahora haz clic en la última respuesta de la IA." },
+  { what: "answer", text: "Paso 3 de 3: haz clic en una respuesta real de la IA a un mensaje anterior (no en su saludo inicial)." },
 ];
 
 /** "2026-09-26 06:05" → "26/09/2026 a las 06:05". */
@@ -58,6 +58,7 @@ export function FichaDialog({ ai, label, open, onOpenChange }: { ai: string; lab
   const [f, setF] = useState<Ficha | null>(null);
   const [busy, setBusy] = useState<"" | "descubrir" | "model" | "plus" | "teach">("");
   const [step, setStep] = useState<number | null>(null);
+  const [teachReady, setTeachReady] = useState(false);
   const load = useCallback(async () => {
     try {
       setF(await api.ficha(ai));
@@ -67,6 +68,7 @@ export function FichaDialog({ ai, label, open, onOpenChange }: { ai: string; lab
   }, [ai, toast]);
   useEffect(() => {
     if (open) load();
+    else setTeachReady(false);
   }, [open, load]);
 
   const run = async (what: "descubrir" | "model" | "plus", fn: () => Promise<Ficha>, done: string) => {
@@ -82,6 +84,7 @@ export function FichaDialog({ ai, label, open, onOpenChange }: { ai: string; lab
   };
   // "Enséñame esta web" (PLAN-v5 F6, layer 4): three clicks in its window, each tried on the page, nothing sent.
   const teachWeb = async () => {
+    setTeachReady(false);
     setBusy("teach");
     try {
       for (let i = 0; i < TEACH_STEPS.length; i++) {
@@ -212,16 +215,26 @@ export function FichaDialog({ ai, label, open, onOpenChange }: { ai: string; lab
           <Block icon={<Wrench size={18} aria-hidden />} title="Si su web cambia">
             <p className="text-[15px] text-ink-2">
               {f.revision ? `Comprobada el ${readable(f.revision.when)}: ${checkWords(f.revision)}.` : "Todavía no se ha comprobado (webllm lo hace una vez al día)."}{" "}
-              Si webllm no encuentra su caja o no puede leer su respuesta, intenta arreglarlo solo; si no puede, enséñaselo tú con tres clics
-              en su ventanita. Tus clics no envían nada.
+              Si webllm no encuentra su caja o no puede leer su respuesta, intenta arreglarlo solo; si no puede, enséñaselo tú con tres clics.
+              Antes tendrás que abrir una conversación que ya contenga una respuesta real de la IA. Tus clics no envían nada.
             </p>
             <div>
               <Button variant="soft" disabled={!!busy}
                 icon={busy === "teach" ? <Loader2 size={18} className="animate-spin" aria-hidden /> : <MousePointerClick size={18} aria-hidden />}
-                onClick={teachWeb}>
+                onClick={() => setTeachReady(true)}>
                 {busy === "teach" && step !== null ? "Esperando tu clic…" : "Enséñame esta web (3 clics)"}
               </Button>
             </div>
+            {teachReady && !busy && (
+              <div className="rounded-xl border border-line-strong bg-warn-bg px-4 py-3 text-[16px] text-warn-ink" role="status">
+                <p className="font-semibold">Antes de empezar: abre en la ventanita de {label} una conversación que ya tenga una respuesta de la IA.</p>
+                <p className="mt-1">No sirve una conversación vacía ni el saludo inicial. webllm no escribirá ni enviará ningún mensaje durante estos tres clics.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setTeachReady(false)}>Cancelar</Button>
+                  <Button variant="primary" size="sm" onClick={teachWeb}>Ya veo una respuesta: empezar</Button>
+                </div>
+              </div>
+            )}
             {busy === "teach" && step !== null && (
               <p className="rounded-xl bg-warn-bg px-4 py-3 text-[16px] font-semibold text-warn-ink" role="status">{TEACH_STEPS[step].text}</p>
             )}

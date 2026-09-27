@@ -25,6 +25,7 @@
       - si faltaba la respuesta, **se vuelve a leer, nunca se vuelve a enviar**;
       - la respuesta te lo dice: «La web de X había cambiado y webllm no encontraba su respuesta: z.ai señaló dónde está, se comprobó en la página sin enviar nada y queda guardado (lo puedes deshacer en su Ficha, en webllm)».
 4. **«Enséñame esta web (3 clics)».** En la Ficha de ese chat (y en «Conectores», en las webs que «No funcionan todavía»):
+   - antes de empezar, abre en su ventana una conversación que ya contenga una respuesta real de la IA; la guía no acepta un chat vacío ni su saludo inicial;
    - webllm te pide tres clics en su ventana: en la caja de texto, en el botón de enviar y en la última respuesta;
    - tus clics no hacen nada en la web, y cada uno se prueba en la página antes de guardarse.
 

@@ -1118,7 +1118,7 @@ class AppApi:
                 "file": "haz clic en el botón para adjuntar archivos",
                 "input": "haz clic en la caja donde se escribe el mensaje",
                 "send": "haz clic en el botón de enviar (no se enviará nada)",
-                "answer": "haz clic en la última respuesta de la IA"}[what]
+                "answer": "haz clic en una respuesta real de la IA a un mensaje anterior (no en su saludo inicial)"}[what]
         if not await self.bridge._ensure_extension():
             return self._fail(503, "Chrome no está conectado: abre Chrome con la extensión webllm.", "sin_chrome")
         async with self.bridge.locks.setdefault(site, asyncio.Lock()):

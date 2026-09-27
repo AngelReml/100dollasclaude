@@ -1,0 +1,89 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "update": "disable",
+  "share": "disabled",
+  "default_agent": "taller-plan",
+  "model": "omniroute/coding-free",
+  "providers": {
+    "omniroute": {
+      "name": "OmniRoute local",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "env": ["OMNIROUTE_API_KEY"],
+      "settings": {
+        "baseURL": "http://127.0.0.1:20128/v1",
+        "apiKey": "{env:OMNIROUTE_API_KEY}"
+      },
+      "models": {
+        "glm-5.2": {
+          "modelID": "zai/glm-5.2",
+          "name": "GLM-5.2"
+        },
+        "coding-free": {
+          "modelID": "auto/coding:free",
+          "name": "Reserva de codigo gratuita"
+        }
+      }
+    }
+  },
+  "agents": {
+    "taller-plan": {
+      "description": "Primero explica el plan sin cambiar archivos ni ejecutar comandos.",
+      "mode": "primary",
+      "system": "Analiza la tarea y presenta un plan breve, los archivos que cambiarias, los comandos que pedirias ejecutar y como comprobarias el resultado. No edites ni ejecutes comandos.",
+      "permissions": [
+        {"action": "edit", "resource": "*", "effect": "deny"},
+        {"action": "shell", "resource": "*", "effect": "deny"},
+        {"action": "external_directory", "resource": "*", "effect": "deny"},
+        {"action": "subagent", "resource": "*", "effect": "deny"},
+        {"action": "skill", "resource": "*", "effect": "deny"},
+        {"action": "lsp", "resource": "*", "effect": "deny"}
+      ]
+    },
+    "taller-build": {
+      "description": "Ejecuta el plan aprobado con cada cambio y comando bajo permiso.",
+      "mode": "primary",
+      "system": "Ejecuta solo el plan que el usuario acaba de aprobar. Pide permiso para cada edicion, comando o acceso fuera del proyecto. Verifica con los tests del proyecto y resume el diff; no publiques ni integres ramas.",
+      "permissions": [
+        {"action": "subagent", "resource": "*", "effect": "deny"},
+        {"action": "skill", "resource": "*", "effect": "deny"},
+        {"action": "lsp", "resource": "*", "effect": "deny"}
+      ]
+    }
+  },
+  "permissions": [
+    {"action": "edit", "resource": "*", "effect": "ask"},
+    {"action": "shell", "resource": "*", "effect": "ask"},
+    {"action": "external_directory", "resource": "*", "effect": "ask"},
+    {"action": "webfetch", "resource": "*", "effect": "deny"},
+    {"action": "websearch", "resource": "*", "effect": "deny"},
+
+    {"action": "shell", "resource": "*runas*", "effect": "deny"},
+    {"action": "shell", "resource": "*gsudo*", "effect": "deny"},
+    {"action": "shell", "resource": "*psexec*", "effect": "deny"},
+    {"action": "shell", "resource": "*shutdown*", "effect": "deny"},
+    {"action": "shell", "resource": "*Stop-Computer*", "effect": "deny"},
+    {"action": "shell", "resource": "*Restart-Computer*", "effect": "deny"},
+    {"action": "shell", "resource": "*logoff*", "effect": "deny"},
+    {"action": "shell", "resource": "*diskpart*", "effect": "deny"},
+    {"action": "shell", "resource": "*bcdedit*", "effect": "deny"},
+    {"action": "shell", "resource": "*bootrec*", "effect": "deny"},
+    {"action": "shell", "resource": "*Clear-Disk*", "effect": "deny"},
+    {"action": "shell", "resource": "*Remove-Partition*", "effect": "deny"},
+    {"action": "shell", "resource": "*Initialize-Disk*", "effect": "deny"},
+    {"action": "shell", "resource": "*format *", "effect": "deny"},
+    {"action": "shell", "resource": "*cipher /w*", "effect": "deny"},
+    {"action": "shell", "resource": "*Remove-Item *-Recurse*", "effect": "deny"},
+    {"action": "shell", "resource": "*rmdir */s*", "effect": "deny"},
+    {"action": "shell", "resource": "*rd */s*", "effect": "deny"},
+    {"action": "shell", "resource": "*del */s*", "effect": "deny"},
+    {"action": "shell", "resource": "*rm *-rf*", "effect": "deny"},
+    {"action": "shell", "resource": "*rm *-fr*", "effect": "deny"},
+    {"action": "shell", "resource": "*reg delete*", "effect": "deny"},
+    {"action": "shell", "resource": "*reg add*", "effect": "deny"},
+    {"action": "shell", "resource": "*reg import*", "effect": "deny"},
+    {"action": "shell", "resource": "*takeown*", "effect": "deny"},
+    {"action": "shell", "resource": "*icacls*", "effect": "deny"},
+    {"action": "shell", "resource": "*Set-MpPreference*", "effect": "deny"},
+    {"action": "shell", "resource": "*vssadmin*", "effect": "deny"}
+  ]
+}

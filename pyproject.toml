@@ -17,9 +17,11 @@ dependencies = [
 [project.optional-dependencies]
 # Only to run the tests (pydantic: the Open WebUI functions in openwebui/ use it; Open WebUI has it).
 test = ["pytest>=8", "pydantic>=2"]
+workshop-windows = ["pywin32>=312; sys_platform == 'win32'"]
 
 [project.scripts]
 webllm = "webllm_agent.cli.main:main"
+webllm-taller = "webllm_agent.workshop_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
