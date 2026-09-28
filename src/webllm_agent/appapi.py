@@ -319,12 +319,15 @@ class AppApi:
         prompt = str(body.get("prompt") or "").strip()
         names = [str(n) for n in (body.get("to") or [])]
         title = str(body.get("title") or "Pregunta")[:120]
+        report_root = str(body.get("report_root") or "")
         if not prompt:
             return self._fail(400, "Escribe una pregunta.", "empty")
         if len(prompt) > MAX_PROMPT:
             return self._fail(400, "La pregunta es demasiado larga.", "too_long")
         if not names:
             return self._fail(400, "Elige al menos una IA.", "no_target")
+        if report_root and self._run_dir(report_root) is None:
+            return self._fail(400, "No encuentro el informe original de este reintento.", "bad_report_root")
         cfg = await self._cfg()
         unknown = [n for n in names if n not in cfg.providers or not cfg.providers[n].enabled]
         if unknown:
@@ -353,7 +356,8 @@ class AppApi:
                 return self._fail(400, "Hay un modo desconocido.", "bad_modes")
             if modes:
                 modes_by_target[target] = {"modes": modes}
-        flow = flows.Flow(name=title, template="pregunta", inputs={"pregunta": prompt}, steps=(
+        inputs = {"pregunta": prompt, **({"report_root": report_root} if report_root else {})}
+        flow = flows.Flow(name=title, template="pregunta", inputs=inputs, steps=(
             flows.Step(id="respuestas", title="Respuestas", to=tuple(names), message="{{pregunta}}"),))
         try:
             flows.validate(cfg, flow)
@@ -559,19 +563,40 @@ class AppApi:
         d = self._run_dir(request.match_info["run_id"])
         if d is None:
             return self._fail(404, "No encuentro ese registro.", "not_found")
-        run = self._read_run(d)
-        lock = verify_run(d).ok
-        out = [f"# {run['title']}", "",
-               f"Registro `{d.name}` · {run['ts'] or ''} · Candado: {'verde (nadie lo ha tocado)' if lock else 'ROJO (no cuadra)'}",
-               ""]
-        for s in run["steps"]:
-            out += [f"## {s['title']}", "", "**Mensaje enviado:**", "", s["message"].rstrip(), ""]
-            for a in s["answers"]:
-                who = a["provider_label"] + (f" (en lugar de {a['label']})" if a["provider"] != a["target"] else "")
-                out += [f"### {who} · {a['seconds']} s", ""]
-                out += [a["text"].rstrip() if a["ok"] else f"_No respondió: {a['error']}_", ""]
+        def report_root(run_dir: Path) -> str:
+            try:
+                spec = json.loads((run_dir / "flow.json").read_text(encoding="utf-8"))
+                candidate = str((spec.get("inputs") or {}).get("report_root") or "")
+            except (OSError, ValueError, AttributeError):
+                candidate = ""
+            return candidate if self._run_dir(candidate) is not None else run_dir.name
+
+        root_id = report_root(d)
+        root = self._run_dir(root_id) or d
+        related = [root]
+        if self.cfg.paths.runs_dir.exists():
+            for child in sorted(self.cfg.paths.runs_dir.iterdir()):
+                if child != root and RUN_ID.match(child.name) and (child / "journal.jsonl").exists() and report_root(child) == root_id:
+                    related.append(child)
+        first = self._read_run(root)
+        all_locked = all(verify_run(x).ok for x in related)
+        out = [f"# {first['title']}", "",
+               f"Informe `{root_id}` · {first['ts'] or ''} · Candado: {'verde (todos los registros están intactos)' if all_locked else 'ROJO (algún registro no cuadra)'}",
+               "", "Este archivo se genera de forma determinista. Incluye las respuestas literales y los fallos; ninguna IA los resume ni los modifica.", ""]
+        for attempt, run_dir in enumerate(related):
+            run = self._read_run(run_dir)
+            if attempt:
+                out += [f"## Reintento {attempt} · {run['ts'] or ''}", ""]
+            for s in run["steps"]:
+                heading = s["title"] if not attempt else f"{s['title']} del reintento"
+                out += [f"## {heading}" if not attempt else f"### {heading}", "", "**Mensaje enviado:**", "", s["message"].rstrip(), ""]
+                for a in s["answers"]:
+                    who = a["provider_label"] + (f" (en lugar de {a['label']})" if a["provider"] != a["target"] else "")
+                    level = "###" if not attempt else "####"
+                    out += [f"{level} {who} · {a['seconds']} s", ""]
+                    out += [a["text"].rstrip() if a["ok"] else f"_No respondió: {a['error']}_", ""]
         return web.Response(text="\n".join(out), content_type="text/markdown", charset="utf-8", headers={
-            "Content-Disposition": f'attachment; filename="webllm-{d.name}.md"', "Cache-Control": "no-store"})
+            "Content-Disposition": f'attachment; filename="webllm-{root_id}.md"', "Cache-Control": "no-store"})
 
     # ----------------------------------------------------------------- fixes
 

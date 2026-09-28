@@ -26,6 +26,8 @@ export interface Turn {
   question: string;
   from?: { name: string; label: string; kind: "pasar" | "criticar" };
   modes?: Record<string, string[]>;
+  /** The first run whose deterministic report also includes this retry. */
+  reportRoot?: string;
   answers: TurnAnswer[];
   runId: string | null;
   verified: boolean | null;
@@ -40,6 +42,7 @@ export interface AskOptions {
   question?: string;
   from?: Turn["from"];
   modes?: Record<string, string[]>;
+  reportRoot?: string;
   /** Called with the new turn's id as soon as it exists (to follow its progress). */
   onStart?: (id: string) => void;
 }
@@ -101,6 +104,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         question: o.question ?? o.prompt,
         from: o.from,
         modes: o.modes,
+        reportRoot: o.reportRoot,
         answers: o.to.map((name) => ({
           target: name,
           label: labelOf(name),
@@ -152,7 +156,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
 
       try {
-        await preguntar({ prompt: o.prompt, to: o.to, title: o.title, modes: o.modes }, onEvent);
+        await preguntar({ prompt: o.prompt, to: o.to, title: o.title, modes: o.modes, report_root: o.reportRoot }, onEvent);
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Algo salió mal al preguntar.";
         const code = err instanceof ApiError ? err.code : "error";

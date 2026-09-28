@@ -199,6 +199,7 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
     question: turn.question,
     from: turn.from,
     modes: turn.modes?.[answer.target] ? { [answer.target]: turn.modes[answer.target] } : undefined,
+    reportRoot: turn.reportRoot ?? turn.runId ?? undefined,
   });
   const askOther = (other: string) =>
     ask({ prompt: turn.prompt, to: [other], title: `${turn.title} (a ${labelOf(other)})`, question: turn.question, from: turn.from });
@@ -286,7 +287,7 @@ function TurnView({ turn, now, onPass }: { turn: Turn; now: number; onPass: (tur
             <ButtonLink
               size="sm"
               variant="primary"
-              href={api.exportUrl(turn.runId)}
+              href={api.exportUrl(turn.reportRoot ?? turn.runId)}
               icon={<Download size={17} aria-hidden />}
               className="ml-auto"
             >

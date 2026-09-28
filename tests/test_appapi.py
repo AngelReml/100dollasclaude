@@ -228,6 +228,11 @@ def test_ask_streams_progress_and_lands_in_history(tmp_path, mock_server):
                 md = await r.text()
                 assert r.status == 200 and "attachment" in r.headers["Content-Disposition"]
             assert md.startswith("# Pregunta") and "### Qwen" in md and "answer from z/ok" in md
+            status, retry = await a.ask("¿té o café?", ["qwen"], title="Pregunta (otra vez)", report_root=run_id)
+            assert status == 200 and retry[-1]["status"] == "ok"
+            async with a.http.get(a.url(f"/api/historial/{run_id}/exportar?token={TOKEN}")) as r:
+                updated = await r.text()
+            assert "## Reintento 1" in updated and updated.count("answer from qwen") == 2
             status, _, _ = await a.get("/api/historial/..%2f..%2fetc")
             assert status == 404
     run(go())

@@ -472,7 +472,7 @@ export const api = {
 
 /** Ask one or several AIs; ``onEvent`` receives the live progress until the run ends. */
 export async function preguntar(
-  body: { prompt: string; to: string[]; title?: string; modes?: Record<string, string[]> },
+  body: { prompt: string; to: string[]; title?: string; modes?: Record<string, string[]>; report_root?: string },
   onEvent: (e: FlowEvent) => void,
 ): Promise<void> {
   let r: Response;
