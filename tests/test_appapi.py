@@ -201,6 +201,9 @@ def test_ask_streams_progress_and_lands_in_history(tmp_path, mock_server):
             kinds = [e["type"] for e in events]
             assert kinds[0] == "flow_start" and kinds[-1] == "flow_done"
             assert kinds.count("target_start") == 2 and kinds.count("target_done") == 2
+            progress = [(e["type"], e.get("target")) for e in events
+                        if e["type"] in ("target_start", "target_done")]
+            assert progress[-2:] == [("target_start", "qwen"), ("target_done", "qwen")]
             done = {e["target"]: e for e in events if e["type"] == "target_done"}
             assert done["qwen"]["text"] == "answer from qwen" and done["zai"]["text"] == "answer from z/ok"
             assert events[-1]["status"] == "ok" and events[-1]["verified"] is True
@@ -209,7 +212,7 @@ def test_ask_streams_progress_and_lands_in_history(tmp_path, mock_server):
             _, hist, _ = await a.get("/api/historial")
             (item,) = hist["runs"]
             assert item["id"] == run_id and item["kind"] == "pregunta" and item["lock"] is True
-            assert item["text"] == "¿té o café?" and [x["label"] for x in item["ais"]] == ["Qwen", "z.ai"]
+            assert item["text"] == "¿té o café?" and [x["label"] for x in item["ais"]] == ["z.ai", "Qwen"]
             _, hist, _ = await a.get("/api/historial?q=CAFÉ")
             assert len(hist["runs"]) == 1
             _, hist, _ = await a.get("/api/historial?q=answer%20from%20qwen")
@@ -219,7 +222,7 @@ def test_ask_streams_progress_and_lands_in_history(tmp_path, mock_server):
 
             _, detail, _ = await a.get(f"/api/historial/{run_id}")
             assert detail["lock"] and detail["steps"][0]["message"] == "¿té o café?"
-            assert [x["text"] for x in detail["steps"][0]["answers"]] == ["answer from qwen", "answer from z/ok"]
+            assert [x["text"] for x in detail["steps"][0]["answers"]] == ["answer from z/ok", "answer from qwen"]
 
             async with a.http.get(a.url(f"/api/historial/{run_id}/exportar?token={TOKEN}")) as r:
                 md = await r.text()
@@ -227,6 +230,17 @@ def test_ask_streams_progress_and_lands_in_history(tmp_path, mock_server):
             assert md.startswith("# Pregunta") and "### Qwen" in md and "answer from z/ok" in md
             status, _, _ = await a.get("/api/historial/..%2f..%2fetc")
             assert status == 404
+    run(go())
+
+
+def test_ask_sends_a_mode_only_to_the_chosen_web_chat(tmp_path, mock_server):
+    async def go():
+        async with App(tmp_path, mock_server.base_url) as a:
+            status, events = await a.ask("busca esto", ["qwen", "zai-chat"], modes={"zai-chat": ["buscar"]})
+            assert status == 200 and events[-1]["status"] == "ok"
+            jobs = {j["site"]: j for j in a.ext.jobs}
+            assert jobs["zai"].get("want") == {"modes": ["buscar"]}
+            assert not jobs["qwen"].get("want")
     run(go())
 
 

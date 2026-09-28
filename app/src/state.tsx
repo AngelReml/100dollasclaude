@@ -25,6 +25,7 @@ export interface Turn {
   /** The question this turn is about (for "Pásasela a…" it is the original question). */
   question: string;
   from?: { name: string; label: string; kind: "pasar" | "criticar" };
+  modes?: Record<string, string[]>;
   answers: TurnAnswer[];
   runId: string | null;
   verified: boolean | null;
@@ -38,6 +39,7 @@ export interface AskOptions {
   title?: string;
   question?: string;
   from?: Turn["from"];
+  modes?: Record<string, string[]>;
   /** Called with the new turn's id as soon as it exists (to follow its progress). */
   onStart?: (id: string) => void;
 }
@@ -98,6 +100,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         prompt: o.prompt,
         question: o.question ?? o.prompt,
         from: o.from,
+        modes: o.modes,
         answers: o.to.map((name) => ({
           target: name,
           label: labelOf(name),
@@ -149,7 +152,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
 
       try {
-        await preguntar({ prompt: o.prompt, to: o.to, title: o.title }, onEvent);
+        await preguntar({ prompt: o.prompt, to: o.to, title: o.title, modes: o.modes }, onEvent);
       } catch (err) {
         const message = err instanceof ApiError ? err.message : "Algo salió mal al preguntar.";
         const code = err instanceof ApiError ? err.code : "error";

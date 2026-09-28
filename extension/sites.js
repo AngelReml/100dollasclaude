@@ -34,6 +34,9 @@ self.WEBLLM_SITES = {
     copy: ["button.copy-response-button"],
     answer: [".chat-assistant"],
     modelLabel: ["button[aria-label='Select a model']", "button[id^='model-selector']"],
+    // z.ai's web-search control is an icon-only globe. It has no accessible name, but it exposes and updates
+    // data-active; using that site-specific control lets webllm both switch it on and verify it before sending.
+    modeButtons: { buscar: ["button[data-active]"] },
     loginUrl: "/auth|/login|/signin",
   },
   meta: {

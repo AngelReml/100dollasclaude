@@ -1,13 +1,13 @@
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Copy, Forward, Hand, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
+import { Copy, Download, Forward, Globe2, Hand, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Ai } from "../api";
+import { api, type Ai } from "../api";
 import { go } from "../nav";
 import { useStore, type Turn, type TurnAnswer } from "../state";
 import { AiAvatar } from "../ui/Ai";
 import { ObservingBanner, WebRow } from "../ui/Observando";
 import { AiPicker } from "../ui/AiPicker";
-import { Button } from "../ui/Button";
+import { Button, ButtonLink } from "../ui/Button";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
 import { ProblemBox } from "../ui/Fix";
@@ -24,6 +24,7 @@ const EXAMPLES = [
 ];
 
 const PICKED_KEY = "webllm.elegidas";
+const ZAI_WEB_KEY = "webllm.zai-internet";
 
 function readPicked(): string[] | null {
   try {
@@ -35,6 +36,14 @@ function readPicked(): string[] | null {
 }
 
 const short = (text: string, n = 240) => (text.length > n ? `${text.slice(0, n).trimEnd()}…` : text);
+
+function readZaiWeb(): boolean {
+  try {
+    return localStorage.getItem(ZAI_WEB_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
 
 export function passMessage(kind: "pasar" | "criticar", fromLabel: string, question: string, answer: string) {
   if (kind === "pasar")
@@ -183,7 +192,14 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
   const waiting = waitingText(answer, estado?.ais ?? []);
   const toast = useToast();
   const elapsed = answer.startedAt ? Math.max(0, Math.round((now - answer.startedAt) / 1000)) : 0;
-  const retry = () => ask({ prompt: turn.prompt, to: [answer.target], title: `${turn.title} (otra vez)`, question: turn.question, from: turn.from });
+  const retry = () => ask({
+    prompt: turn.prompt,
+    to: [answer.target],
+    title: `${turn.title} (otra vez)`,
+    question: turn.question,
+    from: turn.from,
+    modes: turn.modes?.[answer.target] ? { [answer.target]: turn.modes[answer.target] } : undefined,
+  });
   const askOther = (other: string) =>
     ask({ prompt: turn.prompt, to: [other], title: `${turn.title} (a ${labelOf(other)})`, question: turn.question, from: turn.from });
   const copy = async () => {
@@ -266,6 +282,17 @@ function TurnView({ turn, now, onPass }: { turn: Turn; now: number; onPass: (tur
               <Lock size={15} aria-hidden /> Guardado en el historial, con candado verde
             </span>
           )}
+          {!turn.running && turn.runId && (
+            <ButtonLink
+              size="sm"
+              variant="primary"
+              href={api.exportUrl(turn.runId)}
+              icon={<Download size={17} aria-hidden />}
+              className="ml-auto"
+            >
+              Descargar informe completo
+            </ButtonLink>
+          )}
         </div>
         <p className="whitespace-pre-wrap text-[16px]">{long && !open ? short(turn.prompt, 400) : turn.prompt}</p>
         {long && (
@@ -293,6 +320,7 @@ export function Preguntar() {
   const toast = useToast();
   const [text, setText] = useState("");
   const [picked, setPickedState] = useState<string[] | null>(readPicked);
+  const [zaiWeb, setZaiWebState] = useState(readZaiWeb);
   const [pass, setPass] = useState<Parameters<typeof PassDialog>[0]["pass"]>(null);
   const box = useRef<HTMLTextAreaElement>(null);
   const ais = estado?.ais ?? [];
@@ -315,6 +343,16 @@ export function Preguntar() {
   useEffect(() => box.current?.focus(), []);
 
   const chats = ais.filter((a) => a.kind === "chat" && selected.includes(a.name)).length;
+  const zaiChat = ais.find((a) => a.kind === "chat" && a.url?.includes("chat.z.ai"));
+  const zaiSelected = !!zaiChat && selected.includes(zaiChat.name);
+  const setZaiWeb = (on: boolean) => {
+    setZaiWebState(on);
+    try {
+      localStorage.setItem(ZAI_WEB_KEY, on ? "1" : "0");
+    } catch {
+      // The visible choice still works for this session.
+    }
+  };
 
   const send = (prompt = text) => {
     if (!prompt.trim()) return;
@@ -323,9 +361,11 @@ export function Preguntar() {
       return;
     }
     const order = ais.map((a) => a.name).filter((n) => selected.includes(n));
+    const modes = zaiWeb && zaiChat && selected.includes(zaiChat.name) ? { [zaiChat.name]: ["buscar"] } : undefined;
     ask({
       prompt: prompt.trim(),
       to: order,
+      modes,
       onStart: (id) => requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })),
     });
     setText("");
@@ -357,6 +397,21 @@ export function Preguntar() {
           <p className="text-[17px] font-semibold">¿A quién?</p>
           <AiPicker ais={ais} selected={selected} onChange={setPicked} />
         </div>
+        {zaiSelected && (
+          <label className="mt-4 flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-surface-2 px-4 py-3">
+            <input
+              type="checkbox"
+              checked={zaiWeb}
+              onChange={(e) => setZaiWeb(e.target.checked)}
+              className="h-5 w-5 accent-[var(--accent)]"
+            />
+            <Globe2 size={20} className="shrink-0 text-accent-soft-ink" aria-hidden />
+            <span className="min-w-0">
+              <span className="block font-semibold">Usar internet en z.ai</span>
+              <span className="block text-[15px] text-muted">webllm activa el globo y comprueba que quede encendido antes de enviar.</span>
+            </span>
+          </label>
+        )}
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-[15px] text-muted">
             {chats > 0

@@ -346,13 +346,20 @@ async def run_flow(
     transport: httpx.AsyncBaseTransport | None = None,
     stop: asyncio.Event | None = None,
     bridge_extra: dict[str, Any] | None = None,
+    bridge_extra_by_target: dict[str, dict[str, Any]] | None = None,
+    defer_targets: set[str] | None = None,
 ) -> FlowRun:
     """Run ``flow`` and return every step's result; raise FlowError / GatewayError before sending anything.
 
     ``stop`` is Iván's "parar": once set, a call in progress ends as "cancelled" at once (whoever sets it also
     tells the bridge, so a chat's job in Chrome stops too), nothing more is sent (no retry, no stand-in, no
     later step), and the run still closes its journal.
-    ``bridge_extra`` goes to the chat sites asked (PLAN-v5 F4): {"model", "modes", "files"}."""
+    ``bridge_extra`` goes to the chat sites asked (PLAN-v5 F4): {"model", "modes", "files"}.
+    ``bridge_extra_by_target`` overrides it for one named target, so a page-only control is never applied to
+    another chat that does not have it.
+    ``defer_targets`` starts those targets only after the other targets in their step have finished. This keeps
+    a chat that commonly needs Iván (for example Qwen's CAPTCHA) in the question without letting it interrupt
+    the faster, unattended answers first."""
     stopping = stop.is_set if stop is not None else (lambda: False)
     resolved = validate(cfg, flow)
     run_id = run_id or new_run_id()
@@ -394,10 +401,11 @@ async def run_flow(
                 # (the app shows "En cola", not a clock that runs before anything was sent).
                 await _emit(emit, {"type": "target_start", "step": step.id, "target": target,
                                    "label": _label(cfg, target), "provider": provider.name})
+                target_extra = (bridge_extra_by_target or {}).get(target, bridge_extra)
                 work = asyncio.ensure_future(_run_target(
                     provider, prompt=message, client=client, cfg=cfg, api_key=api_key, guard=guard,
                     timeout_s=timeout_s, notify=lambda _m: None,  # guard waits show as "esperando"
-                    bridge_key=bridge_key, run_tag=run_id, bridge_extra=bridge_extra))
+                    bridge_key=bridge_key, run_tag=run_id, bridge_extra=target_extra))
                 if stop is None:
                     return await work
                 t0 = asyncio.get_running_loop().time()
@@ -461,7 +469,14 @@ async def run_flow(
                 message_sha = journal.sha256_text(message)
                 await _emit(emit, {"type": "step_start", "step": step.id, "title": step.title or step.id,
                                    "message": message})
-                answers = await asyncio.gather(*(ask(step, t, message, message_file, message_sha) for t in step.to))
+                deferred = defer_targets or set()
+                first = [t for t in step.to if t not in deferred]
+                last = [t for t in step.to if t in deferred]
+                answers = []
+                if first:
+                    answers.extend(await asyncio.gather(*(ask(step, t, message, message_file, message_sha) for t in first)))
+                if last:
+                    answers.extend(await asyncio.gather(*(ask(step, t, message, message_file, message_sha) for t in last)))
                 res.answers = {a.target: a for a in answers}
                 good = sum(a.ok for a in answers)
                 res.status = OK if good == len(answers) else PARTIAL if good else FAILED

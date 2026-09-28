@@ -195,7 +195,7 @@ function HistoryDetail({ id }: { id: string }) {
       action={
         run && (
           <ButtonLink variant="primary" size="lg" href={api.exportUrl(run.id)} icon={<Download size={20} aria-hidden />}>
-            Exportar
+            Descargar informe completo
           </ButtonLink>
         )
       }

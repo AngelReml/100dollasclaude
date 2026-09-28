@@ -1,5 +1,6 @@
-import { ExternalLink, Radio, Wrench } from "lucide-react";
+import { ExternalLink, History, Radio, Wrench } from "lucide-react";
 import { api, ApiError } from "../api";
+import { go } from "../nav";
 import { useStore } from "../state";
 import { Button } from "./Button";
 import { useToast } from "./Toast";
@@ -61,6 +62,11 @@ export function ObservingBanner() {
           </Button>
         </div>
       ))}
+      <div className="flex justify-end">
+        <Button size="sm" variant="secondary" icon={<History size={17} aria-hidden />} onClick={() => go("historial")}>
+          Ver respuestas registradas
+        </Button>
+      </div>
     </div>
   );
 }

@@ -359,7 +359,8 @@
   const hasPopup = (el) => el.hasAttribute("aria-haspopup") || el.hasAttribute("aria-expanded");
   const optionName = (el) => (nameOf(el) || (el.innerText || "").trim().split("\n")[0]).slice(0, 80);
   const isChecked = (el) => ["true", "mixed"].includes(el.getAttribute("aria-checked")) || el.getAttribute("aria-selected") === "true" ||
-    el.getAttribute("aria-pressed") === "true" || el.getAttribute("data-state") === "checked" || el.getAttribute("data-state") === "on";
+    el.getAttribute("aria-pressed") === "true" || el.getAttribute("data-state") === "checked" || el.getAttribute("data-state") === "on" ||
+    el.getAttribute("data-active") === "true";
   const visibleOptions = () => [...document.querySelectorAll(OPTION_SEL)].filter((el) => visible(el));
 
   const modelButton = (site) => {
@@ -374,8 +375,14 @@
     const model = modelButton(site);
     return clickables().find((b) => b !== model && hasPopup(b) && !forbidden(b) && PLUS_RE.test(nameOf(b) || (b.innerText || "").trim())) || null;
   };
-  const modeToggles = () => [...document.querySelectorAll("button[aria-pressed],[role='switch'],[role='checkbox']:not(input)")]
-    .filter((el) => visible(el) && !forbidden(el) && !el.closest("[role='menu'],[role='listbox']"));
+  const siteModeEntries = (site) => Object.entries(site.modeButtons || {}).flatMap(([mode, sels]) =>
+    all(sels).map((el) => ({ mode, el })));
+  const modeOfElement = (site, el) => siteModeEntries(site).find((x) => x.el === el)?.mode ||
+    (C.modeOf ? C.modeOf(nameOf(el) || el.innerText) : null);
+  const modeToggles = (site) => [...new Set([
+    ...siteModeEntries(site).map((x) => x.el),
+    ...document.querySelectorAll("button[aria-pressed],[role='switch'],[role='checkbox']:not(input)"),
+  ])].filter((el) => visible(el) && !forbidden(el) && !el.closest("[role='menu'],[role='listbox']"));
 
   const closeMenu = async (trigger) => {
     for (const target of [document.activeElement, document.body, document]) {
@@ -415,8 +422,8 @@
       current_model: mb ? ((mb.innerText || "").trim().split("\n")[0] || optionName(mb)).slice(0, 80) : null,
       models: models.options.filter((o) => !o.forbidden).map((o) => ({ name: o.name, selected: o.selected })),
       plus: plus.options.filter((o) => !o.forbidden).map((o) => o.name),
-      modes: modeToggles().map((el) => ({ name: nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60), on: isChecked(el),
-        mode: C.modeOf ? C.modeOf(nameOf(el) || el.innerText) : null })),
+      modes: modeToggles(site).map((el) => ({ name: nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60) || modeOfElement(site, el),
+        on: isChecked(el), mode: modeOfElement(site, el) })),
       files,
       closed: (models.closed !== false) && (plus.closed !== false),
     };
@@ -450,7 +457,7 @@
 
   // Switch a mode on or off and confirm it on the page: a toggle next to the box, or an item of the "+" menu.
   const setMode = async (site, mode, on = true) => {
-    const direct = modeToggles().find((el) => C.modeOf && C.modeOf(nameOf(el) || el.innerText) === mode);
+    const direct = modeToggles(site).find((el) => modeOfElement(site, el) === mode);
     if (direct) {
       if (isChecked(direct) !== on && !safeClick(direct)) return { ok: false, error: "forbidden" };
       for (let i = 0; i < 6; i++) {
@@ -797,7 +804,8 @@
   });
 
   // The modes that are on right now (a toggle next to the box, or a chip a menu left), whoever put them.
-  const activeModes = () => modeToggles().filter(isChecked).map((el) => nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60));
+  const activeModes = (site) => modeToggles(site).filter(isChecked)
+    .map((el) => modeOfElement(site, el) || nameOf(el).slice(0, 60) || (el.innerText || "").trim().slice(0, 60));
 
   window.__webllmDriver = { state, insert, send, capture, fallback, diagnose, discover, chooseModel, setMode, fileChunk, attach, downloads, teach,
     activeModes, xray, tryPatch, pressStop, observe, observeBadge };

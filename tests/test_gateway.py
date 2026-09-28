@@ -537,8 +537,8 @@ def test_parar_todo_stops_a_web_chat_and_its_job_in_chrome(tmp_path, mock_server
 
 
 def test_parar_todo_also_stops_the_apps_own_questions(tmp_path, mock_server, monkeypatch):
-    """A question from webllm's app (not Open WebUI) to a chat site and to a slow API AI: "Parar todo" ends
-    both at once, tells Chrome to stop, and the question's record still closes and verifies."""
+    """Qwen waits behind unattended answers. "Parar todo" cancels the running AI and Qwen is never sent,
+    while the question's record still closes and verifies."""
     import test_appapi
     from webllm_agent.config import ProviderConfig
     monkeypatch.setattr(test_appapi, "providers", lambda: [
@@ -550,18 +550,18 @@ def test_parar_todo_also_stops_the_apps_own_questions(tmp_path, mock_server, mon
             asking = asyncio.create_task(app.ask("¿Qué es la inflación?", ["qwen", "lenta"]))
             for _ in range(50):
                 await asyncio.sleep(0.1)
-                if app.bridge.jobs.get("qwen") and any(r["model"] == "z/slow" for r in mock_server.requests):
+                if any(r["model"] == "z/slow" for r in mock_server.requests):
                     break
-            job_id = app.bridge.jobs["qwen"][0]
+            assert not app.bridge.jobs.get("qwen")
             status, stopped = await app.post("/gw/v1/parar", {})
-            assert status == 200 and stopped == {"parados": 1, "chats": ["qwen"]}
+            assert status == 200 and stopped == {"parados": 1, "chats": []}
             status, events = await asyncio.wait_for(asking, 1.5)  # the slow AI takes 2 s: not waited for
             done = {e["target"]: e["code"] for e in events if e["type"] == "target_done"}
-            assert done == {"qwen": "cancelled", "lenta": "cancelled"}
+            assert done == {"lenta": "cancelled", "qwen": "cancelled"}
+            assert [e["target"] for e in events if e["type"] == "target_start"] == ["lenta"]
             flow_done = next(e for e in events if e["type"] == "flow_done")
             assert flow_done["verified"] and verify_run(app.cfg.paths.runs_dir / flow_done["run_id"]).ok
-            await asyncio.sleep(0.3)
-            assert [m for m in app.ext.seen if m["type"] == "cancel"] == [{"type": "cancel", "id": job_id, "site": "qwen"}]
+            assert [m for m in app.ext.seen if m["type"] in ("job", "cancel") and m.get("site") == "qwen"] == []
             assert not app.bridge.app_api.asking and not app.bridge.stopped
             status, again = await app.post("/gw/v1/parar", {})
             assert again == {"parados": 0, "chats": []}  # nothing left in progress

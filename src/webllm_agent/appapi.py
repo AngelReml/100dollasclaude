@@ -335,8 +335,26 @@ class AppApi:
             names = [n for n in names if n not in skipped]
             if not names:
                 return self._fail(503, "El servicio de las IAs por API (OmniRoute) está apagado.", "unreachable")
+        # Qwen is one of Iván's main AIs and stays selected. Its frequent CAPTCHA needs him in front of the PC,
+        # so let every unattended answer finish first and then bring Qwen to the foreground.
+        names = list(dict.fromkeys(names))
+        qwen_last = [n for n in names if site_of(cfg.providers[n]) == "qwen"]
+        names = [n for n in names if n not in qwen_last] + qwen_last
+        raw_modes = body.get("modes") or {}
+        if not isinstance(raw_modes, dict):
+            return self._fail(400, "Los modos elegidos no son válidos.", "bad_modes")
+        allowed_modes = {"buscar", "investigar", "pensar", "imagen", "constructor"}
+        modes_by_target: dict[str, dict[str, Any]] = {}
+        for target, selected_modes in raw_modes.items():
+            if target not in names or site_of(cfg.providers[target]) is None or not isinstance(selected_modes, list):
+                return self._fail(400, "Los modos elegidos no corresponden a uno de tus chats.", "bad_modes")
+            modes = list(dict.fromkeys(str(m) for m in selected_modes))
+            if len(modes) > 6 or any(m not in allowed_modes for m in modes):
+                return self._fail(400, "Hay un modo desconocido.", "bad_modes")
+            if modes:
+                modes_by_target[target] = {"modes": modes}
         flow = flows.Flow(name=title, template="pregunta", inputs={"pregunta": prompt}, steps=(
-            flows.Step(id="respuestas", title="Respuestas", to=tuple(dict.fromkeys(names)), message="{{pregunta}}"),))
+            flows.Step(id="respuestas", title="Respuestas", to=tuple(names), message="{{pregunta}}"),))
         try:
             flows.validate(cfg, flow)
         except flows.FlowError as exc:
@@ -382,7 +400,8 @@ class AppApi:
             self.asking[run_id] = asyncio.Event()
             try:
                 await flows.run_flow(cfg, flow, api_key=api_key, guard=guard, bridge_key=self.bridge.token,
-                                     emit=send, run_id=run_id, stop=self.asking[run_id])
+                                     emit=send, run_id=run_id, stop=self.asking[run_id], defer_targets=set(qwen_last),
+                                     bridge_extra_by_target=modes_by_target)
             except GatewayError as exc:
                 await send({"type": "error", "code": "unreachable", "error": str(exc)})
             finally:

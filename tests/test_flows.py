@@ -135,6 +135,23 @@ def test_a_queued_answer_starts_its_clock_only_when_it_is_sent(tmp_path, mock_se
     assert order == [("target_start", "x1"), ("target_done", "x1"), ("target_start", "x2"), ("target_done", "x2")]
 
 
+def test_deferred_target_starts_after_every_other_answer(tmp_path, mock_server):
+    cfg = cfg_for(tmp_path, mock_server, [P("fast", "f/ok"), P("human", "h/ok")])
+    run, events = go(
+        cfg,
+        Flow("x", (Step("s1", ("human", "fast"), "a"),)),
+        defer_targets={"human"},
+    )
+    assert run.status == flows.OK
+    order = [(e["type"], e["target"]) for e in events if e["type"] in ("target_start", "target_done")]
+    assert order == [
+        ("target_start", "fast"),
+        ("target_done", "fast"),
+        ("target_start", "human"),
+        ("target_done", "human"),
+    ]
+
+
 # ------------------------------------------------------------------ failures
 
 def test_stop_on_error_does_not_send_later_steps(tmp_path, mock_server):

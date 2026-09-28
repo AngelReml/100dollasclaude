@@ -94,7 +94,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 - **Una IA que no participó escribe el documento final:** 8 apartados, sin saber qué IA dijo qué.
   - Sale como respuesta en Open WebUI.
   - En tu vault va a `Comités/`, con un anexo de cada veredicto y el nombre de su IA.
-- **Extensión 0.9.0:** sabe seguir en la misma conversación de un chat web. Pulsa ↻ en `chrome://extensions`.
+- **Extensión 0.9.1:** sabe seguir en la misma conversación y activar y comprobar el globo de búsqueda de z.ai. Pulsa ↻ en `chrome://extensions`.
 - **En la app,** tarjeta «El Comité» (Inicio):
   - quién entraría ahora;
   - 3 o 5, «pensar», y los roles, que puedes cambiar;

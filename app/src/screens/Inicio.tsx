@@ -1,6 +1,6 @@
 import { AppWindow, Cpu, LifeBuoy, Plug, Plus, Power, ScanSearch, Server, MessageSquarePlus, MonitorCheck, OctagonX, TestTube2, Unplug } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { api, ApiError, type Ai } from "../api";
+import { useEffect, useState, type ReactNode } from "react";
+import { api, ApiError, type Ai, type Catalogo } from "../api";
 import { go, useOpenAddAi, useOpenGuide } from "../nav";
 import { useStore } from "../state";
 import { AiAvatar, KindLabel } from "../ui/Ai";
@@ -188,7 +188,12 @@ export function Inicio() {
   const { estado, offline } = useStore();
   const openGuide = useOpenGuide();
   const openAdd = useOpenAddAi();
+  const [catalog, setCatalog] = useState<Catalogo | null>(null);
+  useEffect(() => {
+    api.catalogo().then(setCatalog, () => setCatalog(null));
+  }, []);
   const ready = estado ? estado.ais.filter((a) => a.state === "lista").length : 0;
+  const available = catalog?.ais.filter((a) => !a.builtin && a.state === "sin_conectar") ?? [];
   return (
     <Page
       title="Inicio"
@@ -203,6 +208,22 @@ export function Inicio() {
       }
     >
       <ObservingBanner />
+      {available.length > 0 && (
+        <Card className="mb-6 flex flex-wrap items-center gap-4 border-accent/40 bg-accent-soft p-5">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface text-accent-soft-ink">
+            <Plug size={23} aria-hidden />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[18px] font-semibold">Hay {available.length} chats web disponibles para conectar</p>
+            <p className="mt-1 text-[15px] text-ink-2">
+              {available.slice(0, 6).map((a) => a.name).join(", ")}{available.length > 6 ? " y más" : ""}. Solo aparecerán al preguntar después de probarlos en tu Chrome.
+            </p>
+          </div>
+          <Button variant="primary" icon={<Plug size={18} aria-hidden />} onClick={() => go("conectores")}>
+            Ver y conectar
+          </Button>
+        </Card>
+      )}
       {offline && (
         <div className="mb-6">
           <Empty icon={<Unplug size={26} />} title="webllm no responde" text="Cierra esta ventana y vuelve a abrir webllm con su icono. Si sigue igual, haz doble clic en ACTUALIZAR." />

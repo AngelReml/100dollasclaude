@@ -83,6 +83,23 @@ await drive("?editable=1", "copy-button");
 await drive("?login=1", "login");
 await settled("?stopfuera=1");
 await settled("?clasestop=1");
+
+// z.ai's globe is icon-only: its stable contract is data-active, not a label or aria-pressed.
+{
+  const page = await ctx.newPage();
+  await page.setContent('<button id="web" data-active="false" onclick="this.dataset.active=String(this.dataset.active!==\'true\')" style="width:30px;height:30px">◎</button>');
+  await page.addScriptTag({ path: join(root, "extension", "common.js") });
+  await page.addScriptTag({ path: join(root, "extension", "driver.js") });
+  const zai = { ...site, modeButtons: { buscar: ["#web"] } };
+  const call = (op, ...args) => page.evaluate(([o, a]) => window.__webllmDriver[o](...a), [op, args]);
+  const found = await call("discover", zai);
+  const switched = await call("setMode", zai, "buscar", true);
+  const active = await call("activeModes", zai);
+  const good = found.modes?.[0]?.mode === "buscar" && found.modes[0].on === false && switched.ok && active.includes("buscar");
+  if (!good) failed++;
+  console.log(`modo-icono     ${good ? "BIEN" : "FALLO"}: descubierto=${JSON.stringify(found.modes)} activado=${JSON.stringify(active)}`);
+  await page.close();
+}
 await browser.close();
 server.close();
 process.exitCode = failed ? 1 : 0;
