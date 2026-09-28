@@ -108,7 +108,7 @@ def test_conectar_varias_one_permission_one_by_one_and_each_result(tmp_path, moc
     async def go():
         async with ConnApp(tmp_path, mock_server.base_url, sites) as a:
             _, cat, _ = await a.get("/api/catalogo")
-            assert len(cat["ais"]) == 27 and cat["batch"] is None
+            assert len(cat["ais"]) == 28 and cat["batch"] is None
             assert {x["state"] for x in cat["ais"] if not x["builtin"]} == {"sin_conectar"}
             # the built-in chats configured here: Qwen and z.ai's chat ("zai-chat"; "zai" is z.ai's API)
             assert {x["key"]: x["provider"] for x in cat["ais"] if x["builtin"]} == {

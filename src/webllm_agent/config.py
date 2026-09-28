@@ -99,6 +99,9 @@ class ProviderConfig:
     # False = what you write can be published or used by the site (catalog.yaml): never picked by
     # "Automático" or the Committee on their own (catalog.eligible_for_auto).
     private: bool = True
+    # True = useful, but its workflow is not a normal one-question/one-answer chat. It is shown and
+    # can be chosen explicitly, but Automático and the Committee never launch it on their own.
+    manual_only: bool = False
     # A chat site from webllm's catalog, connected with "Conectar" (PLAN-v5 F3).
     catalog: bool = False
     # An AI by API Iván turned on from OmniRoute's own list, with its card in modelos_api.yaml (PLAN-v5 F8).
@@ -177,9 +180,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # browser = the chat pages in your Chrome (extension + bridge);
     # api = through OmniRoute.
     "providers": {
-        "qwen": {"model": "browser/qwen", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
+        "qwen": {"model": "browser/qwen", "kind": "browser", "gateway": "bridge", "timeout_s": 600},
         "deepseek": {"model": "browser/deepseek", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
-        "zai-chat": {"model": "browser/zai", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
+        "zai-chat": {"model": "browser/zai", "kind": "browser", "gateway": "bridge", "timeout_s": 600},
         "meta": {"model": "browser/meta", "kind": "browser", "gateway": "bridge", "timeout_s": 420},
         "zai": {"model": "zai/glm-4.7-flash", "kind": "api", "enabled": True, "timeout_s": 180},
         "groq": {"model": "groq/openai/gpt-oss-120b", "kind": "api", "enabled": True, "timeout_s": 120},
@@ -291,9 +294,13 @@ def custom_provider(key: str, name: str, url: str, catalog: bool = False) -> Pro
     if catalog:
         from .catalog import load as load_catalog  # catalog imports nothing from here at run time
         entry = load_catalog().get(key)
+    # The catalog is the source of truth for corrected addresses too. This migrates an already-connected
+    # Kimi from the old Chinese landing page to the international address without asking Iván to reconnect it.
+    effective_url = entry.url if entry else url
     return ProviderConfig(name=key, model=f"browser/{key}", kind="browser", gateway="bridge", timeout_s=420.0,
-                          label=name, url=url, custom=True, catalog=catalog,
-                          daily_cap=entry.daily_cap if entry else None, private=entry.private if entry else True)
+                          label=name, url=effective_url, custom=True, catalog=catalog,
+                          daily_cap=entry.daily_cap if entry else None, private=entry.private if entry else True,
+                          manual_only=entry.manual_only if entry else False)
 
 
 def _custom_spec(p: ProviderConfig) -> dict[str, Any]:

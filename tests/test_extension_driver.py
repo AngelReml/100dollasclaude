@@ -28,10 +28,22 @@ def test_generic_detection_types_sends_and_reads_on_an_unknown_site():
     lines = out.stdout.strip().splitlines()
     assert out.returncode == 0, out.stdout + out.stderr
     assert [line.split()[0] for line in lines] == ["?copy=1", "?copy=0", "?editable=1", "?login=1",
-                                                   "?stopfuera=1", "?clasestop=1"]
+                                                   "?stopfuera=1", "?clasestop=1", "mensaje-propio", "modo-icono"]
     assert "leer=copy-button" in lines[0] and "leer=dom" in lines[1] and "enviar=enter" in lines[2]
     assert "login detectado" in lines[3]
-    assert all("BIEN" in line and "sigue_escribiendo=false" in line for line in lines[4:])
+    assert all("BIEN" in line and "sigue_escribiendo=false" in line for line in lines[4:6])
+    assert all("BIEN" in line for line in lines[6:])
+
+
+def test_the_prompt_is_never_accepted_as_an_answer_and_the_chat_window_stays_open():
+    background = (ROOT / "extension" / "background.js").read_text("utf-8")
+    driver = (ROOT / "extension" / "driver.js").read_text("utf-8")
+    assert "const answered = !st.lastIsPrompt" in background
+    assert 'call(tabId, "state", site, job.prompt)' in background
+    assert "sameText(out.text, job.prompt)" in background
+    assert 'call(Number(tabId), "observe", site, o.turn ? o.turn.user : "")' in background
+    assert "lastIsPrompt" in driver
+    assert "chrome.windows.remove(saved)" not in background and "closeTimer" not in background
 
 
 def run_real(script: str, timeout: float = 300) -> list[str]:
@@ -114,4 +126,4 @@ def test_the_same_conversation_of_a_web_chat_with_the_real_extension():
     is slow to start and shows no "stop"); a conversation the page lost, or an address of another site: nothing is
     typed. With extension 0.8.0 every case fails; with 0.9.0 and only the old waiting rule, the slow page hands back
     the previous answer (docs/F7-comite.md)."""
-    assert len(run_real("conversation_flow.mjs", timeout=600)) == 5
+    assert len(run_real("conversation_flow.mjs", timeout=600)) == 6

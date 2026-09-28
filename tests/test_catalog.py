@@ -10,17 +10,17 @@ import pytest
 from conftest import make_config
 from webllm_agent import catalog
 from webllm_agent.appapi import SITE_URLS, parse_chat_url
-from webllm_agent.config import GuardConfig, ProviderConfig, custom_provider, is_blocked_model
+from webllm_agent.config import DEFAULT_CONFIG, GuardConfig, ProviderConfig, custom_provider, is_blocked_model
 from webllm_agent.guard import Guard, GuardBlocked
 
 ROOT = Path(__file__).resolve().parents[1]
 CAT = catalog.load()
 
 
-def test_the_catalog_has_the_27_of_the_plan():
+def test_the_catalog_has_the_28_current_web_ais():
     groups = [a.group for a in CAT.ais]
-    assert len(CAT.ais) == 27 and groups.count("tuyas") == 4 and groups.count("1") == 17 and groups.count("2") == 6
-    assert CAT.checked == "2026-09-25"
+    assert len(CAT.ais) == 28 and groups.count("tuyas") == 4 and groups.count("1") == 17 and groups.count("2") == 7
+    assert CAT.checked == "2026-09-28"
 
 
 def test_every_address_is_https_already_normalised_and_none_repeats():
@@ -38,7 +38,7 @@ def test_none_gets_past_the_block(tmp_path, mock_server):
         assert not is_blocked_model(cfg, f"browser/{a.key}"), a.key
         assert not re.search(r"(^|\.)(claude\.ai|chatgpt\.com|openai\.com|anthropic\.com)$", parse_chat_url(a.url)[1])
     # and what the plan leaves out stays out
-    left_out = ("chatgpt.com", "claude.ai", "agent.minimax.io", "manus.im", "genspark.ai", "openrouter.ai")
+    left_out = ("chatgpt.com", "claude.ai", "agent.minimax.io", "manus.im", "openrouter.ai")
     assert not [a.key for a in CAT.ais if any(h in a.url for h in left_out)]
 
 
@@ -60,8 +60,21 @@ def test_those_that_are_not_private_are_never_picked_on_their_own():
     assert not_private == {"arena", "aistudio"}  # Arena publishes; Google AI Studio may use what you write
     for a in CAT.ais:
         p = custom_provider(a.key, a.name, a.url, catalog=True)
-        assert p.private == a.private and catalog.eligible_for_auto(p) == a.private, a.key
+        assert p.private == a.private and p.manual_only == a.manual_only
+        assert catalog.eligible_for_auto(p) == (a.private and not a.manual_only), a.key
     assert not catalog.eligible_for_auto(ProviderConfig(name="x", model="browser/x", enabled=False))
+
+
+def test_catalog_corrections_update_already_connected_sites():
+    kimi = custom_provider("kimi", "Kimi", "https://www.kimi.com/", catalog=True)
+    assert kimi.url == "https://www.kimi.com/en/"
+    genspark = custom_provider("genspark", "Genspark", "https://www.genspark.ai/", catalog=True)
+    assert genspark.manual_only and not catalog.eligible_for_auto(genspark)
+
+
+def test_the_two_slowest_powerful_web_chats_wait_at_least_500_seconds():
+    assert DEFAULT_CONFIG["providers"]["qwen"]["timeout_s"] == 600
+    assert DEFAULT_CONFIG["providers"]["zai-chat"]["timeout_s"] == 600
 
 
 def test_sites_with_few_free_messages_have_a_lower_cap_that_the_guard_applies(tmp_path, mock_server):

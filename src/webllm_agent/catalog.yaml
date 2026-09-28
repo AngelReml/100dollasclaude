@@ -1,6 +1,6 @@
 # The web chats webllm knows (PLAN-v5 F3; the list is PLAN-v5 section 6). In git: what Iván did with each
 # one (connected, not working yet and why, not wanted) lives in data/state/catalog_state.json.
-# Addresses and notes were checked with a search engine on 2026-09-24/25. Whether each site works with
+# Addresses and notes were checked with a search engine on 2026-09-24/25 and 2026-09-28. Whether each site works with
 # webllm is only known on Iván's PC (from the cloud no real chat site can be opened).
 #
 # key       site key (the tab, the guard, the provider name); the built-in ones match extension/sites.js
@@ -9,11 +9,12 @@
 # private   false = what you write can be published or used by the site (never used by Automático or
 #           the Committee; only when Iván picks it, and its name says so)
 # daily_cap lower daily message cap than the guard's default (sites with few free messages)
+# manual_only true = it is an agent/workspace rather than a predictable chat; webllm never selects it by itself
 # models    the order of its models (PLAN-v5 F4): name fragments (compared without spaces, dashes or case)
 #           with a rank, 1 = strongest; models_source / models_checked say where from and when. Only what
 #           the plan's research says is here; a model not listed is "nuevo, sin datos" (never taken as the
 #           strongest on its own) until Iván marks it or this table is updated (F8 measures them).
-checked: "2026-09-25"
+checked: "2026-09-28"
 ais:
   # --- the ones Iván already uses (their selectors are in extension/sites.js) ---
   - {key: qwen, name: Qwen, by: Alibaba, url: "https://chat.qwen.ai/", group: tuyas, builtin: true,
@@ -30,7 +31,7 @@ ais:
      purpose: general, family: Llama, tags: [general], account: si, private: true}
 
   # --- group 1: plain chat, works from Spain ---
-  - {key: kimi, name: Kimi, by: Moonshot, url: "https://www.kimi.com/", group: "1",
+  - {key: kimi, name: Kimi, by: Moonshot, url: "https://www.kimi.com/en/", group: "1",
      purpose: "documentos largos, investigar, código", family: Kimi, tags: [documentos, investigar, codigo],
      account: desconocido, private: true, models: [{match: "k3", rank: 1}],
      models_source: "PLAN-v5 sección 6 (pruebas públicas)", models_checked: "2026-09-25"}
@@ -98,3 +99,8 @@ ais:
   - {key: you, name: You.com, by: You.com, url: "https://you.com/", group: "2", purpose: "investigar, con fuentes",
      family: varios, tags: [investigar, fuentes], account: desconocido, private: true,
      may_fail: "la empresa se centra en sus APIs; el chat gratis puede desaparecer"}
+  - {key: genspark, name: Genspark Super Agent, by: Genspark, url: "https://www.genspark.ai/", group: "2",
+     purpose: "agente para investigar, navegar y crear archivos", family: varios, tags: [agente, investigar, archivos],
+     account: si, private: true, manual_only: true,
+     may_fail: "sus tareas pueden durar mucho y producir archivos; webllm solo la usa cuando tú la eliges",
+     note: "plan gratuito: 100 créditos diarios mientras quede su cupo gratuito vitalicio; no entra en Automático ni en el Comité"}

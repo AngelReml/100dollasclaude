@@ -22,12 +22,17 @@ const ICON = { size: 16, strokeWidth: 2.25, "aria-hidden": true } as const;
 /** What Iván reads about one chat before connecting it: what to know (nothing when there is nothing). */
 function Facts({ ai, defaultCap }: { ai: CatalogAi; defaultCap: number }) {
   const lowCap = ai.daily_cap < defaultCap;
-  if (ai.private && ai.group !== "2" && ai.account !== "no" && ai.account !== "si" && !lowCap) return null;
+  if (ai.private && !ai.manual_only && ai.group !== "2" && ai.account !== "no" && ai.account !== "si" && !lowCap) return null;
   return (
     <div className="flex flex-wrap gap-2">
       {!ai.private && (
         <Badge tone="bad" icon={<EyeOff {...ICON} />}>
           No privada
+        </Badge>
+      )}
+      {ai.manual_only && (
+        <Badge tone="warn" icon={<MousePointerClick {...ICON} />}>
+          Solo cuando la eliges tú
         </Badge>
       )}
       {ai.group === "2" && (

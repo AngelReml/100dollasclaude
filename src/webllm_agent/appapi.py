@@ -571,6 +571,14 @@ class AppApi:
                 candidate = ""
             return candidate if self._run_dir(candidate) is not None else run_dir.name
 
+        def head_of(run_dir: Path) -> dict[str, Any]:
+            try:
+                first_line = next(x for x in (run_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines() if x.strip())
+                value = json.loads(first_line)
+                return value if isinstance(value, dict) else {}
+            except (OSError, ValueError, StopIteration):
+                return {}
+
         root_id = report_root(d)
         root = self._run_dir(root_id) or d
         related = [root]
@@ -578,8 +586,19 @@ class AppApi:
             for child in sorted(self.cfg.paths.runs_dir.iterdir()):
                 if child != root and RUN_ID.match(child.name) and (child / "journal.jsonl").exists() and report_root(child) == root_id:
                     related.append(child)
+        # A turn Iván writes after pressing "Continuar y guardar" is its own immutable run, but belongs to this
+        # same report. Include every such continuation linked to the original question or one of its retries.
+        attempt_ids = {x.name for x in related}
+        continued: list[Path] = []
+        if self.cfg.paths.runs_dir.exists():
+            for child in sorted(self.cfg.paths.runs_dir.iterdir()):
+                if child in related or not RUN_ID.match(child.name) or not (child / "journal.jsonl").exists():
+                    continue
+                head = head_of(child)
+                if head.get("kind") == "observed" and str(head.get("follows_root") or head.get("follows") or "") in attempt_ids:
+                    continued.append(child)
         first = self._read_run(root)
-        all_locked = all(verify_run(x).ok for x in related)
+        all_locked = all(verify_run(x).ok for x in [*related, *continued])
         out = [f"# {first['title']}", "",
                f"Informe `{root_id}` · {first['ts'] or ''} · Candado: {'verde (todos los registros están intactos)' if all_locked else 'ROJO (algún registro no cuadra)'}",
                "", "Este archivo se genera de forma determinista. Incluye las respuestas literales y los fallos; ninguna IA los resume ni los modifica.", ""]
@@ -595,6 +614,14 @@ class AppApi:
                     level = "###" if not attempt else "####"
                     out += [f"{level} {who} · {a['seconds']} s", ""]
                     out += [a["text"].rstrip() if a["ok"] else f"_No respondió: {a['error']}_", ""]
+        for run_dir in continued:
+            run = self._read_run(run_dir)
+            for s in run["steps"]:
+                out += [f"## Continuación escrita por ti · {run['ts'] or ''}", "", "**Mensaje escrito en su web:**", "",
+                        s["message"].rstrip(), ""]
+                for a in s["answers"]:
+                    out += [f"### Respuesta de {a['provider_label']} · {a['seconds']} s", "",
+                            a["text"].rstrip() if a["ok"] else f"_No respondió: {a['error']}_", ""]
         return web.Response(text="\n".join(out), content_type="text/markdown", charset="utf-8", headers={
             "Content-Disposition": f'attachment; filename="webllm-{root_id}.md"', "Cache-Control": "no-store"})
 

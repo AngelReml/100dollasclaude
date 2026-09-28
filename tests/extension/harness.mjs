@@ -6,7 +6,7 @@
 //   https://*.test/* (chrome.permissions.request then answers yes without asking, and the real
 //   "Permitir y probar" click still goes through add.html).
 import { execFileSync, spawn } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:https";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -17,8 +17,23 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 const require = createRequire(import.meta.url);
 const { chromium } = require(join(root, "app", "node_modules", "playwright-core"));
-const exe = process.env.PLAYWRIGHT_CHROMIUM ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
-const python = process.env.WEBLLM_PYTHON ?? "python3";
+const installedChrome = [
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+].find(existsSync);
+const playwrightRoot = join(process.env.LOCALAPPDATA || "", "ms-playwright");
+const installedPlaywright = existsSync(playwrightRoot)
+  ? readdirSync(playwrightRoot).filter((x) => /^chromium-\d+$/.test(x)).sort((a, b) => Number(a.slice(9)) - Number(b.slice(9)))
+    .map((x) => join(playwrightRoot, x, "chrome-win64", "chrome.exe")).find(existsSync)
+  : null;
+const exe = process.env.PLAYWRIGHT_CHROMIUM ?? installedPlaywright ?? installedChrome ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+const windowsPython = join(root, ".venv", "Scripts", "python.exe");
+const python = process.env.WEBLLM_PYTHON ?? (process.platform === "win32" && existsSync(windowsPython) ? windowsPython : "python3");
+const installedOpenSsl = [
+  "C:\\Program Files\\Git\\mingw64\\bin\\openssl.exe",
+  "C:\\Program Files\\Git\\usr\\bin\\openssl.exe",
+].find(existsSync);
+const openssl = process.env.WEBLLM_OPENSSL ?? installedOpenSsl ?? "openssl";
 const TOKEN = "demo-token";
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -73,7 +88,7 @@ export async function startWorld({ port = Number(process.env.WEBLLM_TEST_PORT ??
 
   try {
     // 1) A fake chat site over https (self-signed certificate made here, thrown away after).
-    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=webllm-test",
+    execFileSync(openssl, ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=webllm-test",
       "-keyout", join(tmp, "key.pem"), "-out", join(tmp, "cert.pem")], { stdio: "ignore" });
     const page = readFileSync(join(here, "fake_chat.html"));
     const icon = readFileSync(join(root, "extension", "icon.png"));

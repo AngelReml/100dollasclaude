@@ -1,5 +1,5 @@
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Copy, Download, Forward, Globe2, Hand, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, Download, Forward, Globe2, Hand, History, Lightbulb, Lock, MessageSquareText, ScanSearch, Send, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Ai } from "../api";
 import { go } from "../nav";
@@ -191,6 +191,10 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
   const { ask, estado, labelOf } = useStore();
   const waiting = waitingText(answer, estado?.ais ?? []);
   const toast = useToast();
+  const [expanded, setExpanded] = useState(true);
+  useEffect(() => {
+    if (answer.phase === "done") setExpanded(!answer.ok);
+  }, [answer.phase, answer.ok]);
   const elapsed = answer.startedAt ? Math.max(0, Math.round((now - answer.startedAt) / 1000)) : 0;
   const retry = () => ask({
     prompt: turn.prompt,
@@ -233,7 +237,7 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
           <DoneBadge ok={answer.ok}>{answer.ok ? `Respondió en ${answer.seconds} s` : "No respondió"}</DoneBadge>
         )}
       </div>
-      <div className="max-h-[560px] min-h-28 flex-1 overflow-y-auto px-5 py-4 text-[16px]">
+      <div className={`${answer.phase === "done" && answer.ok && !expanded ? "min-h-0" : "max-h-[560px] min-h-28 overflow-y-auto"} flex-1 px-5 py-4 text-[16px]`}>
         {answer.phase !== "done" &&
           (waiting ? (
             <p className={waiting.mine ? "rounded-xl bg-warn-bg px-4 py-3 font-semibold text-warn-ink" : "text-ink-2"} role="status">
@@ -244,13 +248,24 @@ function AnswerCard({ turn, answer, now, onPass }: { turn: Turn; answer: TurnAns
               {answer.phase === "waiting" ? `En cola: le pregunto en cuanto termine la anterior.` : `${answer.label} está preparando la respuesta…`}
             </p>
           ))}
-        {answer.phase === "done" && answer.ok && <Markdown text={answer.text} />}
+        {answer.phase === "done" && answer.ok && (expanded
+          ? <Markdown text={answer.text} />
+          : <p className="whitespace-pre-wrap text-ink-2" title={answer.text}>{short(answer.text, 260)}</p>)}
         {answer.phase === "done" && !answer.ok && <ProblemBox code={answer.code} ai={answer.target} said={answer.error} onRetry={retry} onAskOther={askOther} />}
       </div>
       {answer.phase === "done" && answer.ok && (
-        <WebRow runId={turn.runId} provider={answer.provider} label={answer.providerLabel} url={answer.url} repairedBy={answer.repairedBy} />
+        <div className="flex justify-end border-t border-line px-4 py-2.5">
+          <Button size="sm" variant={expanded ? "ghost" : "secondary"}
+            icon={expanded ? <ChevronUp size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}
+            onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Ocultar respuesta" : "Ver respuesta completa"}
+          </Button>
+        </div>
       )}
       {answer.phase === "done" && answer.ok && (
+        <WebRow runId={turn.runId} provider={answer.provider} label={answer.providerLabel} url={answer.url} repairedBy={answer.repairedBy} />
+      )}
+      {answer.phase === "done" && answer.ok && expanded && (
         <div data-footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
           <PassMenu kind="pasar" exclude={answer.provider} onPick={(ai) => onPass("pasar", ai)} />
           <PassMenu kind="criticar" exclude={answer.provider} onPick={(ai) => onPass("criticar", ai)} />
@@ -300,6 +315,9 @@ function TurnView({ turn, now, onPass }: { turn: Turn; now: number; onPass: (tur
           <button type="button" onClick={() => setOpen(!open)} className="mt-1 cursor-pointer text-[15px] font-semibold text-accent-soft-ink underline underline-offset-2 dark:text-accent">
             {open ? "Ver menos" : "Ver el mensaje entero"}
           </button>
+        )}
+        {!turn.running && answered > 0 && (
+          <p className="mt-2 text-[15px] text-muted">Las respuestas terminadas están resumidas. Pulsa «Ver respuesta completa» solo en las que quieras revisar.</p>
         )}
       </div>
       {turn.error && (

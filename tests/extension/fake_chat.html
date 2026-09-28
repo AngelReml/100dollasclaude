@@ -35,6 +35,8 @@
      after the first message) and restores it when that address is opened again; an address it does not know sends
      you to a new chat (like real sites). Each answer says its turn: "Respuesta N a «…»". /conversa/tarda/: from the
      second turn on, it takes 15 s to start answering (like a model that thinks) and never shows a "stop" button.
+     ?confunde=1 gives the user's bubble the generic class "response" and waits 11 s without a stop button before
+     answering: the driver must not mistake the question itself for the answer.
      The same modes work as a path (/login/, /captcha/...): "+ Añadir otra IA" keeps only the path. -->
 <div id="app"></div>
 <script>
@@ -191,7 +193,8 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
     clear();
     const log = document.getElementById("log");
     window.__stopped = false;
-    log.insertAdjacentHTML("beforeend", `<div class="msg user">${text.replace(/</g, "&lt;")}</div>`);
+    const userClass = q.get("confunde") === "1" ? "msg user response" : "msg user";
+    log.insertAdjacentHTML("beforeend", `<div class="${userClass}">${text.replace(/</g, "&lt;")}</div>`);
     const turn = conv ? (convTurns || []).length + 1 : 0;
     if (conv && !convId) {  // the first message: the conversation gets its address
       convId = Math.random().toString(36).slice(2, 8);
@@ -199,11 +202,12 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
       history.replaceState(null, "", convBase + "c/" + convId + location.search);
     }
     const lateStart = conv && q.get("tarda") === "1" && turn >= 2;  // 15 s before answering (a model that thinks), no "stop"
+    const confusesPrompt = q.get("confunde") === "1" && !/pong/i.test(text);
     const stop = document.createElement("button");
     stop.setAttribute("aria-label", fr ? "Arrêter la génération" : es ? "Detener" : "Stop generating");
     stop.onclick = () => { window.__stopped = true; };
     stop.textContent = "■";
-    if (!lateStart) document.body.appendChild(stop);
+    if (!lateStart && !confusesPrompt) document.body.appendChild(stop);
     const answer = document.createElement("div");
     answer.className = fr ? "zq9" : rara ? "x1 y2" : "msg assistant";
     log.appendChild(answer);
@@ -242,8 +246,8 @@ if (location.pathname.includes("/signin/")) {  // the other address where you lo
       box.innerHTML = 'Desliza para verificar <button id="solve">Resolver</button>';
       document.body.appendChild(box);
       document.getElementById("solve").onclick = () => { box.remove(); write(); };
-    } else if (lateStart) {
-      setTimeout(write, 15000);
+    } else if (lateStart || confusesPrompt) {
+      setTimeout(write, lateStart ? 15000 : 11000);
     } else {
       write();
     }

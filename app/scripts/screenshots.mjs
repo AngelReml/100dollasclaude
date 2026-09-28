@@ -261,7 +261,7 @@ async function reparacion(page, tag) {
   await page.keyboard.press("Escape");
   await page.goto(base + "#/historial");
   await page.getByRole("link").filter({ hasText: /Intacto|Alterado/ }).first().click();
-  const go = page.getByRole("button", { name: "Continuar en la web" }).first();
+  const go = page.getByRole("button", { name: "Seguir hablando y guardar" }).first();
   await go.waitFor({ timeout: 15000 });
   await go.scrollIntoViewIfNeeded();
   await shot(page, `${tag}-39-continuar-en-la-web`);

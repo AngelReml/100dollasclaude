@@ -3,7 +3,7 @@
 // test does: find the box, type, send, wait, read the answer.
 //   node tests/extension/generic_driver.mjs     (prints one line per case, exits 1 on failure)
 import { createServer } from "node:http";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,16 @@ const root = join(here, "..", "..");
 const require = createRequire(import.meta.url);
 const { chromium } = require(join(root, "app", "node_modules", "playwright-core"));
 const common = require(join(root, "extension", "common.js"));
-const exe = process.env.PLAYWRIGHT_CHROMIUM ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+const installedChrome = [
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+].find(existsSync);
+const playwrightRoot = join(process.env.LOCALAPPDATA || "", "ms-playwright");
+const installedPlaywright = existsSync(playwrightRoot)
+  ? readdirSync(playwrightRoot).filter((x) => /^chromium-\d+$/.test(x)).sort((a, b) => Number(a.slice(9)) - Number(b.slice(9)))
+    .map((x) => join(playwrightRoot, x, "chrome-win64", "chrome.exe")).find(existsSync)
+  : null;
+const exe = process.env.PLAYWRIGHT_CHROMIUM ?? installedPlaywright ?? installedChrome ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 
 const page_html = readFileSync(join(here, "fake_chat.html"));
 const server = createServer((req, res) => { res.setHeader("Content-Type", "text/html"); res.end(page_html); });
@@ -83,6 +92,25 @@ await drive("?editable=1", "copy-button");
 await drive("?login=1", "login");
 await settled("?stopfuera=1");
 await settled("?clasestop=1");
+
+// A site may call the user's bubble "response". state(site, prompt) must mark it as the prompt until the
+// actual assistant text arrives; the service worker uses this bit to avoid returning Iván's own question.
+{
+  const page = await ctx.newPage();
+  await page.goto(base + "?copy=0&confunde=1");
+  await page.addScriptTag({ path: join(root, "extension", "driver.js") });
+  const call = (op, ...args) => page.evaluate(([o, a]) => window.__webllmDriver[o](...a), [op, args]);
+  const prompt = "Esta es mi pregunta, no la respuesta";
+  await call("insert", site, prompt);
+  await call("send", site);
+  await page.waitForTimeout(300);
+  const st = await call("state", site, prompt);
+  const observed = await call("observe", site, prompt);
+  const good = st.lastIsPrompt === true && observed.lastIsPrompt === true;
+  if (!good) failed++;
+  console.log(`mensaje-propio ${good ? "BIEN" : "FALLO"}: trabajo=${st.lastIsPrompt} registro-manual=${observed.lastIsPrompt}`);
+  await page.close();
+}
 
 // z.ai's globe is icon-only: its stable contract is data-active, not a label or aria-pressed.
 {

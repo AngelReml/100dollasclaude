@@ -1,4 +1,4 @@
-# ESTADO — webllm-agent (26-sep-2026)
+# ESTADO — webllm-agent (28-sep-2026)
 
 > 🚧 **EN CONSTRUCCIÓN.**
 > - La pieza principal ya está hecha: **tu Chrome escribe en los chats de IA como si fueran una API**, y aider programa con ellos.
@@ -16,8 +16,18 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 ```
 
 - **Tu Chrome:** usa tu perfil de siempre y tus sesiones abiertas. No hay que copiar cookies ni claves.
-- **Ventanas:** cada chat se abre en su propia ventana de Chrome, con una conversación nueva en cada envío.
+- **Ventanas:** una sola ventanita de Chrome, con una pestaña por IA. Queda abierta para revisar respuestas, resolver verificaciones y seguir hablando.
 - **Captura de la respuesta:** se usa el botón "copiar" de la propia web, así llega el texto exacto, con código y todo.
+
+## Novedades del 28-sep-2026
+
+- **Qwen y z.ai esperan hasta 600 segundos** por respuesta. Qwen sigue siendo prioritario y sus verificaciones las resuelve Iván cuando aparezcan.
+- La extensión **ya no confunde la pregunta de Iván con la respuesta** en webs cuyas clases HTML son ambiguas.
+- La ventanita de chats **ya no se cierra sola** al terminar.
+- Las respuestas largas de Preguntar e Historial aparecen **plegadas**, con un resumen literal corto y «Ver respuesta completa». El informe sigue guardando el texto íntegro.
+- **«Seguir hablando y guardar»** abre la conversación y activa su registro con un clic. Cada mensaje y respuesta posterior aparecen en Historial y en el **mismo informe descargable**.
+- **Kimi** abre su ruta internacional. **Genspark Super Agent** entra como opción manual (100 créditos diarios mientras quede el cupo gratuito vitalicio); nunca la lanzan Automático ni el Comité. **Manus no se añade**: no se instala una VPN global ni se promete una VPN exclusiva que el proyecto no puede garantizar.
+- Catálogo actual: **28** IAs. Extensión: **0.9.2**.
 
 ## Los mandamientos (todo con doble clic en la carpeta del proyecto)
 
@@ -116,9 +126,9 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 - **Una pregunta nunca se envía dos veces:** si faltaba la caja, no se había enviado; si faltaba la respuesta, se vuelve a leer.
 - **Comprobación diaria** (Conectores, arriba): webllm abre cada chat conectado y mira que siga bien, sin enviar nada. También con «Comprobar ahora».
 - **«Parar» pulsa también el botón de parar de la web.**
-- **«Continuar en la web»**, bajo cada respuesta de un chat web (en Open WebUI y en la app):
+- **«Seguir hablando y guardar»** en la app («Continuar en la web» en Open WebUI), bajo cada respuesta de un chat web:
   - abre esa conversación en tu Chrome;
-  - lo que escribas allí a mano queda en la misma conversación (historial y vault), marcado como tuyo;
+  - lo que escribas allí a mano queda en la misma conversación (historial, informe y vault si está activo), marcado como tuyo;
   - al volver a Open WebUI, tu siguiente pregunta lo lleva consigo, y la respuesta te lo dice.
 - **«Registrar esta conversación»:** en el icono de la extensión, para un chat que abriste tú. Solo si tú lo pulsas, y con «Dejar de registrar».
 - **Probado aquí:** la extensión de verdad en Chromium, **16 de 16**; con la extensión anterior, cada caso falla. **El Open WebUI de verdad, 5 de 5.** Y 32 pruebas de código nuevas. Todas juntas: **300 pasan**.
@@ -169,7 +179,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F3: todos los chats web, precargados)
 
-- **En la app hay una pantalla nueva, «Conectores»,** con las 27 IAs de chat web de la lista del plan. Las que no están conectadas no salen en Open WebUI ni en Preguntar.
+- **En la app hay una pantalla nueva, «Conectores»,** con las 28 IAs web del catálogo actual. Las que no están conectadas no salen en Open WebUI ni en Preguntar.
 - **«Conectar varias»:**
   - vienen todas marcadas y desmarcas las que no quieras;
   - Chrome pide permiso una sola vez;
@@ -178,7 +188,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
   - cada una recibe un «pong» por el guardián;
   - al final ves el resultado de cada una con el motivo.
 - **Probado aquí con la extensión de verdad** (13 de 13): un solo permiso; conecta; espera a que entres (también si te manda a otra dirección para entrar, como Google); dice adónde lleva una web mudada; guarda el diagnóstico de la que no tiene caja.
-- **Falta lo importante, y solo puede ser en tu PC:** cuántas de las 27 funcionan de verdad. Guía en `docs/F3-catalogo.md`. Al terminar, pulsa **Copiar el resumen** en Conectores y pégamelo: con eso relleno esta tabla.
+- La compatibilidad de cada una se comprueba en tu PC al conectarla. Guía en `docs/F3-catalogo.md`.
 - **Qué hacer:**
   1. `ACTUALIZAR`;
   2. ↻ en «webllm puente» (debe poner **0.6.0**);
@@ -190,7 +200,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 |---|---|
 | Qwen, DeepSeek, z.ai, Meta AI | las de siempre |
 | Kimi, Le Chat, HuggingChat, LongCat, Grok, Gemini, Dola, Felo, Ask Brave, Ai2 Playground, Pi, Inception Chat, Duck.ai, Arena (no privada), Perplexity, Nous Chat, Copilot | pendiente |
-| Venice, Google AI Studio (no privada), MiMo Studio, Poe, LingGuang, You.com (grupo «puede fallar») | pendiente |
+| Venice, Google AI Studio (no privada), MiMo Studio, Poe, LingGuang, You.com, Genspark (manual; grupo «puede fallar») | pendiente |
 
 ## Novedades del 26-sep-2026 (PLAN-v5, fase F2: webllm, la única conexión de Open WebUI)
 
@@ -344,7 +354,7 @@ tú / aider / webllm ask ──► puente (127.0.0.1:20130) ──► extensión
 - **Verificado por Iván en su Chrome:**
   - z.ai y DeepSeek responden;
   - **"Programar con el chat z.ai": BIEN.** Una IA de su Chrome arregló el código de prueba.
-- **Una sola ventanita** en una esquina, con una pestaña por IA, que se cierra sola al terminar.
+- **Una sola ventanita** en una esquina, con una pestaña por IA. Desde 0.9.2 queda abierta al terminar.
 - **"Saturada"** ya no pausa la IA. Ventanas emergentes (como la de la edad en Qwen): te avisa y espera.
 - **Pendiente:**
   - Qwen: CAPTCHAs y la ventana de la edad;

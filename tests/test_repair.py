@@ -349,6 +349,12 @@ def test_turns_written_by_hand_in_the_web_join_the_same_conversation(tmp_path, m
             _, seen, _ = await app.get(f"/api/historial/{runs[0].name}")
             (said,) = seen["steps"][0]["answers"]
             assert seen["kind"] == "web" and seen["title"] == "En la web de Qwen" and said["by_ivan"] and said["seconds"] == 12.3
+            # The same deterministic download grows with the turns written by hand; there is no second place
+            # to hunt for them and no LLM rewrites them.
+            async with app.http.get(app.url(f"/api/historial/{first}/exportar"), headers=AUTH) as response:
+                report = await response.text()
+            assert response.status == 200 and report.count("## Continuación escrita por ti") == 2
+            assert "Turno 1 a mano" in report and "Respuesta 2" in report and "### Respuesta de Qwen" in report
             assert app.bridge.guard._load()["providers"]["qwen"]["count_today"] == 3  # his 2 count, nothing waited
             assert vault.flush(10)
             (note,) = [p for p in (folder / "webllm").rglob("*.md") if p.name != "Índice.md" and "Respuestas" not in p.parts]

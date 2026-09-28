@@ -1,4 +1,4 @@
-import { ArrowLeft, CircleCheck, CircleX, Copy, Download, Globe, History, Link2, Lock, LockOpen, MessageSquarePlus, Search, Workflow } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronUp, CircleCheck, CircleX, Copy, Download, Globe, History, Link2, Lock, LockOpen, MessageSquarePlus, Search, Workflow } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, ApiError, type Ai, type HistoryAnswer, type RunDetail, type RunSummary } from "../api";
 import { go } from "../nav";
@@ -136,6 +136,7 @@ function HistoryList() {
 function HistoryAnswerCard({ a, onPass, question, runId }: { a: HistoryAnswer; question: string; onPass: (a: HistoryAnswer) => void; runId: string }) {
   const toast = useToast();
   const stopped = !a.ok && a.code === "cancelled";
+  const [expanded, setExpanded] = useState(!a.ok);
   return (
     <Card className="flex min-w-0 flex-col">
       <div className="flex items-center gap-3 border-b border-line px-5 py-3.5">
@@ -147,14 +148,24 @@ function HistoryAnswerCard({ a, onPass, question, runId }: { a: HistoryAnswer; q
         </div>
         <DoneBadge ok={a.ok}>{a.ok ? (a.seconds > 0 ? `Respondió en ${a.seconds} s` : "Respondió") : stopped ? "Parado por ti" : "No respondió"}</DoneBadge>
       </div>
-      <div className="max-h-[560px] overflow-y-auto px-5 py-4">
-        {a.ok ? <Markdown text={a.text} /> : <p className="text-bad-ink">{stopped ? "Lo has parado tú." : a.error || "No respondió."}</p>}
+      <div className={`${a.ok && !expanded ? "" : "max-h-[560px] overflow-y-auto"} px-5 py-4`}>
+        {a.ok ? (expanded ? <Markdown text={a.text} /> : <p className="whitespace-pre-wrap text-ink-2" title={a.text}>{a.text.length > 260 ? `${a.text.slice(0, 260).trimEnd()}…` : a.text}</p>)
+          : <p className="text-bad-ink">{stopped ? "Lo has parado tú." : a.error || "No respondió."}</p>}
       </div>
+      {a.ok && (
+        <div className="flex justify-end border-t border-line px-4 py-2.5">
+          <Button size="sm" variant={expanded ? "ghost" : "secondary"}
+            icon={expanded ? <ChevronUp size={18} aria-hidden /> : <ChevronDown size={18} aria-hidden />}
+            onClick={() => setExpanded(!expanded)}>
+            {expanded ? "Ocultar respuesta" : "Ver respuesta completa"}
+          </Button>
+        </div>
+      )}
       {a.ok && (
         <WebRow runId={runId} provider={a.provider} label={a.provider_label} url={a.url} byIvan={a.by_ivan}
           repairedBy={a.repaired ? "webllm" : undefined} />
       )}
-      {a.ok && (
+      {a.ok && expanded && (
         <div data-footer className="flex flex-wrap gap-2 border-t border-line px-4 py-3">
           <Button size="sm" variant="secondary" icon={<Link2 size={18} aria-hidden />} onClick={() => onPass(a)} title={`Seguir con esta respuesta: ${question.slice(0, 60)}`}>
             Pásasela a otra IA

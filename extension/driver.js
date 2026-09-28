@@ -186,7 +186,7 @@
     return el;
   };
 
-  const state = (site) => {
+  const state = (site, sent = "") => {
     const input = findInput(site);
     const loginUrl = site.loginUrl ? new RegExp(site.loginUrl, "i").test(location.pathname) : false;
     const passwordBox = [...document.querySelectorAll("input[type='password']")].some((el) => visible(el));
@@ -203,6 +203,10 @@
     }
     const last = lastAnswerEl(site);
     const lastText = last ? (last.innerText || "") : "";
+    // Generic sites sometimes give the user's own bubble a class such as "response". Tell the service worker
+    // explicitly when its apparent last answer is really the prompt webllm just sent.
+    const mine = sent ? yourMessage(sent) : null;
+    const lastIsPrompt = !!(last && mine && (last === mine || last.contains(mine) || mine.contains(last)));
     if (!busy && lastText.length < 300 && BUSY_RE.test(lastText)) busy = lastText.slice(0, 200);
     if (!rate && lastText.length < 300 && RATE_RE.test(lastText)) rate = lastText.slice(0, 200);
     if (!ban && !input && BAN_RE.test(bodyText)) ban = (bodyText.match(BAN_RE) || [""])[0];
@@ -219,6 +223,7 @@
       copyCount: copyButtons(site).length,
       answerCount: answers(site).length,
       lastAnswerLen: lastText.length,
+      lastIsPrompt,
       bodyLen: bodyText.length,
       challenge: detectChallenge(),
       loginWall: loginUrl || passwordBox || !!loginText,
@@ -749,14 +754,16 @@
       if (b === findSend(window.__webllmObsSite) || SEND_RE.test(labelOf(b) + " " + nameOf(b))) note();
     }, true);
   };
-  const observe = (site) => {
+  const observe = (site, sent = "") => {
     listenSent(site);
     const input = findInput(site);
     const typed = boxText(input);
     const last = lastAnswerEl(site);
+    const mine = sent ? yourMessage(sent) : null;
+    const lastIsPrompt = !!(last && mine && (last === mine || last.contains(mine) || mine.contains(last)));
     return { url: location.href, typed: typed.slice(0, 20000), sent: window.__webllmSent.splice(0), generating: isGenerating(site), hidden: document.hidden,
              copyCount: copyButtons(site).length, answerCount: answers(site).length, lastAnswerLen: last ? (last.innerText || "").length : 0,
-             bodyLen: ((document.body && document.body.innerText) || "").length, challenge: detectChallenge(),
+             lastIsPrompt, bodyLen: ((document.body && document.body.innerText) || "").length, challenge: detectChallenge(),
              stop: !!window.__webllmStopObserving, badge: !!document.querySelector("[data-webllm-observe]") };
   };
   // A visible mark while webllm records this tab, with a way to stop it (it also stops from the extension icon).

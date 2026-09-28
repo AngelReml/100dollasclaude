@@ -48,6 +48,7 @@ class CatalogAI:
     account: str
     private: bool
     builtin: bool = False
+    manual_only: bool = False
     daily_cap: int | None = None
     note: str = ""
     may_fail: str = ""
@@ -60,7 +61,8 @@ class CatalogAI:
     def public(self) -> dict[str, Any]:
         return {"key": self.key, "name": self.name, "by": self.by, "url": self.url, "group": self.group,
                 "purpose": self.purpose, "family": self.family, "tags": list(self.tags), "account": self.account,
-                "private": self.private, "builtin": self.builtin, "daily_cap": self.daily_cap, "note": self.note,
+                "private": self.private, "builtin": self.builtin, "manual_only": self.manual_only,
+                "daily_cap": self.daily_cap, "note": self.note,
                 "may_fail": self.may_fail, "models": list(self.models), "models_source": self.models_source,
                 "models_checked": self.models_checked}
 
@@ -89,6 +91,7 @@ def load(path: Path = CATALOG_FILE) -> Catalog:
                 group=str(spec["group"]), purpose=str(spec.get("purpose") or ""), family=str(spec.get("family") or ""),
                 tags=tuple(str(t) for t in spec.get("tags") or ()), account=str(spec.get("account") or "desconocido"),
                 private=bool(spec.get("private", True)), builtin=bool(spec.get("builtin", False)),
+                manual_only=bool(spec.get("manual_only", False)),
                 daily_cap=int(spec["daily_cap"]) if spec.get("daily_cap") is not None else None,
                 note=str(spec.get("note") or ""), may_fail=str(spec.get("may_fail") or ""),
                 models=tuple({"match": str(m["match"]), "rank": int(m["rank"])} for m in spec.get("models") or []),
@@ -129,8 +132,9 @@ def save_state(paths: "Paths", key: str, state: str, *, reason: str = "", messag
 
 def eligible_for_auto(p: "ProviderConfig") -> bool:
     """May "Automático" (F8) or the Committee (F7) pick this AI on their own? Never one that is not private
-    (Arena publishes what you write; Google AI Studio may use it): those only when Iván picks them."""
-    return p.private and p.enabled
+    (Arena publishes what you write; Google AI Studio may use it), nor an agent whose workflow Iván must choose
+    deliberately: those are available only when Iván picks them."""
+    return p.private and p.enabled and not p.manual_only
 
 
 __all__ = ["CATALOG_FILE", "Catalog", "CatalogAI", "CatalogError", "STATES", "eligible_for_auto", "load",

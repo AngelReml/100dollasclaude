@@ -20,9 +20,10 @@ try {
   const site = (key, host, path) => (url) => ({ key, name: key[0].toUpperCase() + key.slice(1), by: "Prueba", url: url(host, path),
     group: "1", purpose: "prueba", family: "Prueba", tags: ["general"], account: "no", private: true });
   w = await startWorld({ limitS: 60, catalog: (url) => [site("conversa", "chat.conversa.test", "/conversa/")(url),
-                                                        site("tarda", "chat.tarda.test", "/conversa/tarda/")(url)] });
+                                                        site("tarda", "chat.tarda.test", "/conversa/tarda/")(url),
+                                                        site("confunde", "chat.confunde.test", "/?confunde=1")(url)] });
   say(w.chrome, `la extensión ${w.version} se conecta al puente`);
-  const conn = await w.call("/api/conectar-varias", { keys: ["conversa", "tarda"] });
+  const conn = await w.call("/api/conectar-varias", { keys: ["conversa", "tarda", "confunde"] });
   const addTab = w.ctx.pages().find((p) => p.url().includes("add.html")) ?? (await w.ctx.waitForEvent("page", { timeout: 15000 }));
   await addTab.waitForLoadState();
   await addTab.getByRole("button", { name: "Permitir y conectar" }).click();
@@ -78,6 +79,16 @@ try {
     const s = Math.round((Date.now() - t0) / 1000);
     say(a.status === 200 && b2.text === "Respuesta 2 a «Dos»",
       `una web que tarda 15 s en empezar (como un modelo que piensa) y no enseña «parar»: se lee la respuesta nueva («${b2.text}», ${s} s), no la que ya estaba`);
+  });
+
+  // 5. A generic CSS class calls Iván's own message a "response": it is still never accepted as the answer.
+  await part("no confunde la pregunta", async () => {
+    const prompt = "Esta es mi pregunta, no la respuesta";
+    const t0 = Date.now();
+    const r = await ask("confunde", prompt);
+    const s = Math.round((Date.now() - t0) / 1000);
+    say(r.status === 200 && r.text === "hola qué tal" && r.text !== prompt && s >= 10,
+      `una clase genérica «response» en tu propio mensaje no lo convierte en respuesta: recibió «${r.text}» tras ${s} s`);
   });
 } catch (e) {
   say(false, `error: ${e && e.stack ? e.stack : e}`);

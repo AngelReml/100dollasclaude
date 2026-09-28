@@ -67,6 +67,8 @@ export interface CatalogAi {
   private: boolean;
   /** Qwen, DeepSeek, z.ai, Meta: configured in webllm; "Conectar" for them is the session check. */
   builtin: boolean;
+  /** Agent/workspace that webllm exposes, but never chooses without an explicit click. */
+  manual_only: boolean;
   daily_cap: number;
   note: string;
   may_fail: string;

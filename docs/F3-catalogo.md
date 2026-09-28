@@ -1,6 +1,6 @@
 # F3 — Todos los chats web, precargados (26-sep-2026)
 
-**Resultado en la nube: todo lo que el plan pide probar aquí, bien.** Las 27 IAs del catálogo (sección 6 del plan) vienen precargadas en la app, y «Conectar varias» funciona de principio a fin con la extensión de verdad. **Desde la nube no se puede abrir ninguna web real**, así que cuántas funcionan con webllm solo se sabe en tu PC (abajo).
+**Resultado en pruebas: todo lo que se puede automatizar aquí, bien.** Las 28 IAs del catálogo vienen precargadas en la app, y «Conectar varias» funciona de principio a fin con la extensión de verdad. La compatibilidad de cada web real se confirma en el PC de Iván.
 
 ## Qué hay
 
@@ -10,7 +10,8 @@
   - **No las quieres**.
 - **Cada tarjeta** dice para qué sirve la IA y lo que conviene saber:
   - **«No privada»** en Arena y Google AI Studio;
-  - **«Puede fallar»** y por qué, en las 6 del grupo 2;
+  - **«Puede fallar»** y por qué, en las 7 del grupo 2;
+  - **«Solo cuando la eliges tú»** en Genspark: es un agente, no un chat predecible, y nunca entra solo en Automático ni en el Comité;
   - si pide cuenta o no;
   - su tope si es más bajo: Venice, 10 al día; Poe, 15.
 - **«Conectar varias»:**
@@ -22,7 +23,7 @@
   6. **Parar** suelta la que se está probando y no prueba más.
 - **Solo las conectadas salen** en Open WebUI y en Preguntar.
 - **Las no privadas** llevan el aviso en su nombre en Open WebUI («Arena (chat directo) (web, no privada)») y en su ficha. «Automático» y el Comité nunca las eligen por su cuenta: la regla ya está escrita y probada para cuando existan (F7, F8).
-- **«Copiar el resumen»** (abajo del todo en Conectores) copia la tabla de las 27 con lo que pasó en tu PC. Pégamela y la apunto en `ESTADO.md` (es la salida de F3).
+- **«Copiar el resumen»** (abajo del todo en Conectores) copia la tabla de las 28 con lo que pasó en tu PC.
 - **Si pegas en «+ Añadir otra IA» la dirección de una de la lista** (por ejemplo `chat.mistral.ai`), se conecta como la de la lista: con su nombre («Le Chat»), su tope y su privacidad.
 
 ## Dos decisiones mías que debes conocer
@@ -39,7 +40,8 @@
 
 | Qué | Resultado | Dónde |
 |---|---|---|
-| Las 27 del plan (4 + 17 + 6), direcciones https ya normalizadas, ninguna repetida | **Bien** | aquí (`tests/test_catalog.py`) |
+| Las 28 actuales (4 + 17 + 7), direcciones https ya normalizadas, ninguna repetida | **Bien** | aquí (`tests/test_catalog.py`) |
+| Genspark está disponible solo por elección explícita; Kimi abre la ruta internacional | **Bien** | aquí (`tests/test_catalog.py`) |
 | Ninguna pasa el bloqueo (`claude.ai`, `chatgpt.com`…), ni ninguna de las que el plan deja fuera | **Bien** | aquí |
 | Cada IA tiene familia, etiquetas y para qué sirve; las del grupo 2, su motivo | **Bien** | aquí |
 | Las no privadas nunca las eligen «Automático» ni el Comité | **Bien** (la regla, `catalog.eligible_for_auto`) | aquí |
@@ -47,7 +49,7 @@
 | «Conectar varias» en el servidor: un permiso, de una en una, cada resultado, el diagnóstico guardado, «No la quiero», sin permiso no se prueba nada, no entrar a tiempo, Parar, extensión antigua, Quitar | **Bien** (7 pruebas, `tests/test_conectores.py`) | aquí |
 | **Con la extensión de verdad en Chromium** y 5 webs de prueba: **una sola petición de permiso** para las cinco; la primera conecta; la que pide entrar se pone delante, espera, **webllm no escribe nada** en la pantalla de acceso, y conecta cuando «entras»; la que te manda a otra dirección para entrar (como Google) te espera allí y conecta al volver; la que se ha mudado dice adónde lleva sin esperar; la que no tiene caja queda «No funciona todavía» con su diagnóstico; las conectadas contestan preguntas | **Bien** (13 de 13, `tests/extension/catalog_flow.mjs`) | aquí, en Chromium. El aviso de permiso de Chrome se simula (como en 7b) |
 | Capturas en claro y oscuro, sin fallos de diseño | **Bien** (61 capturas, 0 problemas) | aquí (`docs/capturas/f3/`) |
-| **Cuántas de las 27 funcionan de verdad** | **Falta** | tu PC |
+| **Cuántas de las 28 funcionan de verdad** | **Se comprueba al conectarlas** | tu PC |
 
 ## Para ti: cómo probarlo en tu PC
 

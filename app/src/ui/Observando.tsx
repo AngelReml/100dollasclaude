@@ -19,7 +19,7 @@ export function WebRow({ runId, provider, label, url, repairedBy, byIvan }: {
   const go = async () => {
     try {
       await api.continuar(runId as string, provider);
-      toast(`Abierta en tu Chrome. Lo que escribas allí a ${label} se guarda aquí.`);
+      toast(`Registro activado para ${label}: cada mensaje y respuesta se guardan en Historial y en este mismo informe.`);
       refresh();
     } catch (err) {
       toast(err instanceof ApiError ? err.message : "No pude abrirla.", "bad");
@@ -35,7 +35,7 @@ export function WebRow({ runId, provider, label, url, repairedBy, byIvan }: {
       )}
       {url && runId && (
         <Button size="sm" variant="ghost" icon={<ExternalLink size={17} aria-hidden />} onClick={go}>
-          Continuar en la web
+          Seguir hablando y guardar
         </Button>
       )}
     </div>
@@ -54,7 +54,7 @@ export function ObservingBanner() {
         <div key={o.tab} className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface-2 px-5 py-3 text-[16px]" role="status">
           <Radio size={20} className="shrink-0 text-bad-ink" aria-hidden />
           <span className="min-w-0 flex-1">
-            Registrando tu conversación con <b>{o.label}</b> en tu Chrome (desde las {o.since}). Lo que escribas allí se guarda en tu historial.
+            Registrando tu conversación con <b>{o.label}</b> en tu Chrome (desde las {o.since}). Cada mensaje y respuesta se guarda en Historial y se añade al mismo informe descargable.
           </span>
           <Button size="sm" variant="secondary"
             onClick={() => api.dejarDeRegistrar(o.tab).then(() => { toast("Ya no se registra."); refresh(); }, () => toast("No se pudo.", "bad"))}>

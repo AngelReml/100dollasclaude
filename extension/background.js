@@ -20,6 +20,8 @@ const siteQueue = {};  // site -> promise chain (one job at a time per site)
 const lastNotice = {}; // site+kind -> timestamp (avoid notification spam)
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const sameText = (a, b) => String(a || "").trim().replace(/\s+/g, " ").toLocaleLowerCase() ===
+  String(b || "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
 
 async function loadConfig() {
   if (config) return config;
@@ -136,10 +138,9 @@ setInterval(() => Object.keys(runningJob).forEach(beat), 10000);
 // ---------------------------------------------------------------- tabs
 
 // All chats live as tabs of ONE small webllm window in the bottom-right corner.
-// It is created unfocused (it never steals your keyboard) and closes itself a
-// minute after the last job.
+// It is created unfocused (it never steals your keyboard) and stays open after a job so Iván can inspect an
+// answer, solve Qwen's CAPTCHA or continue the conversation. Only Iván closes it.
 const busy = new Set();      // sites with a job running
-let closeTimer = null;
 let rotateIndex = 0;
 
 let windowPromise = null;   // one creation at a time: parallel jobs share it
@@ -196,19 +197,10 @@ setInterval(async () => {
 
 function jobStarted(site) {
   busy.add(site);
-  if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
 }
 
 function jobFinished(site) {
   busy.delete(site);
-  if (busy.size || closeTimer) return;
-  closeTimer = setTimeout(async () => {
-    closeTimer = null;
-    if (busy.size) return;
-    const saved = (await chrome.storage.local.get("window"))["window"];
-    if (saved) chrome.windows.remove(saved).catch(() => {});
-    await chrome.storage.local.clear();
-  }, 60000);
 }
 
 async function waitLoaded(tabId, timeoutMs) {
@@ -449,17 +441,17 @@ async function runJob(job) {
     await sleep(1500);
     stillWanted(job);
     if (Date.now() - jobStart > JOB_HARD_CAP_MS) break;
-    st = await call(tabId, "state", site);
+    st = await call(tabId, "state", site, job.prompt);
     if (await coveredWindow(tabId, st, job.site)) continue;
     if (st.challenge) { await waitForHuman(job.site, tabId, st.challenge, job); continue; }
     checkBlocks(job.site, st);
     const sig = `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.answerCount}`;
     if (sig !== lastSig) { lastSig = sig; stable = 0; } else { stable++; }
     // an answer box that is still empty (many sites add it at once and write later) is not an answer yet
-    const answered = copyPage ? st.copyCount > before.copyCount
+    const answered = !st.lastIsPrompt && (copyPage ? st.copyCount > before.copyCount
       : answersPage ? st.answerCount > before.answerCount && st.lastAnswerLen > 0
-      : st.copyCount > before.copyCount || (st.lastAnswerLen > 0 && (st.lastAnswerLen !== before.lastAnswerLen || st.answerCount !== before.answerCount));
-    changed = answered || (!hadAnswer && st.bodyLen !== before.bodyLen);
+      : st.copyCount > before.copyCount || (st.lastAnswerLen > 0 && (st.lastAnswerLen !== before.lastAnswerLen || st.answerCount !== before.answerCount)));
+    changed = answered || (!hadAnswer && st.bodyLen !== before.bodyLen && !st.lastIsPrompt);
     const newCopy = st.copyCount > before.copyCount;
     const writing = st.generating && !stopMeansNothing;
     if (changed && !writing && ((newCopy && stable >= 1) || stable >= 5)) break;
@@ -468,6 +460,10 @@ async function runJob(job) {
   if (answerClock() >= limit || Date.now() - jobStart > JOB_HARD_CAP_MS) {
     // What the page looked like at the end: the evidence to fix this site (it goes to bridge.log).
     const d = await call(tabId, "diagnose", site).catch(() => null);
+    if (st && st.lastIsPrompt) {
+      const x = await call(tabId, "xray", site, job.prompt).catch(() => null);
+      throw new JobError("empty_answer", JSON.stringify({ reason: "the prompt was not an answer", state: st, diagnose: d }).slice(0, 6000), { xray: x });
+    }
     throw new JobError("timeout", JSON.stringify({ limit_s: Math.round(limit / 1000), stop_before_send: stopMeansNothing,
                                                     state: st, diagnose: d }).slice(0, 6000));
   }
@@ -477,12 +473,12 @@ async function runJob(job) {
   await sleep(800);
   let out = copyPage && st.copyCount <= before.copyCount ? null : await call(tabId, "capture", site);
   if (!out || !out.ok) out = await call(tabId, "fallback", site);
-  if (!out || !out.ok || !out.text.trim()) {
+  if (!out || !out.ok || !out.text.trim() || sameText(out.text, job.prompt)) {
     const d = await call(tabId, "diagnose", site).catch(() => null);
     // PLAN-v5 F6: the x-ray too; the answer is on the page, so a repaired reading can take it without
     // sending anything again ("reread")
     const x = await call(tabId, "xray", site, job.prompt).catch(() => null);
-    throw new JobError("empty_answer", JSON.stringify({ out, diagnose: d }).slice(0, 6000), { xray: x });
+    throw new JobError("empty_answer", JSON.stringify({ out, prompt_was_returned: !!(out && sameText(out.text, job.prompt)), diagnose: d }).slice(0, 6000), { xray: x });
   }
   if (prevText) {  // still the answer that was there before sending: not a new one
     const now = await call(tabId, "fallback", site).catch(() => null);
@@ -762,7 +758,7 @@ const sigOf = (st) => `${st.lastAnswerLen}:${st.bodyLen}:${st.copyCount}:${st.an
 async function watchOnce(tabId, o) {
   const site = SITES[o.site];
   if (!site) return;
-  const st = await call(Number(tabId), "observe", site);
+  const st = await call(Number(tabId), "observe", site, o.turn ? o.turn.user : "");
   if (!st) return;
   if (st.stop) return stopObserving(tabId, "badge");
   if (!st.badge) call(Number(tabId), "observeBadge", true).catch(() => {});  // the page was reloaded: the mark again
@@ -777,6 +773,7 @@ async function watchOnce(tabId, o) {
       const items = o.queue.splice(0);
       o.turn = { user: items.map((x) => x.text).join("\n\n"), before, t0: items[0].t };  // t0 = when he sent it
       o.sig = sigOf(before); o.stable = 0; o.typed = "";
+      return;  // next poll knows the sent text and can distinguish Iván's bubble from the real answer
     } else {
       o.last = st;
       if (typed) { o.typed = typed; o.before = st; return; }
@@ -796,12 +793,12 @@ async function watchOnce(tabId, o) {
   const sig = sigOf(st);
   if (sig !== o.sig) { o.sig = sig; o.stable = 0; } else { o.stable++; }
   const b0 = o.turn.before;
-  const answered = st.answerCount !== b0.answerCount || st.lastAnswerLen !== b0.lastAnswerLen || st.copyCount !== b0.copyCount;
+  const answered = !st.lastIsPrompt && (st.answerCount !== b0.answerCount || st.lastAnswerLen !== b0.lastAnswerLen || st.copyCount !== b0.copyCount);
   const newCopy = st.copyCount > b0.copyCount;
-  const done = !st.generating && ((answered && newCopy && o.stable >= 1) || (answered && o.stable >= 5) ||
+  const done = !st.lastIsPrompt && !st.generating && ((answered && newCopy && o.stable >= 1) || (answered && o.stable >= 5) ||
                                   (st.bodyLen !== b0.bodyLen && o.stable >= 12));
   if (!done && Date.now() - o.turn.t0 < 30 * 60000) return;
-  const out = await call(Number(tabId), "fallback", site).catch(() => null);  // read from the page: no click in his tab
+  const out = st.lastIsPrompt ? null : await call(Number(tabId), "fallback", site).catch(() => null);  // read from the page: no click in his tab
   await sendObserved({ type: "observed", tab: Number(tabId), site: o.site, follows: o.follows, site_config: o.site_config || null, url: st.url,
                  user: o.turn.user, answer: out && out.ok ? out.text : "", via: out && out.ok ? out.via : null,
                  error: out && out.ok ? null : (done ? "empty_answer" : "timeout"),

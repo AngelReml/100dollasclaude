@@ -39,7 +39,7 @@
 
 ### 2. Seguir tú en la web, y que quede registrado
 
-- **«Continuar en la web».** Está bajo cada respuesta de un chat web:
+- **«Seguir hablando y guardar».** Está bajo cada respuesta de un chat web en la app (en Open WebUI conserva el nombre «Continuar en la web»):
   - en Open WebUI, junto a los botones de la respuesta;
   - en la app, en «Preguntar» y en el «Historial».
 
@@ -47,6 +47,7 @@
   - abre **esa conversación exacta** en una pestaña normal de tu Chrome, no en la ventanita de webllm;
   - en la página aparece la marca **«● webllm está registrando esta conversación»**, con **«Dejar de registrar»**;
   - en la app, en el Inicio, aparece «Registrando tu conversación con X», con el mismo botón.
+  - cada turno nuevo se incorpora automáticamente al **mismo informe descargable** de la pregunta inicial.
 - **Lo que escribes allí queda en la misma conversación:**
   - cada mensaje tuyo y la respuesta de la IA se guardan, marcados «Escrita por ti en la web de X»;
   - van al historial y a la misma nota de tu vault («## Tú, en la web de X»);

@@ -12,7 +12,7 @@ providers:
     model: browser/qwen
     kind: browser
     gateway: bridge
-    timeout_s: 420
+    timeout_s: 600
   deepseek:
     model: browser/deepseek
     kind: browser
@@ -22,7 +22,7 @@ providers:
     model: browser/zai
     kind: browser
     gateway: bridge
-    timeout_s: 420
+    timeout_s: 600
   meta:
     model: browser/meta
     kind: browser

@@ -38,7 +38,7 @@
 | D17 | **Webs que se reparan solas** ante cambios de diseño o webs nuevas raras, en 4 capas y sin saltarse nunca un bloqueo anti-bot (sección 3) | Petición de Iván + la crítica número 1 de todas: la fragilidad de la extensión |
 | D18 | **Interfaz ultraintuitiva = la estándar de los chats de IA** (ChatGPT, Claude): conversaciones a la izquierda, selector de modelo arriba, caja de texto abajo con adjuntar, respuesta que se escribe en directo, tarjeta Permitir/Denegar. **webllm no inventa pantallas ni botones nuevos en la conversación**: todo lo suyo entra por piezas que ese estándar ya tiene (sección "La cara") | Petición de Iván. Refuerza D1: el diseño de Open WebUI sigue el de ChatGPT, así que lo que ya sabes usar funciona igual |
 | D19 | **Claude y GPT por dentro de otros servicios, aprobados** (Duck.ai, Poe, Perplexity, Arena, Copilot…), y dentro de ellos se puede elegir cualquier modelo. **Siguen fuera:** `claude.ai` y `chatgpt.com` directos, y tus suscripciones de Claude, ChatGPT o Codex a través de OmniRoute | Decisión de Iván (25-sep-2026). Da al Comité una familia más (OpenAI), y el jurado es mejor con familias distintas |
-| D20 | **Todas las IAs con chat web que hemos encontrado vienen precargadas** (catálogo de la sección 6): no escribes ninguna dirección. Lo único que nadie puede hacer por ti es **entrar una vez con tu cuenta** en las que la pidan (regla dura 3). Chrome da permiso solo a las que dejas marcadas | Petición de Iván: "quiero tenerlas todas". Mínimo privilegio: nada de permisos fijos para 27 webs que quizá no uses |
+| D20 | **Todas las IAs con chat web que hemos encontrado vienen precargadas** (catálogo de la sección 6): no escribes ninguna dirección. Lo único que nadie puede hacer por ti es **entrar una vez con tu cuenta** en las que la pidan (regla dura 3). Chrome da permiso solo a las que dejas marcadas | Petición de Iván: "quiero tenerlas todas". Mínimo privilegio: nada de permisos fijos para 28 webs que quizá no uses |
 | D21 | **Tu control, lo primero.** Nada cambia a escondidas. Cada respuesta dice lo que se usó de verdad. El modelo de partida lo eliges tú. Nada sale de tu PC sin un gesto tuyo. webllm nunca pulsa botones que publican, comparten, borran, regeneran o despliegan (sección "Tu control") | Petición de Iván: "prioriza mi control absoluto" |
 | D22 | **Todo lo que sabe hacer cada chat, a tu alcance:** sus modelos (con el más potente marcado), sus modos (pensar, buscar, investigación profunda, constructor…), cada opción de su botón "+" y subir archivos igual que en su web. webllm lo descubre sin pulsar nada peligroso y lo pone en la cara estándar. Lo que no sepa manejar lo usas tú en la web y queda registrado (D16) (sección 3) | Petición de Iván. Las comprobaciones 11 y 12 de F1 deciden cómo llegan archivos e interruptores desde Open WebUI |
 | D24 | **El taller de código puede cambiar cualquier archivo tuyo, pero nunca dejarte sin Windows.** Todo lo que lanza la IA corre **sin permisos de administrador**, así que es Windows, no la IA, quien le impide tocar C:\Windows, los programas instalados, el arranque y los ajustes de todo el equipo. webllm no arranca el taller si se abrió como administrador o si el Control de cuentas (UAC) está apagado o en «No notificarme nunca» (así Windows daría administrador sin preguntar). Deniega pedir administrador, apagar, reiniciar o cerrar sesión, cerrar programas que no lanzó el taller y borrar carpetas enteras fuera del proyecto; lo demás de fuera del proyecto te lo pregunta. El taller va dentro de un contenedor de procesos de Windows (Job Object: no necesita administrador) con tope de memoria y de CPU, que «Parar todo» cierra entero de golpe, y se para si el disco C: baja de 10 GB libres. Lo que cambia en el proyecto se deshace con git. Fuera del proyecto la red es lo que la IA no puede borrar: las «versiones anteriores» de Windows (puntos de restauración; hay que tener activada la Protección del sistema en C:) y la papelera de Drive. Si durante una tarea sale la ventana de Windows que pide permiso de administrador, la respuesta es **No** | Petición de Iván (26-sep-2026): «no quiero que pueda borrar mi C:, no quiero quedarme sin Windows a medio trabajo por un error; por lo demás, que pueda modificar cualquier cosa». Sustituye al «aislamiento: solo worktree o WSL2/Docker» de F11: una caja que solo ve el proyecto no le deja cambiar lo demás, y un worktree solo no protege nada fuera del proyecto |
@@ -180,8 +180,8 @@ Sirve para **evaluar ideas**.
 
 ### Modo observador: sigues tú en la web y webllm lo registra
 
-- **Botón "Continuar en la web"** en cada respuesta de un chat web.
-  - Abre **esa conversación exacta** en una pestaña normal de tu Chrome, no en la ventanita de webllm, que se cierra sola cuando termina los trabajos.
+- **Botón "Seguir hablando y guardar"** en cada respuesta de un chat web de la app ("Continuar en la web" en Open WebUI).
+  - Abre **esa conversación exacta** en una pestaña normal de tu Chrome. La ventanita de webllm queda abierta para revisar respuestas, verificaciones y chats.
   - Esa pestaña queda **"en observación"**: cada mensaje que escribes y cada respuesta de la IA entran en el mismo hilo (registro y vault), marcados como "escrito por Iván directamente".
 - **Cómo funciona:** es la misma maquinaria de ahora, pero en pasivo.
   1. La extensión detecta tu envío (Enter o el botón de enviar de la caja, que ya sabe encontrar).
@@ -359,7 +359,7 @@ Cada fase tiene:
 
 - **Puerta:** F2.
 - **Qué:**
-  - `catalog.yaml` en el proyecto (en git) con las 27 IAs del catálogo (sección 6). Para cada una: dirección, para qué sirve, familia de modelo, si pide cuenta, si es privada, límite diario propio y fecha de la última comprobación.
+  - `catalog.yaml` en el proyecto (en git) con las 28 IAs del catálogo actual (sección 6). Para cada una: dirección, para qué sirve, familia de modelo, si pide cuenta, si es privada, si es solo manual, límite diario propio y fecha de la última comprobación.
   - Qwen, DeepSeek, z.ai y Meta pasan también al catálogo, con sus ajustes de `sites.js`.
   - En el panel de webllm ("Ajustes → Conectores", D18) cada IA es una tarjeta **"Sin conectar"** con **Conectar**. Arriba está **"Conectar varias"**:
     1. vienen todas marcadas, como pediste, y desmarcas las que no quieras;
@@ -638,7 +638,7 @@ Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la n
 
 | IA | Dirección | Para qué | Nota |
 |---|---|---|---|
-| Kimi (Moonshot) | `https://www.kimi.com` | documentos largos, investigar, código | |
+| Kimi (Moonshot) | `https://www.kimi.com/en/` | documentos largos, investigar, código | ruta internacional |
 | Le Chat (Mistral) | `https://chat.mistral.ai` | general, código, rápida | su conector de GitHub no se activa (sección 9) |
 | HuggingChat (Hugging Face) | `https://huggingface.co/chat` | general, modelos abiertos | sin cuenta |
 | LongCat (Meituan) | `https://longcat.chat` | general, instrucciones | |
@@ -656,7 +656,7 @@ Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la n
 | Nous Chat | `https://chat.nousresearch.com` | Hermes 4 | |
 | Copilot (Microsoft) | `https://copilot.microsoft.com` | general, actualidad; GPT por dentro (D19) | sin cuenta; con cuenta de Microsoft, más mensajes |
 
-**Grupo 2: se precargan marcadas "puede fallar" (6).**
+**Grupo 2: se precargan marcadas "puede fallar" (7).**
 
 | IA | Dirección | Por qué puede fallar |
 |---|---|---|
@@ -666,11 +666,12 @@ Comprobado con el buscador entre el 24 y el 25 de septiembre de 2026. Desde la n
 | Poe | `https://poe.com` | unos 300 puntos al día (15 a 30 mensajes cortos) |
 | LingGuang (Ant Group) | `https://www.lingguang.com/chat` | puede pedir cuenta china |
 | You.com | `https://you.com` | la empresa se centra ahora en sus APIs; el chat gratis puede desaparecer |
+| Genspark Super Agent | `https://www.genspark.ai/` | agente con 100 créditos diarios mientras quede el cupo gratuito vitalicio; solo se usa cuando Iván lo elige |
 
-**Total: 27** (4 + 17 + 6).
+**Total: 28** (4 + 17 + 7).
 
 **No se precargan, y por qué:**
-- **Agentes que hacen tareas, no chats:** MiniMax Agent, Manus y Genspark. Actúan por su cuenta en la web; no encajan en pregunta-respuesta.
+- **Agentes que hacen tareas, no chats:** MiniMax Agent y Manus no se precargan. Genspark sí aparece, pero marcada como manual: nunca la eligen Automático ni el Comité.
 - **OpenRouter Chat:** sus modelos gratis van mejor por API (tabla de PLAN-v4), sin gastar cuenta web. Si la quieres como web, "+ Añadir otra IA" la acepta.
 - **Directas, fuera siempre:** `chatgpt.com` y `claude.ai`.
 - **Brave Leo:** vive dentro del navegador Brave (`brave://leo-ai`) y ninguna extensión puede manejarla. Su Claude Haiku está en Duck.ai.
